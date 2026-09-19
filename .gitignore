@@ -14,3 +14,8 @@
 .env
 .env.*
 !.env.example
+
+# Local-only product references and documentation
+/【基于3个开源项目】高职实训_SOP智能识别技术方案_V1.0.md
+/xingchen-prototype/其他方案参考/
+/xingchen-prototype/docs/
