@@ -1,0 +1,151 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "运行概览" [level=1]
+  - paragraph: 全校系统、工位与中心服务运行状态
+  - button "刷新状态":
+    - text: 刷新状态
+  - img "desktop":
+  - generic: 在线工位
+  - strong: 23/24
+  - paragraph: 1 个工位故障
+  - img "play-circle":
+  - generic: 进行中安排
+  - strong: "3"
+  - paragraph: 练习 2 · 考试 1
+  - img "laptop":
+  - generic: 边缘节点异常
+  - strong: "1"
+  - paragraph: EDGE-001 异常
+  - img "database":
+  - generic: 存储使用率
+  - strong: 68%
+  - paragraph: 可用 12.4 TB
+  - heading "系统服务" [level=2]
+  - img "check-circle":
+  - generic: 中心管理服务
+  - generic: 正常 · 10:24:28 更新
+  - img "clock-circle":
+  - text: 正常
+  - img "check-circle":
+  - generic: 视频接入与集中存储
+  - generic: 正常 · 当前 42 路视频
+  - img "clock-circle":
+  - text: 正常
+  - img "alert":
+  - generic: 工位边缘节点
+  - generic: EDGE-001 推理服务异常
+  - img "exclamation-circle":
+  - text: 1项异常
+  - img "check-circle":
+  - generic: 自动备份
+  - generic: 最近成功：2026-09-17 02:00
+  - img "clock-circle":
+  - text: 正常
+  - heading "当前安排" [level=2]
+  - button "新能源汽车高压安全操作练习 王老师 · 6个工位 check-circle 进行中":
+    - generic: 新能源汽车高压安全操作练习
+    - generic: 王老师 · 6个工位
+    - img "check-circle":
+    - text: 进行中
+  - button "2402班高压安全强化练习 王老师 · 6个工位 check-circle 进行中":
+    - generic: 2402班高压安全强化练习
+    - generic: 王老师 · 6个工位
+    - img "check-circle":
+    - text: 进行中
+  - button "机器人夹具更换练习 王老师 · 6个工位 check-circle 进行中":
+    - generic: 机器人夹具更换练习
+    - generic: 王老师 · 6个工位
+    - img "check-circle":
+    - text: 进行中
+  - heading "系统异常" [level=2]
+  - table:
+    - rowgroup:
+      - row "发生时间 异常类型 影响范围 事实状态 人工处理 操作":
+        - columnheader "发生时间"
+        - columnheader "异常类型"
+        - columnheader "影响范围"
+        - columnheader "事实状态"
+        - columnheader "人工处理"
+        - columnheader "操作"
+    - rowgroup:
+      - row "10:18:12 边缘推理服务异常 1号工位 / 张浩 持续中 clock-circle 待处理 查看 10:18:12 更多操作：10:18:12":
+        - cell "10:18:12"
+        - cell "边缘推理服务异常"
+        - cell "1号工位 / 张浩"
+        - cell "持续中"
+        - cell "clock-circle 待处理":
+          - img "clock-circle":
+          - text: 待处理
+        - cell "查看 10:18:12 更多操作：10:18:12":
+          - button "查看 10:18:12": 查看
+          - button "更多操作：10:18:12":
+      - row "09:42:31 中心上传延迟 3个工位 已恢复 已处理 查看 09:42:31 更多操作：09:42:31":
+        - cell "09:42:31"
+        - cell "中心上传延迟"
+        - cell "3个工位"
+        - cell "已恢复"
+        - cell "已处理"
+        - cell "查看 09:42:31 更多操作：09:42:31":
+          - button "查看 09:42:31": 查看
+          - button "更多操作：09:42:31":
+      - row "08:55:08 备份空间预警 备份服务 持续中 处理中 查看 08:55:08 更多操作：08:55:08":
+        - cell "08:55:08"
+        - cell "备份空间预警"
+        - cell "备份服务"
+        - cell "持续中"
+        - cell "处理中"
+        - cell "查看 08:55:08 更多操作：08:55:08":
+          - button "查看 08:55:08": 查看
+          - button "更多操作：08:55:08":

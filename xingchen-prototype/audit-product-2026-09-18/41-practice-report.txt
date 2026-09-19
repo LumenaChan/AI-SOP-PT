@@ -1,0 +1,106 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "练习个人报告 · 张浩" [level=1]
+  - paragraph: 新能源汽车高压安全操作 · SOP V3.2
+  - button "历史比较":
+    - text: 历史比较
+  - button "导出报告":
+    - text: 导出报告
+  - text: "78"
+  - generic: 分
+  - img "clock-circle":
+  - text: 待复核
+  - heading "张浩 · 20241001" [level=2]
+  - paragraph: 有效耗时 18:27 · 暂停时长 02:14 · 教师结束
+  - generic: 完成步骤
+  - strong: 5/6
+  - generic: 有效扣分
+  - strong: "-12"
+  - generic: 工艺提醒
+  - strong: "1"
+  - generic: 待复核
+  - strong: "1"
+  - complementary:
+    - heading "步骤评价" [level=2]
+    - button "1 安全防护检查 已完成 10分":
+      - generic: "1"
+      - strong: 安全防护检查
+      - generic: 已完成
+      - emphasis: 10分
+    - button "2 车辆下电 已完成 15分":
+      - generic: "2"
+      - strong: 车辆下电
+      - generic: 已完成
+      - emphasis: 15分
+    - button "3 高压系统验电 扣分 8分":
+      - generic: "3"
+      - strong: 高压系统验电
+      - generic: 扣分
+      - emphasis: 8分
+    - button "4 拆卸高压接插件 待复核 20分":
+      - generic: "4"
+      - strong: 拆卸高压接插件
+      - generic: 待复核
+      - emphasis: 20分
+    - button "5 绝缘检测 已完成 15分":
+      - generic: "5"
+      - strong: 绝缘检测
+      - generic: 已完成
+      - emphasis: 15分
+    - button "6 复位 已完成 10分":
+      - generic: "6"
+      - strong: 复位
+      - generic: 已完成
+      - emphasis: 10分
+  - generic: 步骤 3
+  - heading "高压系统验电" [level=2]
+  - img "clock-circle":
+  - text: 扣分
+  - figure "学生操作 · 10:18:22":
+    - img "学生操作视频"
+    - generic: 学生操作 · 10:18:22
+  - figure "标准示范 · 方法A":
+    - img "标准示范视频"
+    - generic: 标准示范 · 方法A
+  - generic: 标准要求
+  - strong: 完成断电后，依次检查各高压端点。
+  - generic: 观察事实
+  - strong: 检测到验电动作，但无法确认第二端点。
+  - generic: 触发规则
+  - strong: HS-OP-003 · 二次验电不完整
+  - generic: 分数影响
+  - strong: "-7 分"
+  - button "处理待复核"
+  - button "修改分数 / 撤销误判"

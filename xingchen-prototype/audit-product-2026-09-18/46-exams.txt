@@ -1,0 +1,88 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "考试管理" [level=1]
+  - paragraph: 创建并管理本人负责的考试安排
+  - button "创建考试":
+    - text: 创建考试
+  - img "search":
+  - textbox "搜索考试名称或 SOP"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - table:
+    - rowgroup:
+      - row "考试名称 SOP 标准 参与人数 状态 允许入场时间 操作":
+        - columnheader "考试名称"
+        - columnheader "SOP 标准"
+        - columnheader "参与人数"
+        - columnheader "状态"
+        - columnheader "允许入场时间"
+        - columnheader "操作"
+    - rowgroup:
+      - row "新能源汽车高压安全操作期中考试 新能源汽车高压安全操作 28人 clock-circle 待发布 2026-09-16 09:00 查看 新能源汽车高压安全操作期中考试 更多操作：新能源汽车高压安全操作期中考试":
+        - cell "新能源汽车高压安全操作期中考试"
+        - cell "新能源汽车高压安全操作"
+        - cell "28人"
+        - cell "clock-circle 待发布":
+          - img "clock-circle":
+          - text: 待发布
+        - cell "2026-09-16 09:00"
+        - cell "查看 新能源汽车高压安全操作期中考试 更多操作：新能源汽车高压安全操作期中考试":
+          - button "查看 新能源汽车高压安全操作期中考试": 查看
+          - button "更多操作：新能源汽车高压安全操作期中考试":
+      - row "2402班高压安全操作考试 新能源汽车高压安全操作 24人 clock-circle 待开始 2026-09-22 14:00 查看 2402班高压安全操作考试 更多操作：2402班高压安全操作考试":
+        - cell "2402班高压安全操作考试"
+        - cell "新能源汽车高压安全操作"
+        - cell "24人"
+        - cell "clock-circle 待开始":
+          - img "clock-circle":
+          - text: 待开始
+        - cell "2026-09-22 14:00"
+        - cell "查看 2402班高压安全操作考试 更多操作：2402班高压安全操作考试":
+          - button "查看 2402班高压安全操作考试": 查看
+          - button "更多操作：2402班高压安全操作考试":
+      - row "数控装夹技能考试 数控车床工件装夹 30人 check-circle 已发布 2026-09-10 08:30 查看 数控装夹技能考试 更多操作：数控装夹技能考试":
+        - cell "数控装夹技能考试"
+        - cell "数控车床工件装夹"
+        - cell "30人"
+        - cell "check-circle 已发布":
+          - img "check-circle":
+          - text: 已发布
+        - cell "2026-09-10 08:30"
+        - cell "查看 数控装夹技能考试 更多操作：数控装夹技能考试":
+          - button "查看 数控装夹技能考试": 查看
+          - button "更多操作：数控装夹技能考试":

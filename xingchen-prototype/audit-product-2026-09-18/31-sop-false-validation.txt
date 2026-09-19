@@ -1,0 +1,72 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "编辑 SOP：工业机器人末端夹具更换" [level=1]
+  - paragraph: 草稿 · 自动保存于 10:22
+  - button "保存草稿"
+  - button "审核发布"
+  - button "✓ 基础信息":
+    - generic: ✓
+    - generic: 基础信息
+  - button "✓ 教师定义步骤":
+    - generic: ✓
+    - generic: 教师定义步骤
+  - button "✓ 数据与模型映射":
+    - generic: ✓
+    - generic: 数据与模型映射
+  - button "✓ 状态机与评分":
+    - generic: ✓
+    - generic: 状态机与评分
+  - button "5 审核发布" [active]:
+    - generic: "5"
+    - generic: 审核发布
+  - img "check-circle":
+  - heading "SOP 业务标准已满足发布条件" [level=2]
+  - paragraph: 教师定义、步骤依赖、评分与安全规则将随 V1.5 一起冻结；模型版本独立管理。
+  - img "check-circle":
+  - generic: 专业教师已签名
+  - generic: 业务真源责任明确
+  - img "check-circle":
+  - generic: 5 个操作步骤
+  - generic: 依赖、超时与分值完整
+  - img "check-circle":
+  - generic: Other 类已配置
+  - generic: 未知动作不会强行归类
+  - img "alert":
+  - generic: 动作模型 V1.3 训练中
+  - generic: SOP 可发布，自动评价待模型部署
+  - strong: 发布 SOP V1.5
+  - generic: 冻结教师定义的业务标准
+  - strong: 部署动作模型 V1.3
+  - generic: 通过验证后单独上线，可独立回滚

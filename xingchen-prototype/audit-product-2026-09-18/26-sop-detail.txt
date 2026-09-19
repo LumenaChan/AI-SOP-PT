@@ -1,0 +1,98 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "新能源汽车高压安全操作" [level=1]
+  - paragraph: 已发布版本 V3.2 · 创建教师：王老师 · 2026-09-15 发布
+  - button "复制标准"
+  - button "使用标准"
+  - heading "标准概览" [level=2]
+  - generic: 适用操作
+  - strong: 新能源汽车高压系统检修与拆装
+  - generic: 满分
+  - strong: 100 分
+  - generic: 标准耗时
+  - strong: 25 分钟
+  - generic: 标准来源
+  - strong: 专业教师审定
+  - heading "发布状态" [level=2]
+  - img "check-circle":
+  - strong: SOP V3.2 已冻结
+  - paragraph: 动作模型 V1.8 仅负责步骤映射，不可修改标准
+  - strong: 业务真源边界
+  - paragraph: 本版本的步骤、依赖、允许分支、超时和评分均由教师确认。模型输出只能是 Step 01–06 或 Other，任何学习样本与模型升级都不会自动改写 SOP。
+  - img "check-circle":
+  - text: 教师已签名
+  - heading "操作步骤与评分规则" [level=2]
+  - button "1 身份确认与安全防护检查 操作步骤 · 15分 clock-circle 含安全红线 查看详情 →":
+    - generic: "1"
+    - strong: 身份确认与安全防护检查
+    - generic: 操作步骤 · 15分
+    - img "clock-circle":
+    - text: 含安全红线
+    - emphasis: 查看详情 →
+  - button "2 车辆下电并设置安全警示 操作步骤 · 15分 clock-circle 可自动评价 查看详情 →":
+    - generic: "2"
+    - strong: 车辆下电并设置安全警示
+    - generic: 操作步骤 · 15分
+    - img "clock-circle":
+    - text: 可自动评价
+    - emphasis: 查看详情 →
+  - button "3 高压系统验电 操作步骤 · 15分 clock-circle 含安全红线 查看详情 →":
+    - generic: "3"
+    - strong: 高压系统验电
+    - generic: 操作步骤 · 15分
+    - img "clock-circle":
+    - text: 含安全红线
+    - emphasis: 查看详情 →
+  - button "4 拆卸高压接插件 核心步骤 · 25分 clock-circle 含安全红线 查看详情 →":
+    - generic: "4"
+    - strong: 拆卸高压接插件
+    - generic: 核心步骤 · 25分
+    - img "clock-circle":
+    - text: 含安全红线
+    - emphasis: 查看详情 →
+  - button "5 完成绝缘检测 操作步骤 · 15分 clock-circle 可自动评价 查看详情 →":
+    - generic: "5"
+    - strong: 完成绝缘检测
+    - generic: 操作步骤 · 15分
+    - img "clock-circle":
+    - text: 可自动评价
+    - emphasis: 查看详情 →
+  - button "6 恢复与工位复位 操作步骤 · 15分 clock-circle 可自动评价 查看详情 →":
+    - generic: "6"
+    - strong: 恢复与工位复位
+    - generic: 操作步骤 · 15分
+    - img "clock-circle":
+    - text: 可自动评价
+    - emphasis: 查看详情 →

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学生监控页设计 QA 对照</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0f172a; color: #e2e8f0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      header { padding: 18px 24px; border-bottom: 1px solid #334155; }
+      h1 { margin: 0; font-size: 20px; }
+      p { margin: 4px 0 0; color: #94a3b8; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 18px; align-items: start; }
+      figure { margin: 0; padding: 12px; border: 1px solid #334155; border-radius: 10px; background: #111827; }
+      figcaption { margin: 0 0 10px; font-weight: 700; }
+      img { display: block; width: 100%; height: auto; border-radius: 6px; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>学生监控页：参考截图 / 浏览器实现</h1>
+      <p>对照关注布局层级、视频占比、SOP 状态完整性、右侧实时信息密度；参考图字幕不作为界面元素。</p>
+    </header>
+    <main>
+      <figure>
+        <figcaption>参考截图</figcaption>
+        <img src="./23-source-reference.png" alt="用户提供的学生监控参考截图" />
+      </figure>
+      <figure>
+        <figcaption>浏览器实现 · 1280 × 720 CSS viewport</figcaption>
+        <img src="./23-student-monitor-reference-implementation.png" alt="本地原型的学生监控页面" />
+      </figure>
+    </main>
+  </body>
+</html>

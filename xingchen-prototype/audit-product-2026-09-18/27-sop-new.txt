@@ -1,0 +1,104 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "编辑 SOP：工业机器人末端夹具更换" [level=1]
+  - paragraph: 草稿 · 自动保存于 10:22
+  - button "保存草稿"
+  - button "下一步"
+  - button "✓ 基础信息":
+    - generic: ✓
+    - generic: 基础信息
+  - button "2 教师定义步骤":
+    - generic: "2"
+    - generic: 教师定义步骤
+  - button "3 数据与模型映射":
+    - generic: "3"
+    - generic: 数据与模型映射
+  - button "4 状态机与评分":
+    - generic: "4"
+    - generic: 状态机与评分
+  - button "5 审核发布":
+    - generic: "5"
+    - generic: 审核发布
+  - complementary:
+    - heading "教师定义的步骤" [level=2]
+    - button "新增":
+      - text: 新增
+    - button "1 断电并确认安全状态 Step 01 · 必做 · 00:45":
+      - generic: "1"
+      - generic: 断电并确认安全状态
+      - generic: Step 01 · 必做 · 00:45
+    - button "2 拆卸原夹具 Step 02 · 必做 · 02:30":
+      - generic: "2"
+      - generic: 拆卸原夹具
+      - generic: Step 02 · 必做 · 02:30
+    - button "3 清洁安装面 Step 03 · 必做 · 01:30":
+      - generic: "3"
+      - generic: 清洁安装面
+      - generic: Step 03 · 必做 · 01:30
+    - button "4 安装新夹具 Step 04 · 必做 · 04:00":
+      - generic: "4"
+      - generic: 安装新夹具
+      - generic: Step 04 · 必做 · 04:00
+    - button "5 校准与复位 Step 05 · 必做 · 03:00":
+      - generic: "5"
+      - generic: 校准与复位
+      - generic: Step 05 · 必做 · 03:00
+  - heading "Step 04 · 安装新夹具" [level=2]
+  - img "clock-circle":
+  - text: 教师定义
+  - strong: 此处是业务真源，不由模型生成
+  - paragraph: 教师明确步骤名称、顺序、依赖和完成条件后，后续视频标注与模型类别才能引用该步骤。
+  - text: 步骤名称
+  - textbox "步骤名称": 安装新夹具
+  - text: 完成条件
+  - textbox "完成条件": 夹具安装到位，完整执行允许方法之一，并在结束后将工具归位。
+  - text: 前置步骤
+  - combobox "前置步骤":
+    - option "无"
+    - option "Step 01"
+    - option "Step 02"
+    - option "Step 03" [selected]
+  - text: 步骤属性
+  - combobox "步骤属性":
+    - option "必做" [selected]
+    - option "可选"
+    - option "允许分支"
+  - text: 超时阈值
+  - textbox "超时阈值": 04:00
+  - text: 步骤分值
+  - textbox "步骤分值": "25"
+  - button "上移步骤"
+  - button "下移步骤"
+  - generic: 顺序调整会同步更新状态机依赖草稿

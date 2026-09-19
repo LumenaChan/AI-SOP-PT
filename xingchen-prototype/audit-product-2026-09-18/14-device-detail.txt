@@ -1,0 +1,109 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "设备详情 · EDGE-001" [level=1]
+  - paragraph: 边缘推理工作站 · 1号工位
+  - button "编辑资料"
+  - img "hdd":
+  - heading "EDGE-001" [level=2]
+  - paragraph: 边缘推理工作站 · 1号工位
+  - img "exclamation-circle":
+  - text: 异常
+  - text: 在线状态
+  - heading "异常" [level=2]
+  - text: Agent 版本
+  - heading "3.2.1" [level=2]
+  - text: 模型版本
+  - heading "NEV-HS-3.2" [level=2]
+  - text: GPU 温度
+  - heading "89°C · 过热" [level=2]
+  - heading "最近记录" [level=2]
+  - table:
+    - rowgroup:
+      - row "时间 对象 操作/事件 结果 操作":
+        - columnheader "时间"
+        - columnheader "对象"
+        - columnheader "操作/事件"
+        - columnheader "结果"
+        - columnheader "操作"
+    - rowgroup:
+      - row "2026-09-17 10:18 当前对象 clock-circle 状态变更 持续中 查看 2026-09-17 10:18 更多操作：2026-09-17 10:18":
+        - cell "2026-09-17 10:18"
+        - cell "当前对象"
+        - cell "clock-circle 状态变更":
+          - img "clock-circle":
+          - text: 状态变更
+        - cell "持续中"
+        - cell "查看 2026-09-17 10:18 更多操作：2026-09-17 10:18":
+          - button "查看 2026-09-17 10:18": 查看
+          - button "更多操作：2026-09-17 10:18":
+      - row "2026-09-16 18:00 当前对象 资料校验 check-circle 成功 查看 2026-09-16 18:00 更多操作：2026-09-16 18:00":
+        - cell "2026-09-16 18:00"
+        - cell "当前对象"
+        - cell "资料校验"
+        - cell "check-circle 成功":
+          - img "check-circle":
+          - text: 成功
+        - cell "查看 2026-09-16 18:00 更多操作：2026-09-16 18:00":
+          - button "查看 2026-09-16 18:00": 查看
+          - button "更多操作：2026-09-16 18:00":
+      - row "2026-09-15 16:20 当前对象 配置变更 已生效 查看 2026-09-15 16:20 更多操作：2026-09-15 16:20":
+        - cell "2026-09-15 16:20"
+        - cell "当前对象"
+        - cell "配置变更"
+        - cell "已生效"
+        - cell "查看 2026-09-15 16:20 更多操作：2026-09-15 16:20":
+          - button "查看 2026-09-15 16:20": 查看
+          - button "更多操作：2026-09-15 16:20":

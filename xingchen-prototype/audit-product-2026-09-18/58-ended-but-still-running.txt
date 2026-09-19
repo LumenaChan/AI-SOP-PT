@@ -1,0 +1,175 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "新能源汽车高压安全操作练习" [level=1]
+  - paragraph:
+    - img "check-circle":
+    - text: 进行中
+    - text: 开始时间 2026-09-17 10:00 · 已进行 24 分钟
+  - button "暂停练习":
+    - text: 暂停练习
+  - button "结束本次练习"
+  - img "desktop":
+  - strong: "6"
+  - generic: 实训工位
+  - img "desktop":
+  - strong: "3"
+  - generic: 进行中
+  - img "desktop":
+  - strong: "1"
+  - generic: 待开始
+  - img "desktop":
+  - strong: "1"
+  - generic: 已暂停
+  - img "desktop":
+  - strong: "1"
+  - generic: 待复位
+  - img "desktop":
+  - strong: "1"
+  - generic: 故障
+  - text: 整体进度
+  - strong: 50%
+  - generic: 3 / 6 已完成步骤
+  - heading "工位实时画面" [level=2]
+  - button "appstore 图像模式":
+    - img "appstore":
+    - text: 图像模式
+  - button "file-text 列表模式":
+    - img "file-text":
+    - text: 列表模式
+  - button "1号工位 exclamation-circle 故障 1号工位 LIVE 张浩 学号 20241001 78分 当前步骤：高压电池包断电 clock-circle 00:18:27 alert 检测到安全风险 查看详情 →":
+    - strong: 1号工位
+    - img "exclamation-circle":
+    - text: 故障
+    - img "1号工位"
+    - generic: LIVE
+    - strong: 张浩
+    - generic: 学号 20241001
+    - generic: 78分
+    - paragraph:
+      - generic: 当前步骤：高压电池包断电
+      - img "clock-circle":
+      - text: 00:18:27
+    - img "alert":
+    - text: 检测到安全风险
+    - generic: 查看详情 →
+  - button "2号工位 check-circle 进行中 2号工位 LIVE 李思雨 学号 20241002 92分 当前步骤：车辆下电与验电 clock-circle 00:16:05":
+    - strong: 2号工位
+    - img "check-circle":
+    - text: 进行中
+    - img "2号工位"
+    - generic: LIVE
+    - strong: 李思雨
+    - generic: 学号 20241002
+    - generic: 92分
+    - paragraph:
+      - generic: 当前步骤：车辆下电与验电
+      - img "clock-circle":
+      - text: 00:16:05
+  - button "3号工位 clock-circle 已暂停 3号工位 LIVE 陈宇 学号 20241003 85分 当前步骤：高压部件拆装 clock-circle 00:12:14":
+    - strong: 3号工位
+    - img "clock-circle":
+    - text: 已暂停
+    - img "3号工位"
+    - generic: LIVE
+    - strong: 陈宇
+    - generic: 学号 20241003
+    - generic: 85分
+    - paragraph:
+      - generic: 当前步骤：高压部件拆装
+      - img "clock-circle":
+      - text: 00:12:14
+  - button "4号工位 clock-circle 待开始 4号工位 LIVE 王梓轩 学号 20241004 -- 当前步骤：等待开始 clock-circle --":
+    - strong: 4号工位
+    - img "clock-circle":
+    - text: 待开始
+    - img "4号工位"
+    - generic: LIVE
+    - strong: 王梓轩
+    - generic: 学号 20241004
+    - generic: "--"
+    - paragraph:
+      - generic: 当前步骤：等待开始
+      - img "clock-circle":
+      - text: "--"
+  - button "5号工位 check-circle 进行中 5号工位 LIVE 刘佳怡 学号 20241005 88分 当前步骤：绝缘检测 clock-circle 00:20:11":
+    - strong: 5号工位
+    - img "check-circle":
+    - text: 进行中
+    - img "5号工位"
+    - generic: LIVE
+    - strong: 刘佳怡
+    - generic: 学号 20241005
+    - generic: 88分
+    - paragraph:
+      - generic: 当前步骤：绝缘检测
+      - img "clock-circle":
+      - text: 00:20:11
+  - button "6号工位 clock-circle 待复位 6号工位 LIVE 赵子墨 学号 20241006 81分 当前步骤：高压接插件安装 clock-circle 00:08:33":
+    - strong: 6号工位
+    - img "clock-circle":
+    - text: 待复位
+    - img "6号工位"
+    - generic: LIVE
+    - strong: 赵子墨
+    - generic: 学号 20241006
+    - generic: 81分
+    - paragraph:
+      - generic: 当前步骤：高压接插件安装
+      - img "clock-circle":
+      - text: 00:08:33
+  - complementary:
+    - heading "异常与关键事件" [level=2]
+    - button "全部事件⌄"
+    - button "10:18 1号工位 安全预警 张浩 未按规范佩戴绝缘手套":
+      - time: 10:18
+      - strong: 1号工位 安全预警
+      - generic: 张浩 未按规范佩戴绝缘手套
+    - button "10:15 3号工位 学生暂停 陈宇 主动暂停练习":
+      - time: 10:15
+      - strong: 3号工位 学生暂停
+      - generic: 陈宇 主动暂停练习
+    - button "10:12 5号工位 完成步骤 刘佳怡 完成高压线束检测":
+      - time: 10:12
+      - strong: 5号工位 完成步骤
+      - generic: 刘佳怡 完成高压线束检测
+    - button "10:07 6号工位 需要复位 请检查设备并复位":
+      - time: 10:07
+      - strong: 6号工位 需要复位
+      - generic: 请检查设备并复位
+    - button "10:03 2号工位 完成步骤 李思雨 完成车辆下电与验电":
+      - time: 10:03
+      - strong: 2号工位 完成步骤
+      - generic: 李思雨 完成车辆下电与验电
+- img "check-circle":
+- text: 安排已结束，正在生成报告

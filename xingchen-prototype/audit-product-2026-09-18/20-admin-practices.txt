@@ -1,0 +1,126 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "练习记录" [level=1]
+  - paragraph: 跨教师只读查看全校教学数据，视频访问将留痕
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "导出列表":
+    - text: 导出列表
+  - table:
+    - rowgroup:
+      - row "安排名称 负责教师 SOP 人数 状态 日期 操作":
+        - columnheader "安排名称"
+        - columnheader "负责教师"
+        - columnheader "SOP"
+        - columnheader "人数"
+        - columnheader "状态"
+        - columnheader "日期"
+        - columnheader "操作"
+    - rowgroup:
+      - row "新能源汽车高压安全操作练习 王老师 新能源汽车高压安全操作 28人 check-circle 进行中 2026-09-17 10:00 查看 新能源汽车高压安全操作练习 更多操作：新能源汽车高压安全操作练习":
+        - cell "新能源汽车高压安全操作练习"
+        - cell "王老师"
+        - cell "新能源汽车高压安全操作"
+        - cell "28人"
+        - cell "check-circle 进行中":
+          - img "check-circle":
+          - text: 进行中
+        - cell "2026-09-17 10:00"
+        - cell "查看 新能源汽车高压安全操作练习 更多操作：新能源汽车高压安全操作练习":
+          - button "查看 新能源汽车高压安全操作练习": 查看
+          - button "更多操作：新能源汽车高压安全操作练习":
+      - row "2402班高压安全强化练习 李老师 新能源汽车高压安全操作 24人 clock-circle 待开始 2026-09-18 14:00 查看 2402班高压安全强化练习 更多操作：2402班高压安全强化练习":
+        - cell "2402班高压安全强化练习"
+        - cell "李老师"
+        - cell "新能源汽车高压安全操作"
+        - cell "24人"
+        - cell "clock-circle 待开始":
+          - img "clock-circle":
+          - text: 待开始
+        - cell "2026-09-18 14:00"
+        - cell "查看 2402班高压安全强化练习 更多操作：2402班高压安全强化练习":
+          - button "查看 2402班高压安全强化练习": 查看
+          - button "更多操作：2402班高压安全强化练习":
+      - row "机器人夹具更换练习 周老师 工业机器人末端夹具更换 20人 clock-circle 草稿 2026-09-20 09:00 查看 机器人夹具更换练习 更多操作：机器人夹具更换练习":
+        - cell "机器人夹具更换练习"
+        - cell "周老师"
+        - cell "工业机器人末端夹具更换"
+        - cell "20人"
+        - cell "clock-circle 草稿":
+          - img "clock-circle":
+          - text: 草稿
+        - cell "2026-09-20 09:00"
+        - cell "查看 机器人夹具更换练习 更多操作：机器人夹具更换练习":
+          - button "查看 机器人夹具更换练习": 查看
+          - button "更多操作：机器人夹具更换练习":
+      - row "数控装夹阶段练习 王老师 数控车床工件装夹 32人 已结束 2026-09-12 13:30 查看 数控装夹阶段练习 更多操作：数控装夹阶段练习":
+        - cell "数控装夹阶段练习"
+        - cell "王老师"
+        - cell "数控车床工件装夹"
+        - cell "32人"
+        - cell "已结束"
+        - cell "2026-09-12 13:30"
+        - cell "查看 数控装夹阶段练习 更多操作：数控装夹阶段练习":
+          - button "查看 数控装夹阶段练习": 查看
+          - button "更多操作：数控装夹阶段练习":
+  - paragraph:
+    - img "eye":
+    - text: 当前为管理员只读视图，不提供开始、暂停、改分、发布或复位操作。

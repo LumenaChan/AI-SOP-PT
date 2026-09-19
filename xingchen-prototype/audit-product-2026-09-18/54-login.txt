@@ -1,0 +1,17 @@
+- img "product":
+- heading "兴辰智能" [level=1]
+- paragraph: 通用实训操作过程智能评价系统
+- img "safety-certificate":
+- heading "每一次评价都有依据" [level=2]
+- paragraph: 用标准、过程与证据，帮助教师更轻松地管理实训现场。
+- text: 校内业务入口
+- heading "欢迎登录" [level=2]
+- paragraph: 请选择角色并输入账号信息
+- button "教师"
+- button "管理员"
+- text: 账号
+- textbox "账号": wanglaoshi
+- text: 密码
+- textbox "密码"
+- button "登录系统"
+- generic: 原型演示账号已预填，可直接登录

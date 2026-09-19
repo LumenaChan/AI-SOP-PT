@@ -1,0 +1,117 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "操作日志" [level=1]
+  - paragraph: 审计关键访问、业务控制和数据变更
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "导出日志":
+    - text: 导出日志
+  - table:
+    - rowgroup:
+      - row "时间 操作者 角色 操作 对象 结果 操作":
+        - columnheader "时间"
+        - columnheader "操作者"
+        - columnheader "角色"
+        - columnheader "操作"
+        - columnheader "对象"
+        - columnheader "结果"
+        - columnheader "操作"
+    - rowgroup:
+      - row "10:22:18 王伟 教师 撤销误判 张浩 / EV-0932 成功 查看 10:22:18 更多操作：10:22:18":
+        - cell "10:22:18"
+        - cell "王伟"
+        - cell "教师"
+        - cell "撤销误判"
+        - cell "张浩 / EV-0932"
+        - cell "成功"
+        - cell "查看 10:22:18 更多操作：10:22:18":
+          - button "查看 10:22:18": 查看
+          - button "更多操作：10:22:18":
+      - row "10:18:55 admin 管理员 查看视频 1号工位 成功 查看 10:18:55 更多操作：10:18:55":
+        - cell "10:18:55"
+        - cell "admin"
+        - cell "管理员"
+        - cell "查看视频"
+        - cell "1号工位"
+        - cell "成功"
+        - cell "查看 10:18:55 更多操作：10:18:55":
+          - button "查看 10:18:55": 查看
+          - button "更多操作：10:18:55":
+      - row "10:15:03 王伟 教师 暂停工位 3号工位 成功 查看 10:15:03 更多操作：10:15:03":
+        - cell "10:15:03"
+        - cell "王伟"
+        - cell "教师"
+        - cell "暂停工位"
+        - cell "3号工位"
+        - cell "成功"
+        - cell "查看 10:15:03 更多操作：10:15:03":
+          - button "查看 10:15:03": 查看
+          - button "更多操作：10:15:03":
+      - row "09:42:16 admin 管理员 编辑设备配置 EDGE-003 待生效 查看 09:42:16 更多操作：09:42:16":
+        - cell "09:42:16"
+        - cell "admin"
+        - cell "管理员"
+        - cell "编辑设备配置"
+        - cell "EDGE-003"
+        - cell "待生效"
+        - cell "查看 09:42:16 更多操作：09:42:16":
+          - button "查看 09:42:16": 查看
+          - button "更多操作：09:42:16":

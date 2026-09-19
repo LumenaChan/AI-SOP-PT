@@ -1,0 +1,116 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "工位管理" [level=1]
+  - paragraph: 查看物理工位、固定设备与当前占用
+  - button "新建工位":
+    - text: 新建工位
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "新建工位":
+    - text: 新建工位
+  - table:
+    - rowgroup:
+      - row "工位 位置 状态 边缘节点 当前安排 操作":
+        - columnheader "工位"
+        - columnheader "位置"
+        - columnheader "状态"
+        - columnheader "边缘节点"
+        - columnheader "当前安排"
+        - columnheader "操作"
+    - rowgroup:
+      - row "1号工位 A区-01 exclamation-circle 故障 EDGE-001 高压安全操作练习 查看 1号工位 更多操作：1号工位":
+        - cell "1号工位"
+        - cell "A区-01"
+        - cell "exclamation-circle 故障":
+          - img "exclamation-circle":
+          - text: 故障
+        - cell "EDGE-001"
+        - cell "高压安全操作练习"
+        - cell "查看 1号工位 更多操作：1号工位":
+          - button "查看 1号工位": 查看
+          - button "更多操作：1号工位":
+      - row "2号工位 A区-02 使用中 EDGE-002 高压安全操作练习 查看 2号工位 更多操作：2号工位":
+        - cell "2号工位"
+        - cell "A区-02"
+        - cell "使用中"
+        - cell "EDGE-002"
+        - cell "高压安全操作练习"
+        - cell "查看 2号工位 更多操作：2号工位":
+          - button "查看 2号工位": 查看
+          - button "更多操作：2号工位":
+      - row "3号工位 A区-03 暂停中 EDGE-003 高压安全操作练习 查看 3号工位 更多操作：3号工位":
+        - cell "3号工位"
+        - cell "A区-03"
+        - cell "暂停中"
+        - cell "EDGE-003"
+        - cell "高压安全操作练习"
+        - cell "查看 3号工位 更多操作：3号工位":
+          - button "查看 3号工位": 查看
+          - button "更多操作：3号工位":
+      - row "4号工位 A区-04 可入场 EDGE-004 高压安全操作练习 查看 4号工位 更多操作：4号工位":
+        - cell "4号工位"
+        - cell "A区-04"
+        - cell "可入场"
+        - cell "EDGE-004"
+        - cell "高压安全操作练习"
+        - cell "查看 4号工位 更多操作：4号工位":
+          - button "查看 4号工位": 查看
+          - button "更多操作：4号工位":

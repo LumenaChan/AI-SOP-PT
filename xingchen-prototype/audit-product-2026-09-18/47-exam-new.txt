@@ -1,0 +1,95 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "创建考试" [level=1]
+  - paragraph: 配置本次考试的标准、参与学生与可用工位
+  - button "保存草稿"
+  - button "完成配置，进入准备"
+  - heading "基本信息" [level=2]
+  - text: 考试名称
+  - textbox "考试名称": 新能源汽车高压安全操作考试
+  - text: 允许入场开始时间
+  - textbox "允许入场开始时间": 2026-09-22T14:00
+  - text: 允许入场截止时间
+  - textbox "允许入场截止时间": 2026-09-22T14:30
+  - heading "评价标准" [level=2]
+  - button "book 新能源汽车高压安全操作 SOP V3.2（教师审定） · 动作模型 V1.8 · 6个步骤 clock-circle 自动识别就绪 更换":
+    - img "book":
+    - strong: 新能源汽车高压安全操作
+    - generic: SOP V3.2（教师审定） · 动作模型 V1.8 · 6个步骤
+    - img "clock-circle":
+    - text: 自动识别就绪
+    - generic: 更换
+  - heading "参与学生" [level=2]
+  - button "team 已选择 32 名学生 新能源2401班全班 + 跨班学生 4 人 编辑名单":
+    - img "team":
+    - strong: 已选择 32 名学生
+    - generic: 新能源2401班全班 + 跨班学生 4 人
+    - generic: 编辑名单
+  - complementary:
+    - heading "选择工位" [level=2]
+    - generic: 6 个已选
+    - checkbox "1号工位 A区-01 · 固定设备 6 项 exclamation-circle 存在异常" [checked]
+    - strong: 1号工位
+    - generic: A区-01 · 固定设备 6 项
+    - img "exclamation-circle":
+    - text: 存在异常
+    - checkbox "2号工位 A区-02 · 固定设备 6 项 clock-circle 可选择" [checked]
+    - strong: 2号工位
+    - generic: A区-02 · 固定设备 6 项
+    - img "clock-circle":
+    - text: 可选择
+    - checkbox "3号工位 A区-03 · 固定设备 6 项 clock-circle 可选择" [checked]
+    - strong: 3号工位
+    - generic: A区-03 · 固定设备 6 项
+    - img "clock-circle":
+    - text: 可选择
+    - checkbox "4号工位 A区-04 · 固定设备 6 项 clock-circle 可选择" [checked]
+    - strong: 4号工位
+    - generic: A区-04 · 固定设备 6 项
+    - img "clock-circle":
+    - text: 可选择
+    - checkbox "5号工位 A区-05 · 固定设备 6 项 clock-circle 可选择" [checked]
+    - strong: 5号工位
+    - generic: A区-05 · 固定设备 6 项
+    - img "clock-circle":
+    - text: 可选择
+    - checkbox "6号工位 A区-06 · 固定设备 6 项 clock-circle 可选择" [checked]
+    - strong: 6号工位
+    - generic: A区-06 · 固定设备 6 项
+    - img "clock-circle":
+    - text: 可选择
+    - paragraph:
+      - img "alert":
+      - text: 选择工位不等于设备已就绪，下一步需逐工位检查。

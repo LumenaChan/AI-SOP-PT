@@ -1,0 +1,139 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "考试结果汇总" [level=1]
+  - paragraph: 新能源汽车高压安全操作 · 2026-09-17
+  - button "导出":
+    - text: 导出
+  - button "统一发布"
+  - img "bar-chart":
+  - generic: 平均得分
+  - strong: "86.8"
+  - paragraph: 较上次 +3.2
+  - img "check-circle":
+  - generic: 完成情况
+  - strong: 28/32
+  - paragraph: 4 人未参加
+  - img "alert":
+  - generic: 待复核
+  - strong: "2"
+  - paragraph: 阻断正式成绩
+  - img "safety-certificate":
+  - generic: 安全事件
+  - strong: "1"
+  - paragraph: 1 项已撤销误判
+  - heading "共性错误" [level=2]
+  - button "1 绝缘手套佩戴不规范 12人":
+    - generic: "1"
+    - generic: 绝缘手套佩戴不规范
+    - emphasis: 12人
+  - button "2 未执行二次验电 9人":
+    - generic: "2"
+    - generic: 未执行二次验电
+    - emphasis: 9人
+  - button "3 接插件未二次确认 7人":
+    - generic: "3"
+    - generic: 接插件未二次确认
+    - emphasis: 7人
+  - heading "重点辅导学生" [level=2]
+  - generic: 张浩
+  - generic: 待复核 · 当前78分
+  - generic: 赵子墨
+  - generic: 3个薄弱步骤 · 当前81分
+  - generic: 王梓轩
+  - generic: 未参加
+  - heading "学生结果" [level=2]
+  - table:
+    - rowgroup:
+      - row "学生 学号 班级 当前得分 评价状态 主要问题 操作":
+        - columnheader "学生"
+        - columnheader "学号"
+        - columnheader "班级"
+        - columnheader "当前得分"
+        - columnheader "评价状态"
+        - columnheader "主要问题"
+        - columnheader "操作"
+    - rowgroup:
+      - row "张浩 20241001 新能源2401班 78分 clock-circle 待复核 绝缘手套佩戴不规范 查看 张浩 更多操作：张浩":
+        - cell "张浩"
+        - cell "20241001"
+        - cell "新能源2401班"
+        - cell "78分"
+        - cell "clock-circle 待复核":
+          - img "clock-circle":
+          - text: 待复核
+        - cell "绝缘手套佩戴不规范"
+        - cell "查看 张浩 更多操作：张浩":
+          - button "查看 张浩": 查看
+          - button "更多操作：张浩":
+      - row "李思雨 20241002 新能源2401班 92分 正式成绩 无 查看 李思雨 更多操作：李思雨":
+        - cell "李思雨"
+        - cell "20241002"
+        - cell "新能源2401班"
+        - cell "92分"
+        - cell "正式成绩"
+        - cell "无"
+        - cell "查看 李思雨 更多操作：李思雨":
+          - button "查看 李思雨": 查看
+          - button "更多操作：李思雨":
+      - row "陈宇 20241003 新能源2401班 85分 正式成绩 验电顺序错误 查看 陈宇 更多操作：陈宇":
+        - cell "陈宇"
+        - cell "20241003"
+        - cell "新能源2401班"
+        - cell "85分"
+        - cell "正式成绩"
+        - cell "验电顺序错误"
+        - cell "查看 陈宇 更多操作：陈宇":
+          - button "查看 陈宇": 查看
+          - button "更多操作：陈宇":
+      - row "刘佳怡 20241005 新能源2402班 88分 正式成绩 工具放置不规范 查看 刘佳怡 更多操作：刘佳怡":
+        - cell "刘佳怡"
+        - cell "20241005"
+        - cell "新能源2402班"
+        - cell "88分"
+        - cell "正式成绩"
+        - cell "工具放置不规范"
+        - cell "查看 刘佳怡 更多操作：刘佳怡":
+          - button "查看 刘佳怡": 查看
+          - button "更多操作：刘佳怡":
+      - row "赵子墨 20241006 新能源2402班 81分 生成中 接插件未二次确认 查看 赵子墨 更多操作：赵子墨":
+        - cell "赵子墨"
+        - cell "20241006"
+        - cell "新能源2402班"
+        - cell "81分"
+        - cell "生成中"
+        - cell "接插件未二次确认"
+        - cell "查看 赵子墨 更多操作：赵子墨":
+          - button "查看 赵子墨": 查看
+          - button "更多操作：赵子墨":

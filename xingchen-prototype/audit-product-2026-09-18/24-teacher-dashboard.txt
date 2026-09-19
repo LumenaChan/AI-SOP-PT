@@ -1,0 +1,109 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "教师工作台" [level=1]
+  - paragraph: 上午好，王老师。这里汇总了今天的安排与需要处理的事项。
+  - button "创建练习":
+    - text: 创建练习
+  - img "edit":
+  - generic: 今日安排
+  - strong: "4"
+  - paragraph: 2 场进行中
+  - img "alert":
+  - generic: 待复核评价
+  - strong: "6"
+  - paragraph: 其中 2 项证据不足
+  - img "file-done":
+  - generic: 待发布考试
+  - strong: "1"
+  - paragraph: 已参加者均已完成
+  - img "reload":
+  - generic: 训练中 SOP
+  - strong: "3"
+  - paragraph: 1 项需补素材
+  - heading "今日安排" [level=2]
+  - button "查看全部 →"
+  - button "10:00 新能源汽车高压安全操作练习 新能源汽车高压安全操作 · 28人 check-circle 进行中 进入 →":
+    - generic: 10:00
+    - strong: 新能源汽车高压安全操作练习
+    - generic: 新能源汽车高压安全操作 · 28人
+    - img "check-circle":
+    - text: 进行中
+    - generic: 进入 →
+  - button "14:00 2402班高压安全强化练习 新能源汽车高压安全操作 · 24人 clock-circle 待开始 进入 →":
+    - generic: 14:00
+    - strong: 2402班高压安全强化练习
+    - generic: 新能源汽车高压安全操作 · 24人
+    - img "clock-circle":
+    - text: 待开始
+    - generic: 进入 →
+  - button "16:30 机器人夹具更换练习 工业机器人末端夹具更换 · 20人 clock-circle 草稿 进入 →":
+    - generic: 16:30
+    - strong: 机器人夹具更换练习
+    - generic: 工业机器人末端夹具更换 · 20人
+    - img "clock-circle":
+    - text: 草稿
+    - generic: 进入 →
+  - heading "待办事项" [level=2]
+  - button "alert 张浩的评价等待复核 高压安全操作练习 · 证据不足 处理":
+    - img "alert":
+    - strong: 张浩的评价等待复核
+    - generic: 高压安全操作练习 · 证据不足
+    - generic: 处理
+  - button "file-done 期中考试可统一发布 28 名已参加学生均有正式成绩 查看":
+    - img "file-done":
+    - strong: 期中考试可统一发布
+    - generic: 28 名已参加学生均有正式成绩
+    - generic: 查看
+  - button "reload 动作模型需要补充训练样本 工业机器人末端夹具更换 处理":
+    - img "reload":
+    - strong: 动作模型需要补充训练样本
+    - generic: 工业机器人末端夹具更换
+    - generic: 处理
+  - heading "近期学生表现" [level=2]
+  - strong: "86.8"
+  - text: 平均得分
+  - strong: 91%
+  - text: 按时完成率
+  - strong: "7"
+  - text: 重点辅导学生
+  - heading "高频错误" [level=2]
+  - generic: "1"
+  - text: 绝缘手套佩戴不规范
+  - emphasis: 12 人
+  - generic: "2"
+  - text: 未执行二次验电
+  - emphasis: 9 人
+  - generic: "3"
+  - text: 高压接插件未锁止
+  - emphasis: 7 人

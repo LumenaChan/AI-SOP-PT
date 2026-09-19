@@ -1,0 +1,109 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "编辑 SOP：工业机器人末端夹具更换" [level=1]
+  - paragraph: 草稿 · 自动保存于 10:22
+  - button "保存草稿"
+  - button "下一步"
+  - button "✓ 基础信息":
+    - generic: ✓
+    - generic: 基础信息
+  - button "✓ 教师定义步骤":
+    - generic: ✓
+    - generic: 教师定义步骤
+  - button "3 数据与模型映射" [active]:
+    - generic: "3"
+    - generic: 数据与模型映射
+  - button "4 状态机与评分":
+    - generic: "4"
+    - generic: 状态机与评分
+  - button "5 审核发布":
+    - generic: "5"
+    - generic: 审核发布
+  - heading "动作数据集与步骤映射" [level=2]
+  - button "上传标注视频":
+    - text: 上传标注视频
+  - code: Step 01
+  - strong: 断电并确认安全状态
+  - generic: 动作分类标签
+  - generic: 86 段
+  - img "check-circle":
+  - text: 已验证
+  - code: Step 02
+  - strong: 拆卸原夹具
+  - generic: 动作分类标签
+  - generic: 74 段
+  - img "check-circle":
+  - text: 已验证
+  - code: Step 03
+  - strong: 清洁安装面
+  - generic: 动作分类标签
+  - generic: 61 段
+  - img "clock-circle":
+  - text: 样本偏少
+  - code: Step 04
+  - strong: 安装新夹具
+  - generic: 动作分类标签
+  - generic: 105 段
+  - img "check-circle":
+  - text: 已验证
+  - code: Step 05
+  - strong: 校准与复位
+  - generic: 动作分类标签
+  - generic: 79 段
+  - img "check-circle":
+  - text: 已验证
+  - code: Other
+  - strong: 非 SOP / 遮挡 / 停顿 / 错工具
+  - generic: 动作分类标签
+  - generic: 128 段
+  - img "check-circle":
+  - text: 必选类别
+  - heading "动作模型 V1.3" [level=2]
+  - img "clock-circle":
+  - text: 训练中
+  - img "reload":
+  - strong: 按固定动作类别训练
+  - paragraph: 类别来自教师已定义的 Step 01–05 与 Other，不会自动扩展或改名。
+  - generic: Dataset
+  - strong: 夹具更换 D3
+  - generic: 验证 F1
+  - strong: 91.6%
+  - generic: Sequence Accuracy
+  - strong: 86.4%
+  - generic: Other Recall
+  - strong: 93.1%
+  - strong: 发现 7 段标签冲突
+  - paragraph: 系统只提示可能的错标，教师或标注人员确认后才会更新数据集；不会修改 SOP。
+  - button "审核样本"

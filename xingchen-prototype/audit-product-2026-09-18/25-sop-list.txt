@@ -1,0 +1,122 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "SOP 标准库" [level=1]
+  - paragraph: 创建、审核并复用全校可用的实训评价标准
+  - button "创建 SOP":
+    - text: 创建 SOP
+  - tablist "标准范围":
+    - tab "我的标准" [selected]
+    - tab "全校标准"
+  - region "SOP 治理原则":
+    - strong: SOP 由专业教师定义
+    - generic: 步骤、顺序、评分与安全红线是教学业务真源
+    - generic: →
+    - strong: 模型只识别与映射
+    - generic: 视频片段仅映射到已定义步骤或 Other
+    - generic: →
+    - strong: 状态机负责判定
+    - generic: 确定正常、跳步、重复、错序、超时与异常
+  - img "search":
+  - textbox "搜索 SOP 名称或创建教师"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - table:
+    - rowgroup:
+      - row "标准名称 创建教师 版本 发布状态 动作模型 更新时间 操作":
+        - columnheader "标准名称"
+        - columnheader "创建教师"
+        - columnheader "版本"
+        - columnheader "发布状态"
+        - columnheader "动作模型"
+        - columnheader "更新时间"
+        - columnheader "操作"
+    - rowgroup:
+      - row "新能源汽车高压安全操作 王老师 V3.2 check-circle 已发布 check-circle 训练完成 2026-09-15 16:32 查看 新能源汽车高压安全操作 更多操作：新能源汽车高压安全操作":
+        - cell "新能源汽车高压安全操作"
+        - cell "王老师"
+        - cell "V3.2"
+        - cell "check-circle 已发布":
+          - img "check-circle":
+          - text: 已发布
+        - cell "check-circle 训练完成":
+          - img "check-circle":
+          - text: 训练完成
+        - cell "2026-09-15 16:32"
+        - cell "查看 新能源汽车高压安全操作 更多操作：新能源汽车高压安全操作":
+          - button "查看 新能源汽车高压安全操作": 查看
+          - button "更多操作：新能源汽车高压安全操作":
+      - row "工业机器人末端夹具更换 王老师 V1.4 clock-circle 草稿 需补充素材 2026-09-14 10:18 查看 工业机器人末端夹具更换 更多操作：工业机器人末端夹具更换":
+        - cell "工业机器人末端夹具更换"
+        - cell "王老师"
+        - cell "V1.4"
+        - cell "clock-circle 草稿":
+          - img "clock-circle":
+          - text: 草稿
+        - cell "需补充素材"
+        - cell "2026-09-14 10:18"
+        - cell "查看 工业机器人末端夹具更换 更多操作：工业机器人末端夹具更换":
+          - button "查看 工业机器人末端夹具更换": 查看
+          - button "更多操作：工业机器人末端夹具更换":
+      - row "数控车床工件装夹 李老师 V2.1 check-circle 已发布 check-circle 训练完成 2026-09-12 09:44 查看 数控车床工件装夹 更多操作：数控车床工件装夹":
+        - cell "数控车床工件装夹"
+        - cell "李老师"
+        - cell "V2.1"
+        - cell "check-circle 已发布":
+          - img "check-circle":
+          - text: 已发布
+        - cell "check-circle 训练完成":
+          - img "check-circle":
+          - text: 训练完成
+        - cell "2026-09-12 09:44"
+        - cell "查看 数控车床工件装夹 更多操作：数控车床工件装夹":
+          - button "查看 数控车床工件装夹": 查看
+          - button "更多操作：数控车床工件装夹":
+      - row "电气控制柜故障排查 周老师 V1.8 check-circle 已发布 check-circle 训练完成 2026-09-10 14:21 查看 电气控制柜故障排查 更多操作：电气控制柜故障排查":
+        - cell "电气控制柜故障排查"
+        - cell "周老师"
+        - cell "V1.8"
+        - cell "check-circle 已发布":
+          - img "check-circle":
+          - text: 已发布
+        - cell "check-circle 训练完成":
+          - img "check-circle":
+          - text: 训练完成
+        - cell "2026-09-10 14:21"
+        - cell "查看 电气控制柜故障排查 更多操作：电气控制柜故障排查":
+          - button "查看 电气控制柜故障排查": 查看
+          - button "更多操作：电气控制柜故障排查":

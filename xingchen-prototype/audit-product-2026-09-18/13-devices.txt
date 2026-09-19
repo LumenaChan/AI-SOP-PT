@@ -1,0 +1,122 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "设备管理" [level=1]
+  - paragraph: 维护边缘节点、摄像头、音频与反馈设备
+  - button "登记设备":
+    - text: 登记设备
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "登记设备":
+    - text: 登记设备
+  - table:
+    - rowgroup:
+      - row "设备 类型 状态 所属工位 版本 操作":
+        - columnheader "设备"
+        - columnheader "类型"
+        - columnheader "状态"
+        - columnheader "所属工位"
+        - columnheader "版本"
+        - columnheader "操作"
+    - rowgroup:
+      - row "EDGE-001 边缘工作站 exclamation-circle 异常 1号工位 Agent 3.2.1 查看 EDGE-001 更多操作：EDGE-001":
+        - cell "EDGE-001"
+        - cell "边缘工作站"
+        - cell "exclamation-circle 异常":
+          - img "exclamation-circle":
+          - text: 异常
+        - cell "1号工位"
+        - cell "Agent 3.2.1"
+        - cell "查看 EDGE-001 更多操作：EDGE-001":
+          - button "查看 EDGE-001": 查看
+          - button "更多操作：EDGE-001":
+      - row "CAM-001-A 全景摄像头 check-circle 在线 1号工位 FW 2.4 查看 CAM-001-A 更多操作：CAM-001-A":
+        - cell "CAM-001-A"
+        - cell "全景摄像头"
+        - cell "check-circle 在线":
+          - img "check-circle":
+          - text: 在线
+        - cell "1号工位"
+        - cell "FW 2.4"
+        - cell "查看 CAM-001-A 更多操作：CAM-001-A":
+          - button "查看 CAM-001-A": 查看
+          - button "更多操作：CAM-001-A":
+      - row "CAM-001-B 细节摄像头 check-circle 在线 1号工位 FW 2.4 查看 CAM-001-B 更多操作：CAM-001-B":
+        - cell "CAM-001-B"
+        - cell "细节摄像头"
+        - cell "check-circle 在线":
+          - img "check-circle":
+          - text: 在线
+        - cell "1号工位"
+        - cell "FW 2.4"
+        - cell "查看 CAM-001-B 更多操作：CAM-001-B":
+          - button "查看 CAM-001-B": 查看
+          - button "更多操作：CAM-001-B":
+      - row "AUDIO-002 定向麦克风 check-circle 在线 2号工位 FW 1.9 查看 AUDIO-002 更多操作：AUDIO-002":
+        - cell "AUDIO-002"
+        - cell "定向麦克风"
+        - cell "check-circle 在线":
+          - img "check-circle":
+          - text: 在线
+        - cell "2号工位"
+        - cell "FW 1.9"
+        - cell "查看 AUDIO-002 更多操作：AUDIO-002":
+          - button "查看 AUDIO-002": 查看
+          - button "更多操作：AUDIO-002":

@@ -1,0 +1,143 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "4号工位 · 王梓轩" [level=1]
+  - paragraph:
+    - text: 学号 20241004 · 新能源汽车高压安全操作 ·
+    - img "clock-circle":
+    - text: 待开始
+  - button "暂停评价":
+    - text: 暂停评价
+  - button "查看学生报告"
+  - generic: LIVE
+  - strong: 主视角
+  - generic: 动作识别 V1.8 · SOP V3.2 已锁定
+  - tablist "视频视角":
+    - tab "主视角" [selected]:
+      - text: 主视角
+    - tab "辅助视角":
+      - text: 辅助视角
+  - img "王梓轩工业操作实时视频，手部动作检测框已开启"
+  - text: 人体 1
+  - text: 手部关键点已锁定
+  - generic: 置信度 92%
+  - generic: 状态机：顺序合法
+  - generic: 模型候选动作
+  - strong: 拆卸高压接插件
+  - time:
+    - text: "--"
+  - heading "SOP 动作完成情况" [level=2]
+  - generic: 3 / 6 已完成 · 1 项进行中
+  - button "1 身份确认与安全防护检查，通过，用时 00:42":
+    - generic: "1"
+    - strong: 安全防护
+    - generic: 00:42
+    - text: 通过
+  - button "2 车辆下电并设置安全警示，通过，用时 01:18":
+    - generic: "2"
+    - strong: 车辆下电
+    - generic: 01:18
+    - text: 通过
+  - button "3 高压系统验电，不通过，用时 00:58":
+    - generic: "3"
+    - strong: 高压验电
+    - generic: 00:58
+    - text: 不通过
+  - button "4 拆卸高压接插件，进行中，用时 02:14":
+    - generic: "4"
+    - strong: 拆卸接插件
+    - generic: 02:14
+    - text: 进行中
+  - button "5 完成绝缘检测，未进行，用时 --:--":
+    - generic: "5"
+    - strong: 绝缘检测
+    - generic: "--:--"
+    - text: 未进行
+  - button "6 恢复与工位复位，未进行，用时 --:--":
+    - generic: "6"
+    - strong: 工位复位
+    - generic: "--:--"
+    - text: 未进行
+  - complementary:
+    - strong: "--"
+    - generic: 实时得分
+    - generic: 完成进度
+    - strong: 50%
+    - generic: 有效用时
+    - strong: "--"
+    - generic: 异常提醒
+    - strong: "1"
+    - generic: 当前查看 · 步骤 4
+    - heading "拆卸高压接插件" [level=2]
+    - img "clock-circle":
+    - text: 进行中
+    - generic: 评价结果
+    - strong: 进行中
+    - generic: 本步骤用时
+    - strong: 02:14
+    - generic: 当前得分
+    - strong: 实时评价
+    - article:
+      - text: 标准要求
+      - paragraph: 解除二次锁止，沿规定方向稳定拆卸接插件并完成绝缘防护。
+    - article:
+      - text: 实时观察
+      - paragraph: 当前识别到双手稳定握持接插件，动作置信度 92%。
+    - article:
+      - text: 评价规则
+      - paragraph: HS-OP-004 · 接插件拆卸轨迹
+    - text: 动作识别置信度
+    - strong: 92%
+    - text: 连续命中 7 / 5 · 主视角与辅助视角证据一致
+    - generic "实时判定链路":
+      - generic: 动作模型 V1.8
+      - strong: Step 04 · 92%
+      - generic: 只输出候选类别
+      - generic: →
+      - generic: SOP V3.2
+      - strong: 拆卸高压接插件
+      - generic: 教师已发布标准
+      - generic: →
+      - generic: 状态机
+      - strong: 允许进入
+      - generic: 前置 Step 03 已结束
+    - generic: Top 3 动作候选
+    - generic: Step 04 92%
+    - generic: Other 5%
+    - generic: Step 03 3%
+    - heading "现场提醒" [level=2]
+    - strong: 二次验电证据不足
+    - paragraph: 10:18:22 · 系统保留双视角录像，建议教师课后复核。
+    - button "人工确认"
+    - button "查看完整证据"

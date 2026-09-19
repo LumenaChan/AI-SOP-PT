@@ -1,0 +1,100 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "系统异常 · EDGE-001 推理服务异常" [level=1]
+  - paragraph: 异常编号 SYS-20260917-018 · 发生于 2026-09-17 10:18:12
+  - button "填写处理说明"
+  - img "alert":
+  - img "clock-circle":
+  - text: 持续中
+  - heading "1号工位实时评价已受控暂停" [level=2]
+  - paragraph: 系统已尽可能继续录像；故障未恢复前不能正常恢复评价。
+  - text: 影响范围
+  - heading "1个工位 / 1个会话" [level=2]
+  - text: 故障事实
+  - heading "GPU 过热，推理进程退出" [level=2]
+  - text: 人工处理
+  - heading "处理中" [level=2]
+  - text: 最后更新
+  - heading "10:23:41" [level=2]
+  - heading "处理时间线" [level=2]
+  - article:
+    - time: 10:18:12
+    - strong: 边缘推理进程退出
+    - paragraph: EDGE-001 检测到 GPU 温度 91°C，系统自动暂停实时评价并继续录像。
+  - article:
+    - time: 10:18:19
+    - strong: 现场教师已收到告警
+    - paragraph: 王老师确认 1号工位保持暂停，学生停止高压操作。
+  - article:
+    - time: 10:21:06
+    - strong: 管理员开始处理
+    - paragraph: 系统管理员检查散热状态，当前负责人：陈工。
+  - article:
+    - time: 10:23:41
+    - strong: 等待温度恢复
+    - paragraph: 恢复条件：GPU 温度低于 75°C，推理服务自检通过且教师确认现场安全。
+  - complementary:
+    - heading "处置建议" [level=2]
+    - list:
+      - listitem: 确认学生已停止操作，工位保持断电。
+      - listitem: 检查 EDGE-001 风扇、进风口和环境温度。
+      - listitem: 温度恢复后运行推理服务自检。
+      - listitem: 由现场教师确认后恢复本次评价。
+    - generic: 当前负责人
+    - strong: 陈工 · 信息中心
+    - generic: 处理中 · 预计 10 分钟内更新
+    - button "查看 1号工位"
+    - button "查看操作日志"

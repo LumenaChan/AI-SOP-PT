@@ -1,0 +1,83 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "练习历史比较 · 张浩" [level=1]
+  - paragraph: 同一任务的多次独立练习，版本差异已显式标注
+  - generic: 首次练习 · 2026-09-03
+  - strong: 72分
+  - img "clock-circle":
+  - text: SOP V3.1
+  - text: →
+  - generic: +6分
+  - generic: 最近练习 · 2026-09-17
+  - strong: 78分
+  - img "clock-circle":
+  - text: SOP V3.2
+  - generic "图例":
+    - generic: 首次练习
+    - generic: 最近练习
+    - generic: 各维度按该步骤满分归一化显示
+  - generic: 安全防护
+  - generic "首次练习 8 分"
+  - generic: 8分
+  - generic "最近练习 10 分"
+  - generic: 10分
+  - generic: 车辆下电
+  - generic "首次练习 11 分"
+  - generic: 11分
+  - generic "最近练习 13 分"
+  - generic: 13分
+  - generic: 高压验电
+  - generic "首次练习 7 分"
+  - generic: 7分
+  - generic "最近练习 9 分"
+  - generic: 9分
+  - generic: 接插件拆卸
+  - generic "首次练习 16 分"
+  - generic: 16分
+  - generic "最近练习 20 分"
+  - generic: 20分
+  - generic: 绝缘检测
+  - generic "首次练习 11 分"
+  - generic: 11分
+  - generic "最近练习 13 分"
+  - generic: 13分
+  - generic: 工位复位
+  - generic "首次练习 12 分"
+  - generic: 12分
+  - generic "最近练习 13 分"
+  - generic: 13分
+  - img "alert":
+  - strong: 规则变化需单独解释
+  - paragraph: 两次练习使用不同 SOP 版本。V3.2 新增“二次验电”规则，因此高压验电维度不能只按分数判断能力变化。

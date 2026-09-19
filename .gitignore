@@ -1,0 +1,16 @@
+# macOS metadata
+.DS_Store
+
+# Package managers and dependencies
+.pnpm-store/
+**/node_modules/
+
+# Generated build and tool caches
+**/dist/
+**/.vite/
+*.log
+
+# Local secrets
+.env
+.env.*
+!.env.example

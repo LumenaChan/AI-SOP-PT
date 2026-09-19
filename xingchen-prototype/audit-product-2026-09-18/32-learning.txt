@@ -1,0 +1,89 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "待审核动作训练样本" [level=1]
+  - paragraph: 教师纠正只更新数据标注与模型训练集，不会修改已发布 SOP
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "批量审核":
+    - text: 批量审核
+  - table:
+    - rowgroup:
+      - row "来源安排 学生 AI 原判 纠正原因 关联步骤 审核状态 操作":
+        - columnheader "来源安排"
+        - columnheader "学生"
+        - columnheader "AI 原判"
+        - columnheader "纠正原因"
+        - columnheader "关联步骤"
+        - columnheader "审核状态"
+        - columnheader "操作"
+    - rowgroup:
+      - row "高压安全操作练习 张浩 未佩戴手套 画面遮挡误判 安全防护检查 待审核 查看 高压安全操作练习 更多操作：高压安全操作练习":
+        - cell "高压安全操作练习"
+        - cell "张浩"
+        - cell "未佩戴手套"
+        - cell "画面遮挡误判"
+        - cell "安全防护检查"
+        - cell "待审核"
+        - cell "查看 高压安全操作练习 更多操作：高压安全操作练习":
+          - button "查看 高压安全操作练习": 查看
+          - button "更多操作：高压安全操作练习":
+      - row "2402班强化练习 赵子墨 check-circle 未完成验电 辅助视角可确认 高压验电 待审核 查看 2402班强化练习 更多操作：2402班强化练习":
+        - cell "2402班强化练习"
+        - cell "赵子墨"
+        - cell "check-circle 未完成验电":
+          - img "check-circle":
+          - text: 未完成验电
+        - cell "辅助视角可确认"
+        - cell "高压验电"
+        - cell "待审核"
+        - cell "查看 2402班强化练习 更多操作：2402班强化练习":
+          - button "查看 2402班强化练习": 查看
+          - button "更多操作：2402班强化练习":
+      - row "数控装夹练习 周可欣 夹紧不到位 教师确认合格 工件夹紧 已纳入 查看 数控装夹练习 更多操作：数控装夹练习":
+        - cell "数控装夹练习"
+        - cell "周可欣"
+        - cell "夹紧不到位"
+        - cell "教师确认合格"
+        - cell "工件夹紧"
+        - cell "已纳入"
+        - cell "查看 数控装夹练习 更多操作：数控装夹练习":
+          - button "查看 数控装夹练习": 查看
+          - button "更多操作：数控装夹练习":

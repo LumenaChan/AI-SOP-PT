@@ -1,0 +1,120 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "教师管理" [level=1]
+  - paragraph: 维护教师登录资格与账号状态
+  - button "新建教师":
+    - text: 新建教师
+  - img "search":
+  - textbox "搜索名称"
+  - combobox:
+    - option "全部状态" [selected]
+    - option "已发布"
+    - option "草稿"
+  - button "刷新":
+    - text: 刷新
+  - button "新建教师":
+    - text: 新建教师
+  - table:
+    - rowgroup:
+      - row "教师 账号 状态 SOP 数量 历史安排 操作":
+        - columnheader "教师"
+        - columnheader "账号"
+        - columnheader "状态"
+        - columnheader "SOP 数量"
+        - columnheader "历史安排"
+        - columnheader "操作"
+    - rowgroup:
+      - row "王伟 wangwei check-circle 启用 8 32 查看 王伟 更多操作：王伟":
+        - cell "王伟"
+        - cell "wangwei"
+        - cell "check-circle 启用":
+          - img "check-circle":
+          - text: 启用
+        - cell "8"
+        - cell "32"
+        - cell "查看 王伟 更多操作：王伟":
+          - button "查看 王伟": 查看
+          - button "更多操作：王伟":
+      - row "李晓敏 lixiaomin check-circle 启用 5 18 查看 李晓敏 更多操作：李晓敏":
+        - cell "李晓敏"
+        - cell "lixiaomin"
+        - cell "check-circle 启用":
+          - img "check-circle":
+          - text: 启用
+        - cell "5"
+        - cell "18"
+        - cell "查看 李晓敏 更多操作：李晓敏":
+          - button "查看 李晓敏": 查看
+          - button "更多操作：李晓敏":
+      - row "周宁 zhouning clock-circle 待停用 3 12 查看 周宁 更多操作：周宁":
+        - cell "周宁"
+        - cell "zhouning"
+        - cell "clock-circle 待停用":
+          - img "clock-circle":
+          - text: 待停用
+        - cell "3"
+        - cell "12"
+        - cell "查看 周宁 更多操作：周宁":
+          - button "查看 周宁": 查看
+          - button "更多操作：周宁":
+      - row "陈立 chenli 停用 2 9 查看 陈立 更多操作：陈立":
+        - cell "陈立"
+        - cell "chenli"
+        - cell "停用"
+        - cell "2"
+        - cell "9"
+        - cell "查看 陈立 更多操作：陈立":
+          - button "查看 陈立": 查看
+          - button "更多操作：陈立":

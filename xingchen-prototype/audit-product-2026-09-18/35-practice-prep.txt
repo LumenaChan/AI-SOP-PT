@@ -1,0 +1,92 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "教师工作台":
+      - img "home":
+      - generic: 教师工作台
+    - button "SOP 标准库":
+      - img "book":
+      - generic: SOP 标准库
+    - button "练习管理":
+      - img "edit":
+      - generic: 练习管理
+    - button "考试管理":
+      - img "file-done":
+      - generic: 考试管理
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 教师端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为王老师":
+  - strong: 王老师
+  - generic: 新能源车辆学院
+  - generic: ⌄
+- main:
+  - button "← 返回"
+  - text: 兴辰智能 · 校内实训评价
+  - heading "练习准备" [level=1]
+  - paragraph: 检查工位设备、画面与锁定版本，允许部分工位先开放
+  - button "进入实时监控"
+  - img "safety-certificate":
+  - strong: 锁定 SOP V3.2 + 动作模型 V1.8
+  - generic: 首次开放工位后分别锁定业务标准与识别模型版本。
+  - img "clock-circle":
+  - text: 尚未锁定
+  - heading "工位准备状态" [level=2]
+  - generic: 已就绪 2 / 6
+  - img "1号工位预览"
+  - strong: 1号工位
+  - generic: A区-01
+  - img "exclamation-circle":
+  - text: 边缘节点异常
+  - img "clock-circle":
+  - text: 规则 V3.2
+  - button "检查并开放" [disabled]
+  - img "2号工位预览"
+  - strong: 2号工位
+  - generic: A区-02
+  - img "check-circle":
+  - text: 设备在线
+  - img "clock-circle":
+  - text: 规则 V3.2
+  - button "已开放"
+  - img "3号工位预览"
+  - strong: 3号工位
+  - generic: A区-03
+  - img "check-circle":
+  - text: 设备在线
+  - img "clock-circle":
+  - text: 版本待同步
+  - button "检查并开放" [disabled]
+  - img "4号工位预览"
+  - strong: 4号工位
+  - generic: A区-04
+  - img "check-circle":
+  - text: 设备在线
+  - img "clock-circle":
+  - text: 规则 V3.2
+  - button "已开放"
+  - img "5号工位预览"
+  - strong: 5号工位
+  - generic: A区-05
+  - img "check-circle":
+  - text: 设备在线
+  - img "clock-circle":
+  - text: 规则 V3.2
+  - button "检查并开放"
+  - img "6号工位预览"
+  - strong: 6号工位
+  - generic: A区-06
+  - img "check-circle":
+  - text: 设备在线
+  - img "clock-circle":
+  - text: 规则 V3.2
+  - button "检查并开放" [disabled]

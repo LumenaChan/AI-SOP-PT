@@ -1,0 +1,79 @@
+- complementary:
+  - button "返回当前角色首页":
+    - strong: 兴辰智能
+    - generic: AI赋能职业教育
+  - navigation:
+    - button "运行概览":
+      - img "bar-chart":
+      - generic: 运行概览
+    - button "教师管理":
+      - img "team":
+      - generic: 教师管理
+    - button "班级管理":
+      - img "appstore":
+      - generic: 班级管理
+    - button "学生管理":
+      - img "user":
+      - generic: 学生管理
+    - button "工位管理":
+      - img "desktop":
+      - generic: 工位管理
+    - button "设备管理":
+      - img "hdd":
+      - generic: 设备管理
+    - button "练习记录":
+      - img "edit":
+      - generic: 练习记录
+    - button "考试记录":
+      - img "file-done":
+      - generic: 考试记录
+    - button "运行配置":
+      - img "setting":
+      - generic: 运行配置
+    - button "备份与恢复":
+      - img "database":
+      - generic: 备份与恢复
+    - button "操作日志":
+      - img "history":
+      - generic: 操作日志
+  - text: 让技能更安全
+  - text: 让教育更智能
+- button "收起侧边导航":
+  - img "menu-fold":
+- generic: 管理员端
+- button "desktop 大屏模式":
+  - img "desktop":
+  - text: 大屏模式
+- button "通知，3 条未读":
+  - generic: "3"
+- button "打开身份菜单，当前为系统管理员":
+  - strong: 系统管理员
+  - generic: 管理员端
+  - generic: ⌄
+- main:
+  - text: 兴辰智能 · 校内实训评价
+  - heading "系统运行配置" [level=1]
+  - paragraph: 维护校内运行参数；当前未确定项不预置虚构默认值
+  - button "保存配置"
+  - heading "媒体与保存" [level=2]
+  - text: 完整录像保存期限
+  - textbox "完整录像保存期限":
+    - /placeholder: 待部署评估
+  - text: 导出文件下载期限
+  - textbox "导出文件下载期限":
+    - /placeholder: 待配置
+  - heading "备份策略" [level=2]
+  - text: 自动备份频率
+  - combobox "自动备份频率":
+    - option "每日 02:00" [selected]
+    - option "每周"
+  - text: 备份保留周期
+  - textbox "备份保留周期":
+    - /placeholder: 待配置
+  - heading "运行告警" [level=2]
+  - checkbox "缓存水位预警 工位剩余空间低于阈值时提醒管理员" [checked]
+  - strong: 缓存水位预警
+  - generic: 工位剩余空间低于阈值时提醒管理员
+  - checkbox "版本不一致告警 实际版本与锁定版本不一致时阻止开放" [checked]
+  - strong: 版本不一致告警
+  - generic: 实际版本与锁定版本不一致时阻止开放
