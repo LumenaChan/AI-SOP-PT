@@ -5,8 +5,13 @@ import {
   automaticEvaluationGate,
   arrangementDestination,
   canCloseIssue,
+  createSopStepDraft,
+  createSessionStepsFromSop,
   diagnoseNoTrigger,
+  getEffectiveJudgementMode,
   getPublishBlockers,
+  getSopAiEvaluationStatus,
+  nextStableStepId,
   normalizeSopStep,
   recordedDeductionOf,
   requiresMandatoryReview,
@@ -25,7 +30,10 @@ const validatedImplementation = {
 };
 
 const automaticSop = {
+  id: "sop-auto",
+  name: "高压系统检修",
   version: "V3.2",
+  status: "已发布",
   steps: [
     { id: "Step 01", judgementMode: "visual_auto" },
     { id: "Step 02", judgementMode: "default_pass_manual_deduction" },
@@ -33,8 +41,10 @@ const automaticSop = {
 };
 
 const deployedModel = {
+  sopId: "sop-auto",
   status: "已部署",
   version: "M1",
+  datasetVersion: "D1",
   sopVersion: "V3.2",
 };
 
@@ -289,6 +299,201 @@ test("ROI, camera or model version changes invalidate automatic evaluation", () 
   assert.match(gate.reasons.join("；"), /模型版本已变化/);
   assert.match(gate.reasons.join("；"), /ROI 版本已变化/);
   assert.match(gate.reasons.join("；"), /摄像头配置已变化/);
+});
+
+test("new SOP steps default to AI-assisted evaluation with conservative policies", () => {
+  const step = createSopStepDraft({ id: "Step 07", score: 12 });
+  assert.equal(step.id, "Step 07");
+  assert.equal(step.score, 12);
+  assert.equal(step.judgementMode, "visual_assist_default_pass");
+  assert.equal(step.skipPolicy, "进入教师复核");
+  assert.equal(step.orderPolicy, "进入教师复核");
+  assert.equal(step.timeoutPolicy, "仅记录超时");
+});
+
+test("new workstation sessions use the selected SOP steps without renumbering IDs", () => {
+  const steps = createSessionStepsFromSop([
+    {
+      id: "Step 05",
+      name: "确认操作区域",
+      score: 35,
+      judgementMode: "visual_auto",
+    },
+    {
+      id: "Step 09",
+      name: "记录扭矩结果",
+      score: 65,
+      judgementMode: "default_pass_manual_deduction",
+    },
+  ]);
+  assert.deepEqual(
+    steps.map((step) => step.id),
+    ["Step 05", "Step 09"],
+  );
+  assert.deepEqual(
+    steps.map((step) => step.maxScore),
+    [35, 65],
+  );
+  assert.ok(steps.every((step) => step.state === "pending"));
+  assert.equal(steps[1].judgementMode, "default_pass_manual_deduction");
+});
+
+test("explicit judgement modes are preserved instead of being inferred from keywords", () => {
+  const step = normalizeSopStep({
+    name: "读取扭矩结果",
+    judgementMode: "visual_auto",
+  });
+  assert.equal(step.judgementMode, "visual_auto");
+});
+
+test("Step IDs remain monotonic after deletion and across SOP family history", () => {
+  assert.equal(
+    nextStableStepId({
+      steps: [{ id: "Step 01" }, { id: "Step 02" }],
+      historicalSteps: [{ id: "Step 07" }],
+      usedStepIds: ["Step 01", "Step 02", "Step 09"],
+    }),
+    "Step 10",
+  );
+});
+
+test("runtime gate may downgrade automatic evaluation but never upgrades teacher evaluation", () => {
+  assert.equal(
+    getEffectiveJudgementMode({
+      sopStep: { judgementMode: "default_pass_manual_deduction" },
+      gate: { enabled: true },
+    }),
+    "default_pass_manual_deduction",
+  );
+  assert.equal(
+    getEffectiveJudgementMode({
+      sopStep: { judgementMode: "visual_auto" },
+      gate: { enabled: false },
+    }),
+    "visual_assist_default_pass",
+  );
+});
+
+test("automatic evaluation requires a published SOP and a camera configuration version", () => {
+  const draftGate = automaticEvaluationGate({
+    workstation: { implementation: validatedImplementation },
+    sop: { ...automaticSop, status: "草稿" },
+    model: deployedModel,
+    validation: passingValidation,
+  });
+  assert.equal(draftGate.enabled, false);
+  assert.match(draftGate.reasons.join("；"), /SOP 尚未发布/);
+
+  const missingCameraConfigGate = automaticEvaluationGate({
+    workstation: {
+      implementation: {
+        ...validatedImplementation,
+        cameraConfigVersion: "",
+      },
+    },
+    sop: automaticSop,
+    model: deployedModel,
+    validation: passingValidation,
+  });
+  assert.equal(missingCameraConfigGate.enabled, false);
+  assert.match(
+    missingCameraConfigGate.reasons.join("；"),
+    /尚未确认摄像头配置版本/,
+  );
+});
+
+test("SOP AI status follows unpublished, unconfigured, configuring, partial and available states", () => {
+  const workstation = (id) => ({
+    id,
+    name: `${id}工位`,
+    implementation: {
+      ...validatedImplementation,
+      roiVersion: `ROI-${id}`,
+      cameraConfigVersion: `CAM-${id}`,
+    },
+  });
+  const validation = (id, status = "通过") => ({
+    workstationId: id,
+    sopId: automaticSop.id,
+    sopVersion: automaticSop.version,
+    modelVersion: deployedModel.version,
+    roiVersion: `ROI-${id}`,
+    cameraConfigVersion: `CAM-${id}`,
+    status,
+    createdAt: `2026-09-20 10:0${id.at(-1)}`,
+  });
+  const workstations = [workstation("w1"), workstation("w2")];
+  const targetWorkstationIds = ["w1", "w2"];
+
+  assert.equal(
+    getSopAiEvaluationStatus({
+      sop: { ...automaticSop, status: "草稿" },
+    }).status,
+    "—",
+  );
+  assert.equal(
+    getSopAiEvaluationStatus({
+      sop: automaticSop,
+      workstations,
+      targetWorkstationIds,
+    }).status,
+    "未配置",
+  );
+  assert.equal(
+    getSopAiEvaluationStatus({
+      sop: automaticSop,
+      datasets: [
+        { sopId: automaticSop.id, version: "D1", status: "采集中" },
+      ],
+      workstations,
+      targetWorkstationIds,
+    }).status,
+    "配置中",
+  );
+
+  const configured = {
+    sop: automaticSop,
+    datasets: [
+      { sopId: automaticSop.id, version: "D1", status: "已锁定" },
+    ],
+    models: [deployedModel],
+    workstations,
+    targetWorkstationIds,
+  };
+  const partial = getSopAiEvaluationStatus({
+    ...configured,
+    fieldValidations: [validation("w1"), validation("w2", "失败")],
+  });
+  assert.equal(partial.status, "部分可用");
+  assert.equal(partial.validatedWorkstationCount, 1);
+
+  const selectedReadyWorkstation = getSopAiEvaluationStatus({
+    ...configured,
+    targetWorkstationIds: ["w1"],
+    fieldValidations: [validation("w1"), validation("w2", "失败")],
+  });
+  assert.equal(selectedReadyWorkstation.status, "可用");
+  assert.equal(selectedReadyWorkstation.targetWorkstationCount, 1);
+  assert.equal(selectedReadyWorkstation.validatedWorkstationCount, 1);
+
+  const available = getSopAiEvaluationStatus({
+    ...configured,
+    fieldValidations: [validation("w1"), validation("w2")],
+  });
+  assert.equal(available.status, "可用");
+  assert.equal(available.validatedWorkstationCount, 2);
+});
+
+test("a new SOP version does not inherit incompatible Dataset and Model readiness", () => {
+  const status = getSopAiEvaluationStatus({
+    sop: { ...automaticSop, id: "sop-new", version: "V3.3" },
+    datasets: [
+      { sopId: automaticSop.id, version: "D1", status: "已锁定" },
+    ],
+    models: [deployedModel],
+  });
+  assert.equal(status.status, "未配置");
+  assert.equal(status.modelReadyCount, 0);
 });
 
 test("technical diagnosis returns one actionable no-trigger reason", () => {

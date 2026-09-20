@@ -65,9 +65,11 @@ import {
   automaticEvaluationGate,
   arrangementDestination,
   canCloseIssue,
+  createSopStepDraft,
   DIAGNOSTIC_ROOT_CAUSES,
   FIELD_VALIDATION_SCENARIOS,
   JUDGEMENT_MODES,
+  nextStableStepId,
   recordedDeductionOf,
   sessionPrimaryIssue,
   workstationFeedbackPolicy,
@@ -86,6 +88,7 @@ const adminNav = [
   ["学生管理", "/admin/students", <UserOutlined />],
   ["工位管理", "/admin/workstations", <DesktopOutlined />],
   ["设备管理", "/admin/devices", <HddOutlined />],
+  ["AI评价管理", "/admin/ai-evaluation", <VideoCameraOutlined />],
   ["练习记录", "/admin/practices", <EditOutlined />],
   ["考试记录", "/admin/exams", <FileDoneOutlined />],
   ["运行配置", "/admin/settings", <SettingOutlined />],
@@ -938,7 +941,8 @@ function LoginPage() {
 
 function Dashboard() {
   const nav = useNavigate();
-  const { data } = usePrototypeData();
+  const store = usePrototypeData();
+  const { data } = store;
   const activeArrangements = data.arrangements.filter(
     (item) => !item.archivedRecord,
   );
@@ -959,7 +963,15 @@ function Dashboard() {
   const pendingPublishExams = activeArrangements.filter(
     (item) => item.type === "exam" && item.status === "待发布",
   );
-  const trainingModels = data.models.filter((item) => item.status === "训练中");
+  const publishedSops = data.sops.filter((item) => item.status === "已发布");
+  const availableAiSops = publishedSops.filter(
+    (item) => store.getSopAiEvaluationStatus(item.id).status === "可用",
+  );
+  const partialAiSops = publishedSops.filter((item) =>
+    ["配置中", "部分可用"].includes(
+      store.getSopAiEvaluationStatus(item.id).status,
+    ),
+  );
   const scoredSessions = activeArrangements.flatMap((item) =>
     (item.sessions || []).filter(
       (session) =>
@@ -1045,14 +1057,10 @@ function Dashboard() {
           tone="green"
         />
         <Metric
-          label="训练中动作模型"
-          value={trainingModels.length}
-          hint={
-            trainingModels.length
-              ? `${trainingModels[0].name} ${trainingModels[0].progress}%`
-              : "当前无训练任务"
-          }
-          icon={<ReloadOutlined />}
+          label="已发布标准"
+          value={publishedSops.length}
+          hint={`AI评价可用 ${availableAiSops.length} · 配置中 ${partialAiSops.length}`}
+          icon={<BookOutlined />}
           tone="purple"
         />
       </div>
@@ -1136,24 +1144,7 @@ function Dashboard() {
                 <b>查看</b>
               </button>
             ))}
-            {trainingModels.slice(0, 1).map((item) => (
-              <button
-                key={item.id}
-                onClick={() => nav(`/teacher/sop/edit/${item.sopId}`)}
-              >
-                <ReloadOutlined />
-                <span>
-                  <strong>{item.name}正在训练</strong>
-                  <small>
-                    {item.version} · 进度 {item.progress}%
-                  </small>
-                </span>
-                <b>查看</b>
-              </button>
-            ))}
-            {!reviewTasks.length &&
-              !pendingPublishExams.length &&
-              !trainingModels.length && (
+            {!reviewTasks.length && !pendingPublishExams.length && (
                 <p className="hint">当前没有需要立即处理的事项。</p>
               )}
           </div>
@@ -1266,6 +1257,12 @@ function MonitorPage({ exam = false, setModal }) {
     });
   const count = (...statuses) =>
     sessions.filter((item) => statuses.includes(item.status)).length;
+  const aiEnabledCount = sessions.filter(
+    (item) => item.evaluationProfile?.automaticEvaluationEnabled,
+  ).length;
+  const canControlArrangement = ["进行中", "已暂停"].includes(
+    arrangement.status,
+  );
   return (
     <>
       <PageHeader
@@ -1274,37 +1271,51 @@ function MonitorPage({ exam = false, setModal }) {
           <span>
             <Status>{arrangement.status}</Status>　开始时间{" "}
             {arrangement.startedAt || "尚未开始"} · 快照 SOP{" "}
-            {arrangement.snapshot?.sopVersion} / 模型{" "}
-            {arrangement.snapshot?.modelVersion}
+            {arrangement.snapshot?.sopVersion} · AI评价可用工位{" "}
+            {aiEnabledCount}/{sessions.length}
           </span>
         }
         actions={
           <>
-            {arrangement.openWorkstationIds.length <
-              arrangement.workstationIds.length && (
+            {canControlArrangement &&
+              arrangement.openWorkstationIds.length <
+                arrangement.workstationIds.length && (
               <Button
                 onClick={() => nav(`/teacher/${base}/${arrangement.id}/prep`)}
               >
                 开放更多工位
               </Button>
             )}
-            <Button
-              onClick={pause}
-              icon={
-                arrangement.status === "已暂停" ? (
-                  <PlayCircleFilled />
-                ) : (
-                  <PauseCircleFilled />
-                )
-              }
-            >
-              {arrangement.status === "已暂停"
-                ? "恢复安排"
-                : `暂停${exam ? "考试" : "练习"}`}
-            </Button>
-            <Button type="primary" onClick={finish}>
-              结束本次{exam ? "考试" : "练习"}
-            </Button>
+            {canControlArrangement ? (
+              <>
+                <Button
+                  onClick={pause}
+                  icon={
+                    arrangement.status === "已暂停" ? (
+                      <PlayCircleFilled />
+                    ) : (
+                      <PauseCircleFilled />
+                    )
+                  }
+                >
+                  {arrangement.status === "已暂停"
+                    ? "恢复安排"
+                    : `暂停${exam ? "考试" : "练习"}`}
+                </Button>
+                <Button type="primary" onClick={finish}>
+                  结束本次{exam ? "考试" : "练习"}
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="primary"
+                onClick={() =>
+                  nav(`/teacher/${base}/${arrangement.id}/results`)
+                }
+              >
+                查看{exam ? "考试" : "练习"}结果
+              </Button>
+            )}
           </>
         }
       />
@@ -2420,6 +2431,7 @@ function DataTable({
   onView,
   onMore,
   rowKey,
+  viewLabel = "查看",
   emptyText = "暂无符合条件的记录",
   statusColumns = [2, 3, 4],
 }) {
@@ -2458,7 +2470,9 @@ function DataTable({
                       aria-label={`查看 ${r[0]}`}
                       onClick={() => (onView || onRow)(r, i)}
                     >
-                      查看
+                      {typeof viewLabel === "function"
+                        ? viewLabel(r, i)
+                        : viewLabel}
                     </button>
                   )}
                   {onMore && (
@@ -2541,80 +2555,69 @@ const emptySopDraft = () => ({
   version: "V1.0",
   status: "草稿",
   frozen: false,
+  major: "新能源汽车技术",
+  course: "",
   operation: "",
   basis: "",
   conditions: "",
   standardDuration: "15 分钟",
   history: [],
+  usedStepIds: ["Step 01"],
   steps: [
-    {
-      id: "Step 01",
-      name: "",
-      attribute: "必做",
-      predecessor: "无",
-      timeout: "01:00",
-      score: 100,
-      completionCondition: "",
-      teachingInstruction: "",
-      keyPoints: "",
-      commonMistakes: "",
-      standardMediaType: "示教图片",
-      standardMediaUrl: "/assets/student-monitor-hand-tracking.png",
-      evidence: "",
-      deductionRule: "",
-      redline: "",
-      judgementMode: "visual_auto",
-      knownLimit: "关键动作和目标区域需要持续出现在画面内。",
-      repeatPolicy: "重复即提示并扣分",
-      confirmFrames: 5,
-      minConfidence: "0.80",
-    },
+    createSopStepDraft({ id: "Step 01", predecessor: "无", score: 100 }),
   ],
 });
 
 function validateSopDraft(draft) {
   const issues = [];
-  if (!draft.name?.trim()) issues.push("未填写标准名称");
-  if (!draft.operation?.trim()) issues.push("未填写适用操作");
-  if (!draft.basis?.trim()) issues.push("未填写标准依据");
-  if (!draft.conditions?.trim()) issues.push("未填写设备与工位条件");
-  if (!draft.steps?.length) issues.push("至少需要一个操作步骤");
+  const add = (stage, message, stepIndex = null) =>
+    issues.push({ stage, message, stepIndex });
+  if (!draft.name?.trim()) add(0, "未填写 SOP 名称");
+  if (!draft.operation?.trim()) add(0, "未填写适用操作");
+  if (!draft.basis?.trim()) add(0, "未填写标准依据");
+  if (!draft.conditions?.trim()) add(0, "未填写适用实训环境");
+  if (!draft.steps?.length) add(1, "至少需要一个操作步骤");
   const ids = new Set();
-  for (const step of draft.steps || []) {
-    if (ids.has(step.id)) issues.push(`${step.id} 重复`);
+  for (const [index, step] of (draft.steps || []).entries()) {
+    if (ids.has(step.id)) add(1, `${step.id} 重复`, index);
     ids.add(step.id);
-    if (!step.name?.trim()) issues.push(`${step.id} 未填写名称`);
+    if (!step.name?.trim()) add(1, `${step.id} 未填写步骤名称`, index);
     if (!step.completionCondition?.trim())
-      issues.push(`${step.id} 未填写完成条件`);
+      add(1, `${step.id} 未填写完成条件`, index);
     if (!step.teachingInstruction?.trim())
-      issues.push(`${step.id} 未填写标准示教说明`);
-    if (!step.keyPoints?.trim()) issues.push(`${step.id} 未填写操作要点`);
+      add(1, `${step.id} 未填写标准操作说明`, index);
+    if (!step.keyPoints?.trim()) add(1, `${step.id} 未填写操作要点`, index);
     if (!JUDGEMENT_MODES[step.judgementMode])
-      issues.push(`${step.id} 未选择有效的判定方式`);
+      add(2, `${step.id} 未选择有效的评价方式`, index);
     if (
       step.judgementMode !== "default_pass_manual_deduction" &&
       !step.evidence?.trim()
     )
-      issues.push(`${step.id} 未填写采证要求`);
+      add(2, `${step.id} 未填写评价证据要求`, index);
     if (step.judgementMode !== "visual_auto" && !step.knownLimit?.trim())
-      issues.push(`${step.id} 未说明视频判定边界`);
-    if (!step.deductionRule?.trim()) issues.push(`${step.id} 未填写扣分规则`);
+      add(2, `${step.id} 未填写视频评价限制`, index);
+    if (!step.deductionRule?.trim())
+      add(2, `${step.id} 未填写扣分规则`, index);
+    if (step.hasSafetyRedline && !step.redline?.trim())
+      add(2, `${step.id} 已启用安全红线但未填写内容`, index);
     if (!/^\d{2}:\d{2}$/.test(step.timeout || ""))
-      issues.push(`${step.id} 超时阈值格式应为 mm:ss`);
-    if (!(Number(step.score) > 0)) issues.push(`${step.id} 分值必须大于 0`);
+      add(1, `${step.id} 建议完成时间格式应为 mm:ss`, index);
+    if (!(Number(step.score) > 0))
+      add(2, `${step.id} 分值必须大于 0`, index);
     if (
       step.predecessor !== "无" &&
       !draft.steps.some((item) => item.id === step.predecessor)
     )
-      issues.push(`${step.id} 的前置步骤不存在`);
-    if (step.predecessor === step.id) issues.push(`${step.id} 不能依赖自身`);
+      add(1, `${step.id} 的前置步骤不存在`, index);
+    if (step.predecessor === step.id)
+      add(1, `${step.id} 不能依赖自身`, index);
   }
-  for (const step of draft.steps || []) {
+  for (const [index, step] of (draft.steps || []).entries()) {
     const visited = new Set([step.id]);
     let predecessor = step.predecessor;
     while (predecessor && predecessor !== "无") {
       if (visited.has(predecessor)) {
-        issues.push(`${step.id} 存在循环依赖`);
+        add(1, `${step.id} 存在循环依赖`, index);
         break;
       }
       visited.add(predecessor);
@@ -2627,12 +2630,12 @@ function validateSopDraft(draft) {
     (step) => !step.predecessor || step.predecessor === "无",
   );
   if ((draft.steps || []).length > 1 && roots.length !== 1)
-    issues.push(`当前有 ${roots.length} 个起始步骤，必须且只能有一个`);
+    add(1, `当前有 ${roots.length} 个起始步骤，必须且只能有一个`);
   const total = (draft.steps || []).reduce(
     (sum, step) => sum + Number(step.score || 0),
     0,
   );
-  if (total !== 100) issues.push(`步骤总分为 ${total}，必须等于 100`);
+  if (total !== 100) add(2, `步骤总分为 ${total}，必须等于 100`);
   return issues;
 }
 
@@ -2716,7 +2719,7 @@ const UploadSampleForm = forwardRef(function UploadSampleForm({ sop }, ref) {
 });
 
 const ReviewSampleForm = forwardRef(function ReviewSampleForm(
-  { sample, sop },
+  { sample, sop, acceptLabel = "纳入下一版 Dataset" },
   ref,
 ) {
   const [form, setForm] = useState({
@@ -2754,7 +2757,7 @@ const ReviewSampleForm = forwardRef(function ReviewSampleForm(
             value={form.decision}
             onChange={(event) => update("decision", event.target.value)}
           >
-            <option value="accept">纳入下一版 Dataset</option>
+            <option value="accept">{acceptLabel}</option>
             <option value="reject">拒绝样本</option>
           </select>
         </label>
@@ -2786,51 +2789,48 @@ const ReviewSampleForm = forwardRef(function ReviewSampleForm(
 
 function SopList() {
   const nav = useNavigate();
-  const { data } = usePrototypeData();
+  const store = usePrototypeData();
+  const { data } = store;
   const [tab, setTab] = useState("mine"),
     [query, setQuery] = useState(""),
-    [statusFilter, setStatusFilter] = useState("全部状态");
+    [statusFilter, setStatusFilter] = useState("全部"),
+    [aiFilter, setAiFilter] = useState("全部");
   const visible = data.sops.filter(
-    (sop) =>
-      (tab === "school" || sop.owner === "王老师") &&
-      (statusFilter === "全部状态" || sop.status === statusFilter) &&
-      `${sop.name} ${sop.owner} ${sop.version}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+    (sop) => {
+      const aiStatus = store.getSopAiEvaluationStatus(sop.id).status;
+      return (
+        (tab === "school" || sop.owner === "王老师") &&
+        (statusFilter === "全部" || sop.status === statusFilter) &&
+        (aiFilter === "全部" || aiStatus === aiFilter) &&
+        `${sop.name} ${sop.major || ""} ${sop.course || ""} ${sop.owner}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase())
+      );
+    },
   );
-  const rows = visible.map((sop) => {
-    const model = data.models.find((item) => item.sopId === sop.id);
-    return [
-      sop.name,
-      sop.owner,
-      sop.version,
-      sop.status,
-      model ? `${model.version} · ${model.status}` : "未绑定模型",
-      sop.updatedAt,
-    ];
-  });
+  const rows = visible.map((sop) => [
+    sop.name,
+    `${sop.major || "未设置专业"}${sop.course ? ` / ${sop.course}` : ""}`,
+    sop.owner,
+    sop.version,
+    sop.status,
+    `${sop.steps.length} 步`,
+    store.getSopAiEvaluationStatus(sop.id).status,
+    sop.updatedAt,
+  ]);
   return (
     <>
       <PageHeader
         title="SOP 标准库"
-        subtitle="教师定义并签名业务标准；Dataset 与模型分别管理、独立演进"
+        subtitle="管理实训教学与评价标准；AI评价能力在SOP发布后独立配置。"
         actions={
-          <>
-            <Button onClick={() => nav("/teacher/sop/learning")}>
-              待审样本{" "}
-              {
-                data.learningSamples.filter((item) => item.status === "待审核")
-                  .length
-              }
-            </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => nav("/teacher/sop/new")}
-            >
-              创建 SOP
-            </Button>
-          </>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => nav("/teacher/sop/new")}
+          >
+            创建 SOP
+          </Button>
         }
       />
       <div className="tabs" role="tablist" aria-label="标准范围">
@@ -2851,58 +2851,71 @@ function SopList() {
           全校标准
         </button>
       </div>
-      <section className="sop-truth-banner" aria-label="SOP 治理原则">
-        <div>
-          <LockOutlined />
-          <span>
-            <strong>SOP 是教师业务真源</strong>
-            <small>步骤、评分和安全红线只能由教师维护</small>
-          </span>
-        </div>
-        <b>→</b>
-        <div>
-          <DatabaseOutlined />
-          <span>
-            <strong>Dataset 固定标签</strong>
-            <small>仅允许既有 Step ID 与 Other</small>
-          </span>
-        </div>
-        <b>→</b>
-        <div>
-          <VideoCameraOutlined />
-          <span>
-            <strong>模型独立部署</strong>
-            <small>训练、验证、上线和回滚不改写 SOP</small>
-          </span>
-        </div>
-      </section>
       <section className="panel panel--table">
-        <Toolbar
-          placeholder="搜索 SOP 名称、教师或版本"
-          filters={["全部状态", "草稿", "待审核", "已发布", "停用"]}
-          value={query}
-          filterValue={statusFilter}
-          onChange={setQuery}
-          onFilterChange={setStatusFilter}
-          onRefresh={() => {
-            setQuery("");
-            setStatusFilter("全部状态");
-          }}
-        />
+        <div className="list-toolbar sop-list-toolbar">
+          <div className="search">
+            <SearchOutlined />
+            <input
+              aria-label="搜索 SOP"
+              placeholder="搜索 SOP 名称、专业、课程或创建教师"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <label>
+            <span>SOP状态</span>
+            <select
+              aria-label="SOP状态"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              {["全部", "草稿", "已发布", "已停用"].map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>AI评价</span>
+            <select
+              aria-label="AI评价"
+              value={aiFilter}
+              onChange={(event) => setAiFilter(event.target.value)}
+            >
+              {["全部", "—", "未配置", "配置中", "部分可用", "可用"].map(
+                (item) => <option key={item}>{item}</option>,
+              )}
+            </select>
+          </label>
+          <span />
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              setQuery("");
+              setStatusFilter("全部");
+              setAiFilter("全部");
+            }}
+          >
+            重置
+          </Button>
+        </div>
         <DataTable
           columns={[
-            "标准名称",
+            "SOP名称",
+            "所属专业 / 课程",
             "创建教师",
-            "SOP 版本",
-            "发布状态",
-            "模型版本 / 状态",
+            "当前版本",
+            "SOP状态",
+            "步骤",
+            "AI评价",
             "更新时间",
           ]}
           rows={rows}
-          rowKey={(row) => `${row[0]}-${row[2]}`}
+          statusColumns={[4, 6]}
+          viewLabel={(row) => (row[4] === "草稿" ? "继续编辑" : "查看")}
+          rowKey={(row) => `${row[0]}-${row[3]}`}
           onView={(row) => {
             const sop = visible.find(
-              (item) => item.name === row[0] && item.version === row[2],
+              (item) => item.name === row[0] && item.version === row[3],
             );
             nav(
               sop.status === "草稿"
@@ -2920,11 +2933,20 @@ function SopDetail({ setModal }) {
   const nav = useNavigate(),
     { id } = useParams(),
     store = usePrototypeData();
-  const sop =
-    store.data.sops.find((item) => item.id === id) || store.data.sops[0];
-  const dataset = store.data.datasets.find((item) => item.sopId === sop.id);
-  const model = store.data.models.find((item) => item.sopId === sop.id);
-  const judgementCounts = sop.steps.reduce(
+  const sop = store.data.sops.find((item) => item.id === id);
+  const aiStatus = store.getSopAiEvaluationStatus(sop?.id);
+  const dataset =
+    aiStatus.dataset ||
+    newestVersion(
+      store.data.datasets.filter((item) => item.sopId === sop?.id),
+    );
+  const model =
+    aiStatus.model ||
+    newestVersion(store.data.models.filter((item) => item.sopId === sop?.id));
+  const [tab, setTab] = useState("overview");
+  const [selectedStep, setSelectedStep] = useState(0);
+  const activeStep = sop?.steps[selectedStep] || sop?.steps[0];
+  const judgementCounts = (sop?.steps || []).reduce(
     (counts, step) => ({
       ...counts,
       [step.judgementMode]: (counts[step.judgementMode] || 0) + 1,
@@ -2932,6 +2954,8 @@ function SopDetail({ setModal }) {
     {},
   );
   const copyRef = useRef(null);
+  if (!sop)
+    return <MissingState title="SOP 不存在或已失效" backTo="/teacher/sop" />;
   const copy = () =>
     setModal({
       title: "复制为独立 SOP",
@@ -2950,8 +2974,8 @@ function SopDetail({ setModal }) {
       title: "创建新版本",
       content: (
         <p>
-          将基于冻结的 {sop.version} 创建可编辑草稿。原版本、Dataset
-          与已部署模型保持不变。
+          将基于冻结的 {sop.version} 创建可编辑草稿。原版本永久保留；新版本的
+          AI评价能力需要重新确认，不会直接继承当前可用状态。
         </p>
       ),
       confirmText: "创建并编辑",
@@ -2972,10 +2996,19 @@ function SopDetail({ setModal }) {
             <Button onClick={copy}>复制标准</Button>
             <Button onClick={newVersion}>创建新版本</Button>
             <Button
-              type="primary"
-              onClick={() => nav("/teacher/practices/new")}
+              onClick={() =>
+                nav("/teacher/practices/new", { state: { sopId: sop.id } })
+              }
             >
-              使用标准
+              创建练习
+            </Button>
+            <Button
+              type="primary"
+              onClick={() =>
+                nav("/teacher/exams/new", { state: { sopId: sop.id } })
+              }
+            >
+              创建考试
             </Button>
           </>
         }
@@ -2985,225 +3018,144 @@ function SopDetail({ setModal }) {
         <div>
           <strong>{sop.version} 已签名冻结，不能原地修改</strong>
           <p>
-            模型只能输出 {sop.steps.map((step) => step.id).join("、")} 或
-            Other。样本复核与模型升级不会反向改写本标准。
+            步骤、评分和安全规则由教师定义。AI评价能力独立建设，不能反向改写本标准。
           </p>
         </div>
         <Status tone="success">
           {sop.signedBy ? `${sop.signedBy} 已签名` : "待签名"}
         </Status>
       </section>
-      <div className="detail-grid sop-summary-grid">
+      <div className="detail-grid sop-top-metrics">
+        <Metric label="操作步骤" value={`${sop.steps.length} 步`} hint="固定 Step ID" icon={<BookOutlined />} />
+        <Metric label="总分" value={`${sop.steps.reduce((sum, step) => sum + Number(step.score), 0)} 分`} hint="教师评分标准" icon={<FileTextOutlined />} />
+        <Metric label="标准耗时" value={sop.standardDuration} hint="不直接参与扣分" icon={<ClockCircleOutlined />} />
+        <Metric label="安全红线" value={`${sop.steps.filter((step) => step.redline).length} 项`} hint="触发后暂停评价" icon={<AlertOutlined />} tone="warning" />
+        <Metric label="AI评价" value={aiStatus.status} hint="与SOP发布相互独立" icon={<VideoCameraOutlined />} tone={aiStatus.status === "可用" ? "success" : "warning"} />
+      </div>
+      <div className="tabs sop-detail-tabs" role="tablist" aria-label="SOP详情">
+        {[
+          ["overview", "标准概览"],
+          ["steps", "步骤与评价"],
+          ["ai", "AI评价能力"],
+          ["versions", "版本记录"],
+        ].map(([value, label]) => (
+          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
+        ))}
+      </div>
+      {tab === "overview" && (
         <section className="panel">
           <PanelTitle title="标准概览" />
-          <div className="definition-list sop-overview">
-            <span>
-              <small>适用操作</small>
-              <strong>{sop.operation}</strong>
-            </span>
-            <span>
-              <small>总分</small>
-              <strong>
-                {sop.steps.reduce((sum, step) => sum + Number(step.score), 0)}{" "}
-                分
-              </strong>
-            </span>
-            <span>
-              <small>标准耗时</small>
-              <strong>{sop.standardDuration}</strong>
-            </span>
-            <span>
-              <small>视频自动判定</small>
-              <strong>{judgementCounts.visual_auto || 0} 个步骤</strong>
-            </span>
-            <span>
-              <small>默认通过 / 教师抽查</small>
-              <strong>
-                {(judgementCounts.visual_assist_default_pass || 0) +
-                  (judgementCounts.default_pass_manual_deduction || 0)}{" "}
-                个步骤
-              </strong>
-            </span>
-            <span>
-              <small>定义依据</small>
-              <strong>{sop.basis}</strong>
-            </span>
+          <div className="definition-list sop-detail-overview">
+            <span><small>所属专业</small><strong>{sop.major || "未设置"}</strong></span>
+            <span><small>适用课程</small><strong>{sop.course || "—"}</strong></span>
+            <span><small>适用操作</small><strong>{sop.operation}</strong></span>
+            <span><small>标准依据</small><strong>{sop.basis}</strong></span>
+            <span><small>适用实训环境</small><strong>{sop.conditions}</strong></span>
+          </div>
+          <PanelTitle title="操作流程预览" />
+          <div className="sop-flow-preview">
+            {sop.steps.map((step, index) => (
+              <span key={step.id}><b>{String(index + 1).padStart(2, "0")}</b><strong>{step.name}</strong><small>{step.timeout}</small></span>
+            ))}
           </div>
         </section>
-        <section className="panel">
-          <PanelTitle title="三条独立版本线" />
-          <div className="definition-list version-lines">
-            <span>
-              <small>SOP 业务标准</small>
-              <strong>
-                {sop.version} · {sop.status}
-              </strong>
-            </span>
-            <span>
-              <small>Dataset</small>
-              <strong>
-                {dataset
-                  ? `${dataset.version} · ${dataset.status}`
-                  : "尚未建立"}
-              </strong>
-            </span>
-            <span>
-              <small>动作模型</small>
-              <strong>
-                {model ? `${model.version} · ${model.status}` : "未绑定模型"}
-              </strong>
-            </span>
-            <span>
-              <small>兼容基线</small>
-              <strong>
-                {model
-                  ? `SOP ${model.sopVersion} / Dataset ${model.datasetVersion}`
-                  : "—"}
-              </strong>
-            </span>
-          </div>
-        </section>
-      </div>
-      <section className="panel">
-        <PanelTitle title="操作步骤与评分规则" />
-        <div className="step-list">
-          {sop.steps.map((step, index) => (
-            <button
-              key={step.id}
-              onClick={() =>
-                setModal({
-                  eyebrow: "冻结的 SOP 步骤",
-                  title: `${step.id} · ${step.name}`,
-                  size: "large",
-                  hideCancel: true,
-                  dismissOnly: true,
-                  confirmText: "关闭",
-                  content: (
-                    <div className="sop-step-detail">
-                      <div className="sop-step-detail__summary">
-                        {step.standardMediaUrl && (
-                          <img
-                            src={step.standardMediaUrl}
-                            alt={`${step.name} 标准示教参考`}
-                          />
-                        )}
-                        <div>
-                          <div className="detail-badges">
-                            <Status>
-                              {JUDGEMENT_MODES[step.judgementMode]
-                                ?.shortLabel || "未配置"}
-                            </Status>
-                            <Status>
-                              {step.standardMediaType || "示教资料"}
-                            </Status>
-                            <Status>{step.score} 分</Status>
-                          </div>
-                          <p>{step.teachingInstruction}</p>
-                          <small>{step.knownLimit}</small>
-                        </div>
-                      </div>
-                      <div className="sop-step-detail__grid">
-                        <section>
-                          <h3>完成条件与要点</h3>
-                          <ul>
-                            <li>{step.completionCondition}</li>
-                            <li>{step.keyPoints}</li>
-                          </ul>
-                        </section>
-                        <section>
-                          <h3>采证与判定</h3>
-                          <ul>
-                            <li>
-                              {step.evidence || "无需视频采证，教师按需抽查"}
-                            </li>
-                            <li>
-                              {JUDGEMENT_MODES[step.judgementMode]?.description}
-                            </li>
-                          </ul>
-                        </section>
-                        <section>
-                          <h3>常见错误与扣分</h3>
-                          <ul>
-                            <li>{step.commonMistakes}</li>
-                            <li>{step.deductionRule}</li>
-                          </ul>
-                        </section>
-                      </div>
-                      {step.redline && (
-                        <div className="sop-redline">
-                          <AlertOutlined />
-                          <div>
-                            <strong>安全红线</strong>
-                            <p>{step.redline}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ),
-                })
-              }
-            >
-              <b>{index + 1}</b>
-              <span>
-                <strong>{step.name}</strong>
-                <small>
-                  {step.id} · {step.attribute} · {step.timeout} · {step.score}{" "}
-                  分
-                </small>
-              </span>
-              <Status>
-                {JUDGEMENT_MODES[step.judgementMode]?.shortLabel || "未配置"}
-              </Status>
-              <em>查看详情 →</em>
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="panel">
-        <PanelTitle title="版本历史与差异依据" />
-        <div className="mapping-list">
-          {(sop.history || []).map((item) => (
-            <div className="mapping-row" key={`${item.version}-${item.time}`}>
-              <code>{item.version}</code>
-              <span>
-                <strong>{item.note}</strong>
-                <small>
-                  {item.actor} · {item.time}
-                </small>
-              </span>
-              <Status>{item.status}</Status>
+      )}
+      {tab === "steps" && activeStep && (
+        <div className="rule-layout sop-readonly-layout">
+          <aside className="panel rule-steps">
+            <PanelTitle title="操作步骤" />
+            {sop.steps.map((step, index) => (
+              <button className={index === selectedStep ? "active" : ""} key={step.id} onClick={() => setSelectedStep(index)}>
+                <b>{String(index + 1).padStart(2, "0")}</b><span>{step.name}</span><small>{step.id} · {step.attribute}</small>
+              </button>
+            ))}
+          </aside>
+          <section className="panel rule-editor">
+            <PanelTitle title={`${activeStep.id} · ${activeStep.name}`} action={<Status>{JUDGEMENT_MODES[activeStep.judgementMode]?.label}</Status>} />
+            <div className="definition-list sop-step-readonly">
+              <span><small>步骤属性</small><strong>{activeStep.attribute}</strong></span>
+              <span><small>前置步骤</small><strong>{activeStep.predecessor}</strong></span>
+              <span><small>建议时间</small><strong>{activeStep.timeout}</strong></span>
+              <span><small>分值</small><strong>{activeStep.score} 分</strong></span>
+              <span><small>标准操作说明</small><strong>{activeStep.teachingInstruction}</strong></span>
+              <span><small>操作要点</small><strong>{activeStep.keyPoints}</strong></span>
+              <span><small>常见错误</small><strong>{activeStep.commonMistakes || "—"}</strong></span>
+              <span><small>完成条件</small><strong>{activeStep.completionCondition}</strong></span>
+              <span><small>视频评价限制</small><strong>{activeStep.judgementMode === "visual_auto" ? "—" : activeStep.knownLimit}</strong></span>
+              <span><small>评价证据要求</small><strong>{activeStep.evidence || "无需视频证据"}</strong></span>
+              <span><small>扣分规则</small><strong>{activeStep.deductionRule}</strong></span>
             </div>
-          ))}
+            {activeStep.standardMediaUrl && <div className="media-reference"><img src={activeStep.standardMediaUrl} alt={`${activeStep.name} 示教资料`} /><span>{activeStep.standardMediaType || "示教资料"}</span></div>}
+            {activeStep.redline && <div className="sop-redline"><AlertOutlined /><div><strong>安全红线</strong><p>{activeStep.redline}</p><small>触发后暂停当前学生评价，并通知教师处理。</small></div></div>}
+            <details className="business-rule-details"><summary>高级异常规则</summary><div className="definition-list"><span><small>跳过步骤</small><strong>{activeStep.skipPolicy}</strong></span><span><small>顺序错误</small><strong>{activeStep.orderPolicy}</strong></span><span><small>重复操作</small><strong>{activeStep.repeatPolicy}</strong></span><span><small>超时处理</small><strong>{activeStep.timeoutPolicy}</strong></span></div></details>
+          </section>
         </div>
-      </section>
+      )}
+      {tab === "ai" && (
+        <section className="panel">
+          <div className="ai-capability-hero">
+            <div><small>当前 AI评价状态</small><h2>{aiStatus.status}</h2><p>当前 {sop.steps.length} 个步骤中，{judgementCounts.visual_auto || 0} 个设置为自动评价，{judgementCounts.visual_assist_default_pass || 0} 个使用AI辅助评价，{judgementCounts.default_pass_manual_deduction || 0} 个由教师评价。</p></div>
+            <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
+          </div>
+          <div className="definition-list ai-capability-summary">
+            <span><small>当前Dataset</small><strong>{dataset ? `${dataset.version} · ${dataset.status}` : "尚未建立"}</strong></span>
+            <span><small>当前模型</small><strong>{model ? `${model.version} · ${model.status}` : "尚未建立"}</strong></span>
+            <span><small>最近更新</small><strong>{model?.updatedAt || dataset?.updatedAt || "—"}</strong></span>
+            <span><small>已验证工位</small><strong>{aiStatus.validatedWorkstationCount} / {aiStatus.targetWorkstationCount}</strong></span>
+          </div>
+          <DataTable columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]} statusColumns={[]} rows={sop.steps.map((step) => {
+            const configured = JUDGEMENT_MODES[step.judgementMode]?.label || "未配置";
+            const actual = step.judgementMode !== "visual_auto" ? configured : aiStatus.status === "可用" ? "自动评价" : aiStatus.status === "部分可用" ? "部分工位自动评价" : "AI辅助评价";
+            const reason = step.judgementMode !== "visual_auto" ? "按教师设定执行" : aiStatus.status === "可用" ? "模型与目标工位验证均已通过" : "自动能力未完全就绪，运行时安全降级";
+            return [`${step.id} · ${step.name}`, configured, actual, reason];
+          })} />
+        </section>
+      )}
+      {tab === "versions" && (
+        <section className="panel">
+          <PanelTitle title="SOP 版本记录" />
+          <div className="mapping-list">
+            {(sop.history || []).map((item) => (
+              <div className="mapping-row sop-version-row" key={`${item.version}-${item.time}`}><code>{item.version}</code><span><strong>{item.note}</strong><small>{item.actor} · {item.time}</small></span><Status>{item.status}</Status></div>
+            ))}
+          </div>
+        </section>
+      )}
     </>
   );
 }
 
 function SopEditor({ setModal }) {
   const nav = useNavigate(),
+    location = useLocation(),
     { id } = useParams(),
     store = usePrototypeData();
   const source = id ? store.data.sops.find((item) => item.id === id) : null;
   const [draft, setDraft] = useState(() =>
     JSON.parse(JSON.stringify(source || emptySopDraft())),
   );
-  const [stage, setStage] = useState(source ? 1 : 0),
+  const [stage, setStage] = useState(() =>
+      Math.min(3, Math.max(0, Number(location.state?.stage || 0))),
+    ),
     [selectedRuleStep, setSelectedRuleStep] = useState(0),
     [dirty, setDirty] = useState(false),
     [signature, setSignature] = useState(""),
-    [signed, setSigned] = useState(false);
-  const stages = [
-    "基础信息",
-    "教师定义步骤",
-    "数据与模型映射",
-    "状态机与评分",
-    "审核发布",
-  ];
+    [signed, setSigned] = useState(false),
+    [saveError, setSaveError] = useState("");
+  const stages = ["基本信息", "操作步骤", "评价规则", "检查并发布"];
   const active = draft.steps[selectedRuleStep] || draft.steps[0];
-  const dataset = store.data.datasets.find((item) => item.sopId === id);
-  const model = store.data.models.find((item) => item.sopId === id);
   const issues = validateSopDraft(draft);
+  const totalScore = draft.steps.reduce(
+    (sum, step) => sum + Number(step.score || 0),
+    0,
+  );
+  const judgementCounts = draft.steps.reduce(
+    (counts, step) => ({
+      ...counts,
+      [step.judgementMode]: (counts[step.judgementMode] || 0) + 1,
+    }),
+    {},
+  );
   const updateDraft = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
     setDirty(true);
@@ -3213,6 +3165,28 @@ function SopEditor({ setModal }) {
       ...current,
       steps: current.steps.map((step, index) =>
         index === selectedRuleStep ? { ...step, [key]: value } : step,
+      ),
+    }));
+    setDirty(true);
+  };
+  const updateStepFields = (fields) => {
+    setDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, index) =>
+        index === selectedRuleStep ? { ...step, ...fields } : step,
+      ),
+    }));
+    setDirty(true);
+  };
+  const updateStepMedia = (file) => {
+    if (!file) return;
+    const mediaType = file.type.startsWith("video/") ? "示教视频" : "示教图片";
+    setDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, index) =>
+        index === selectedRuleStep
+          ? { ...step, standardMediaType: mediaType, standardMediaName: file.name }
+          : step,
       ),
     }));
     setDirty(true);
@@ -3239,32 +3213,57 @@ function SopEditor({ setModal }) {
     }));
     setDirty(true);
   };
+  const persistDraft = () => {
+    const saved = id
+      ? store.updateSopDraft(id, draft)
+      : store.createSopDraft(draft);
+    setDirty(false);
+    setSaveError("");
+    return saved;
+  };
   const save = () =>
     setModal({
       title: "保存 SOP 草稿",
       content: (
         <p>
-          只保存教师定义的业务标准草稿，不触发模型训练，也不影响任何已发布版本。
+          只保存教师定义的业务标准草稿，不影响任何已发布版本和正在进行的教学安排。
         </p>
       ),
       confirmText: "保存草稿",
       onConfirm: () => {
-        const saved = id
-          ? store.updateSopDraft(id, draft)
-          : store.createSopDraft(draft);
-        setDirty(false);
+        const saved = persistDraft();
         if (!id)
-          window.setTimeout(() => nav(`/teacher/sop/edit/${saved.id}`), 0);
+          window.setTimeout(
+            () => nav(`/teacher/sop/edit/${saved.id}`, { replace: true, state: { stage } }),
+            0,
+          );
         return `${saved.name} ${saved.version} 已保存`;
       },
     });
+  const goToStage = (target) => {
+    if (target <= stage) {
+      setStage(target);
+      return;
+    }
+    try {
+      const saved = persistDraft();
+      if (!id)
+        window.setTimeout(
+          () => nav(`/teacher/sop/edit/${saved.id}`, { replace: true, state: { stage: target } }),
+          0,
+        );
+      else setStage(target);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "草稿保存失败。");
+    }
+  };
   const publish = () =>
     setModal({
       title: `签名并冻结 ${draft.version}`,
       content: (
         <p>
-          发布后步骤、依赖、评分和安全红线不可原地修改。Dataset
-          与模型仍保持独立版本。
+          发布只冻结当前 SOP 业务标准，AI评价能力将在发布后独立配置。
+          发布后步骤、评分和安全红线不可原地修改；AI评价尚未就绪时系统将按教师规则安全降级。
         </p>
       ),
       confirmText: "确认冻结发布",
@@ -3279,22 +3278,6 @@ function SopEditor({ setModal }) {
         return `${published.version} 已签名冻结`;
       },
     });
-  const uploadRef = useRef(null);
-  const openUpload = () =>
-    setModal({
-      title: "上传并标注动作视频",
-      size: "large",
-      content: <UploadSampleForm ref={uploadRef} sop={draft} />,
-      confirmText: "提交复核",
-      onConfirm: () => {
-        if (!id) throw new Error("请先保存 SOP 草稿，再上传样本。");
-        const sample = store.addDatasetSample({
-          sopId: id,
-          ...uploadRef.current.getValue(),
-        });
-        return `${sample.fileName} 已进入待审核队列`;
-      },
-    });
   const moveStep = (offset) => {
     const target = selectedRuleStep + offset;
     if (target < 0 || target >= draft.steps.length) return;
@@ -3307,36 +3290,34 @@ function SopEditor({ setModal }) {
     setSelectedRuleStep(target);
   };
   const addStep = () => {
-    const max = draft.steps.reduce(
-      (value, step) => Math.max(value, Number(step.id.match(/\d+/)?.[0] || 0)),
-      0,
-    );
-    const idValue = `Step ${String(max + 1).padStart(2, "0")}`;
-    updateDraft("steps", [
-      ...draft.steps,
-      {
-        id: idValue,
-        name: "",
-        attribute: "必做",
-        predecessor: draft.steps.at(-1)?.id || "无",
-        timeout: "01:00",
-        score: 10,
-        completionCondition: "",
-        teachingInstruction: "",
-        keyPoints: "",
-        commonMistakes: "",
-        standardMediaType: "示教图片",
-        standardMediaUrl: "/assets/student-monitor-hand-tracking.png",
-        evidence: "",
-        deductionRule: "",
-        redline: "",
-        judgementMode: "visual_auto",
-        knownLimit: "关键动作和目标区域需要持续出现在画面内。",
-        repeatPolicy: "重复即提示并扣分",
-        confirmFrames: 5,
-        minConfidence: "0.80",
-      },
-    ]);
+    const historicalSteps = store.data.sops
+      .filter(
+        (item) => draft.familyId && item.familyId === draft.familyId,
+      )
+      .flatMap((item) => item.steps || []);
+    const idValue = nextStableStepId({
+      steps: draft.steps,
+      historicalSteps,
+      usedStepIds: draft.usedStepIds || [],
+    });
+    setDraft((current) => ({
+      ...current,
+      steps: [
+        ...current.steps,
+        createSopStepDraft({
+          id: idValue,
+          predecessor: current.steps.at(-1)?.id || "无",
+          score: 10,
+        }),
+      ],
+      usedStepIds: [
+        ...new Set([
+          ...(current.usedStepIds || current.steps.map((step) => step.id)),
+          idValue,
+        ]),
+      ],
+    }));
+    setDirty(true);
     setSelectedRuleStep(draft.steps.length);
   };
   const removeStep = () => {
@@ -3350,61 +3331,6 @@ function SopEditor({ setModal }) {
     updateDraft("steps", steps);
     setSelectedRuleStep(Math.max(0, selectedRuleStep - 1));
   };
-  const lifecycleLabel =
-    model?.status === "待训练" || model?.status === "失败"
-      ? "重新训练"
-      : model?.status === "训练中"
-        ? "标记训练完成"
-        : model?.status === "待验证"
-          ? "通过验证"
-          : model?.status === "可部署"
-            ? "部署模型"
-            : model?.status === "已部署"
-              ? "回滚模型"
-              : "重新部署";
-  const changeModel = () =>
-    setModal({
-      title: lifecycleLabel,
-      content: (
-        <p>
-          该操作只改变模型版本 {model?.version} 的生命周期状态，不会修改 SOP{" "}
-          {draft.version} 或 Dataset {dataset?.version}。
-        </p>
-      ),
-      confirmText: lifecycleLabel,
-      onConfirm: () => {
-        const result =
-          model.status === "已部署"
-            ? store.rollbackModel(model.id)
-            : store.advanceModelLifecycle(model.id);
-        return `模型 ${result.version} 已更新为“${result.status}”`;
-      },
-    });
-  const datasetLifecycleLabel =
-    dataset?.status === "已锁定"
-      ? `创建 ${dataset.nextVersion || "下一版"}`
-      : dataset?.status === "采集中"
-        ? "提交 Dataset 审核"
-        : "锁定 Dataset";
-  const changeDataset = () =>
-    setModal({
-      title: datasetLifecycleLabel,
-      content: (
-        <p>
-          已锁定版本不被原地修改。复核通过的样本只会进入下一版本，SOP
-          {draft.version} 与模型版本保持不变。
-        </p>
-      ),
-      confirmText: datasetLifecycleLabel,
-      onConfirm: () => {
-        if (!dataset) throw new Error("请先保存 SOP 草稿。");
-        const result =
-          dataset.status === "已锁定"
-            ? store.createDatasetVersion(id)
-            : store.advanceDatasetLifecycle(dataset.id);
-        return `Dataset ${result.version} 已更新为“${result.status}”`;
-      },
-    });
   return (
     <>
       <PageHeader
@@ -3416,9 +3342,9 @@ function SopEditor({ setModal }) {
             <Button onClick={save}>保存草稿</Button>
             <Button
               type="primary"
-              onClick={() => (stage < 4 ? setStage(stage + 1) : publish())}
+              onClick={() => (stage < 3 ? goToStage(stage + 1) : publish())}
             >
-              {stage < 4 ? "下一步" : "签名发布"}
+              {stage < 3 ? "下一步" : "签名并发布"}
             </Button>
           </>
         }
@@ -3428,24 +3354,22 @@ function SopEditor({ setModal }) {
           <button
             key={name}
             className={index === stage ? "active" : index < stage ? "done" : ""}
-            onClick={() => setStage(index)}
+            onClick={() => goToStage(index)}
           >
             <b>{index < stage ? "✓" : index + 1}</b>
             <span>{name}</span>
           </button>
         ))}
       </div>
+      {saveError && (
+        <p className="form-error sop-save-error" role="alert">
+          <ExclamationCircleFilled /> {saveError}
+        </p>
+      )}
       {stage === 0 && (
-        <div className="editor-grid">
+        <div className="editor-grid sop-basic-layout">
           <section className="panel">
             <PanelTitle title="基本信息" />
-            <div className="source-owner">
-              <SafetyCertificateOutlined />
-              <span>
-                <strong>标准责任人：{draft.owner}</strong>
-                <small>教师负责定义与签名，AI 无权生成或改写 SOP</small>
-              </span>
-            </div>
             {draft.basedOn && (
               <p className="hint">
                 来源：{draft.basedOn}
@@ -3453,12 +3377,38 @@ function SopEditor({ setModal }) {
               </p>
             )}
             <label className="field">
-              标准名称
+              SOP名称
               <input
+                maxLength={50}
                 value={draft.name}
                 onChange={(event) => updateDraft("name", event.target.value)}
               />
             </label>
+            <div className="form-row">
+              <label className="field">
+                所属专业
+                <select
+                  value={draft.major || "新能源汽车技术"}
+                  onChange={(event) => updateDraft("major", event.target.value)}
+                >
+                  {[
+                    "新能源汽车技术",
+                    "汽车检测与维修技术",
+                    "机电一体化技术",
+                    "工业机器人技术",
+                    "数控技术",
+                    "其他",
+                  ].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                适用课程（选填）
+                <input
+                  value={draft.course || ""}
+                  onChange={(event) => updateDraft("course", event.target.value)}
+                />
+              </label>
+            </div>
             <label className="field">
               适用操作
               <textarea
@@ -3469,26 +3419,28 @@ function SopEditor({ setModal }) {
               />
             </label>
             <label className="field">
-              标准耗时
-              <input
-                value={draft.standardDuration}
-                onChange={(event) =>
-                  updateDraft("standardDuration", event.target.value)
-                }
-              />
-            </label>
-          </section>
-          <section className="panel">
-            <PanelTitle title="定义依据" />
-            <label className="field">
-              教学标准 / 行业规范
-              <input
+              标准依据
+              <textarea
                 value={draft.basis}
                 onChange={(event) => updateDraft("basis", event.target.value)}
               />
             </label>
+            <div className="form-row sop-duration-row">
+              <label className="field">
+                标准耗时
+                <span className="input-with-unit">
+                  <input
+                    type="number"
+                    min="1"
+                    value={Number(String(draft.standardDuration).match(/\d+/)?.[0] || 15)}
+                    onChange={(event) => updateDraft("standardDuration", `${event.target.value} 分钟`)}
+                  />
+                  <b>分钟</b>
+                </span>
+              </label>
+            </div>
             <label className="field">
-              适用设备与工位条件
+              适用实训环境
               <textarea
                 value={draft.conditions}
                 onChange={(event) =>
@@ -3496,18 +3448,22 @@ function SopEditor({ setModal }) {
                 }
               />
             </label>
-            <p className="hint">
-              <LockOutlined /> SOP
-              可先于动作模型发布；自动识别是否可用由模型版本单独标识。
-            </p>
           </section>
+          <aside className="panel sop-responsibility-card">
+            <SafetyCertificateOutlined />
+            <h2>标准责任</h2>
+            <span><small>标准责任人</small><strong>{draft.owner}</strong></span>
+            <span><small>当前版本</small><strong>{draft.version}</strong></span>
+            <span><small>当前状态</small><strong>{draft.status || "草稿"}</strong></span>
+            <p>SOP是教学与评价的正式业务标准。步骤、评分和安全规则由专业教师定义，AI不会自动生成或改写本标准。</p>
+          </aside>
         </div>
       )}
       {stage === 1 && (
         <div className="rule-layout sop-definition-layout">
           <aside className="panel rule-steps">
             <PanelTitle
-              title="教师定义的步骤"
+              title="操作步骤"
               action={
                 <Button icon={<PlusOutlined />} onClick={addStep}>
                   新增
@@ -3520,11 +3476,12 @@ function SopEditor({ setModal }) {
                 key={step.id}
                 onClick={() => setSelectedRuleStep(index)}
               >
-                <b>{index + 1}</b>
+                <b>{String(index + 1).padStart(2, "0")}</b>
                 <span>{step.name || "未命名步骤"}</span>
                 <small>
-                  {step.id} · {step.attribute} · {step.timeout}
+                  {step.attribute} · 建议 {step.timeout}
                 </small>
+                <small className="step-system-id">系统标识：{step.id}</small>
               </button>
             ))}
           </aside>
@@ -3537,7 +3494,7 @@ function SopEditor({ setModal }) {
               <LockOutlined />
               <div>
                 <strong>Step ID 一经创建不随排序改变</strong>
-                <p>Dataset 和模型只引用固定 ID；删除步骤也不会复用该编号。</p>
+                <p>调整顺序不会改变系统标识；删除步骤后也不会复用该编号。</p>
               </div>
             </div>
             <div className="rule-form">
@@ -3565,7 +3522,7 @@ function SopEditor({ setModal }) {
                   </small>
                 </div>
                 <label className="field">
-                  标准示教说明
+                  标准操作说明
                   <textarea
                     value={active.teachingInstruction || ""}
                     onChange={(event) =>
@@ -3593,31 +3550,17 @@ function SopEditor({ setModal }) {
                     />
                   </label>
                 </div>
-                <div className="form-row">
-                  <label className="field">
-                    示教资料类型
-                    <select
-                      value={active.standardMediaType || "示教图片"}
-                      onChange={(event) =>
-                        updateStep("standardMediaType", event.target.value)
-                      }
-                    >
-                      <option>示教图片</option>
-                      <option>示教视频</option>
-                      <option>图文说明</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    示教资料地址
-                    <input
-                      value={active.standardMediaUrl || ""}
-                      onChange={(event) =>
-                        updateStep("standardMediaUrl", event.target.value)
-                      }
-                      placeholder="上传后生成地址，原型可填写 /assets/..."
-                    />
-                  </label>
-                </div>
+                <label className="field media-upload-field">
+                  标准示教资料
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    onChange={(event) => updateStepMedia(event.target.files?.[0])}
+                  />
+                  <small>
+                    {active.standardMediaName || `${active.standardMediaType || "示教资料"}已配置`}
+                  </small>
+                </label>
               </div>
               <div className="form-row">
                 <label className="field">
@@ -3648,32 +3591,17 @@ function SopEditor({ setModal }) {
                   >
                     <option>必做</option>
                     <option>可选</option>
-                    <option>允许分支</option>
+                    <option value="允许分支">分支步骤</option>
                   </select>
                 </label>
               </div>
-              <div className="form-row">
-                <label className="field">
-                  超时阈值
-                  <input
-                    value={active.timeout}
-                    onChange={(event) =>
-                      updateStep("timeout", event.target.value)
-                    }
-                  />
-                </label>
-                <label className="field">
-                  步骤分值
-                  <input
-                    type="number"
-                    min="1"
-                    value={active.score}
-                    onChange={(event) =>
-                      updateStep("score", Number(event.target.value))
-                    }
-                  />
-                </label>
-              </div>
+              <label className="field compact-field">
+                建议完成时间（mm:ss）
+                <input
+                  value={active.timeout}
+                  onChange={(event) => updateStep("timeout", event.target.value)}
+                />
+              </label>
               <div className="definition-actions">
                 <Button
                   disabled={selectedRuleStep === 0}
@@ -3701,220 +3629,69 @@ function SopEditor({ setModal }) {
         </div>
       )}
       {stage === 2 && (
-        <div className="editor-grid model-mapping-grid">
-          <section className="panel">
-            <PanelTitle
-              title={`Dataset ${dataset?.version || "尚未建立"} · 固定标签映射`}
-              action={
-                <>
-                  <Button onClick={changeDataset} disabled={!dataset}>
-                    {datasetLifecycleLabel}
-                  </Button>
-                  <Button icon={<UploadOutlined />} onClick={openUpload}>
-                    上传标注视频
-                  </Button>
-                </>
-              }
-            />
-            <div className="mapping-list">
-              {[
-                ...draft.steps.map((step) => [
-                  step.id,
-                  step.name,
-                  dataset?.labels?.[step.id] || 0,
-                ]),
-                [
-                  "Other",
-                  "非 SOP / 遮挡 / 停顿 / 错工具",
-                  dataset?.labels?.Other || 0,
-                ],
-              ].map((item) => (
-                <div
-                  className={`mapping-row ${item[0] === "Other" ? "mapping-row--other" : ""}`}
-                  key={item[0]}
-                >
-                  <code>{item[0]}</code>
-                  <span>
-                    <strong>{item[1]}</strong>
-                    <small>动作分类标签</small>
-                  </span>
-                  <b>{item[2]} 段</b>
-                  <Status tone={item[2] < 70 ? "warning" : "success"}>
-                    {item[0] === "Other"
-                      ? "必选类别"
-                      : item[2] < 70
-                        ? "样本偏少"
-                        : "已验证"}
-                  </Status>
-                </div>
-              ))}
-            </div>
-            <p className="hint">
-              当前状态 {dataset?.status || "未建立"} · 待审候选
-              {dataset?.candidateCount || 0} 段；只有教师复核通过后才进入下一版
-              Dataset。
-            </p>
-            <Button onClick={() => nav("/teacher/sop/learning")}>
-              进入样本复核
-            </Button>
-          </section>
-          <section className="panel">
-            <PanelTitle
-              title={
-                model ? `${model.name} ${model.version}` : "尚未创建动作模型"
-              }
-              action={
-                <Status
-                  tone={model?.status === "已部署" ? "success" : "warning"}
-                >
-                  {model?.status || "未绑定"}
-                </Status>
-              }
-            />
-            {model ? (
-              <>
-                <div className="training-state">
-                  <ReloadOutlined />
-                  <div>
-                    <strong>基于固定类别训练</strong>
-                    <p>
-                      兼容基线：SOP {model.sopVersion} / Dataset{" "}
-                      {model.datasetVersion}
-                      。模型不会自动扩展、重命名或生成步骤。
-                    </p>
-                    <div className="progress">
-                      <i style={{ width: `${model.progress}%` }} />
-                    </div>
-                  </div>
-                </div>
-                <div className="model-metrics">
-                  <span>
-                    <small>验证 F1</small>
-                    <strong>{model.f1}</strong>
-                  </span>
-                  <span>
-                    <small>Sequence Accuracy</small>
-                    <strong>{model.sequenceAccuracy}</strong>
-                  </span>
-                  <span>
-                    <small>Other Recall</small>
-                    <strong>{model.otherRecall}</strong>
-                  </span>
-                  <span>
-                    <small>生命周期</small>
-                    <strong>{model.status}</strong>
-                  </span>
-                  <span>
-                    <small>评测时间</small>
-                    <strong>{model.evaluatedAt || "待验证"}</strong>
-                  </span>
-                  <span>
-                    <small>部署范围</small>
-                    <strong>{model.deploymentTarget || "尚未部署"}</strong>
-                  </span>
-                </div>
-                <Button
-                  type={model.status === "已部署" ? "danger" : "primary"}
-                  onClick={changeModel}
-                >
-                  {lifecycleLabel}
-                </Button>
-              </>
-            ) : (
-              <p className="hint">
-                SOP
-                可独立发布。模型版本建立后，训练、验证、部署和回滚均单独留痕。
-              </p>
-            )}
-          </section>
-        </div>
-      )}
-      {stage === 3 && (
-        <div className="rule-layout">
+        <div className="evaluation-stage">
+          <div className={`score-allocation ${totalScore === 100 ? "score-allocation--complete" : totalScore > 100 ? "score-allocation--over" : ""}`}>
+            <span><small>当前总分</small><strong>{totalScore} / 100</strong></span>
+            <p>{totalScore === 100 ? "✓ 总分已配置完成" : totalScore < 100 ? `还需分配 ${100 - totalScore} 分` : `已超出 ${totalScore - 100} 分`}</p>
+          </div>
+          <div className="rule-layout">
           <aside className="panel rule-steps">
-            <PanelTitle title="状态机步骤" />
+            <PanelTitle title="评价步骤" />
             {draft.steps.map((step, index) => (
               <button
                 className={index === selectedRuleStep ? "active" : ""}
                 key={step.id}
                 onClick={() => setSelectedRuleStep(index)}
               >
-                <b>{index + 1}</b>
+                <b>{String(index + 1).padStart(2, "0")}</b>
                 <span>{step.name || "未命名步骤"}</span>
                 <small>
-                  {step.id} · 前置 {step.predecessor}
+                  {step.score} 分 · {JUDGEMENT_MODES[step.judgementMode]?.shortLabel}
                 </small>
               </button>
             ))}
           </aside>
           <section className="panel rule-editor">
             <PanelTitle
-              title={`${active.id} · 判定与评分`}
-              action={<Status>教师规则</Status>}
+              title={`${active.id} · 评价规则`}
+              action={<Status>{active.score} 分</Status>}
             />
-            <div className="state-machine-flow">
-              {[
-                ["PENDING", "等待前置"],
-                ["ACTIVE", "连续命中"],
-                ["COMPLETED", "满足完成条件"],
-              ].map((item, index) => (
-                <span key={item[0]}>
-                  <code>{item[0]}</code>
-                  <small>{item[1]}</small>
-                  {index < 2 && <b>→</b>}
-                </span>
-              ))}
-            </div>
             <div className="rule-form">
-              <div className="judgement-mode-card">
-                <label className="field">
-                  视频判定方式
-                  <select
-                    value={active.judgementMode || "visual_auto"}
-                    onChange={(event) =>
-                      updateJudgementMode(event.target.value)
-                    }
-                  >
-                    {Object.entries(JUDGEMENT_MODES).map(([value, config]) => (
-                      <option key={value} value={value}>
-                        {config.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div>
-                  <strong>
-                    {
-                      JUDGEMENT_MODES[active.judgementMode || "visual_auto"]
-                        .label
-                    }
-                  </strong>
-                  <p>
-                    {
-                      JUDGEMENT_MODES[active.judgementMode || "visual_auto"]
-                        .description
-                    }
-                  </p>
+              <label className="field compact-field">
+                本步骤分值
+                <input type="number" min="1" value={active.score} onChange={(event) => updateStep("score", Number(event.target.value))} />
+              </label>
+              <div className="field">
+                评价方式
+                <div className="judgement-mode-options" role="radiogroup" aria-label="评价方式">
+                  {Object.entries(JUDGEMENT_MODES).map(([value, config]) => (
+                    <button type="button" role="radio" aria-checked={active.judgementMode === value} className={active.judgementMode === value ? "active" : ""} key={value} onClick={() => updateJudgementMode(value)}>
+                      <span className="mode-radio" /><strong>{config.label}</strong><small>{config.description}</small>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <label className="field">
-                视频能力边界 / 已知限制
+              {active.judgementMode === "visual_auto" && (
+                <p className="evaluation-notice"><AlertOutlined /> 最终是否能启用自动评价，还需完成AI模型适配和工位现场验证。本设置仅表示教师认为该步骤适合视频自动评价。</p>
+              )}
+              {active.judgementMode !== "visual_auto" && <label className="field">
+                视频评价限制
                 <textarea
                   value={active.knownLimit || ""}
                   onChange={(event) =>
                     updateStep("knownLimit", event.target.value)
                   }
                 />
-              </label>
-              <label className="field">
-                采证要求
+              </label>}
+              {active.judgementMode !== "default_pass_manual_deduction" && <label className="field">
+                评价证据要求
                 <textarea
                   value={active.evidence}
                   onChange={(event) =>
                     updateStep("evidence", event.target.value)
                   }
                 />
-              </label>
+              </label>}
               <label className="field">
                 扣分规则
                 <textarea
@@ -3924,89 +3701,45 @@ function SopEditor({ setModal }) {
                   }
                 />
               </label>
-              <label className="field">
-                安全红线（可留空）
-                <textarea
-                  value={active.redline}
-                  onChange={(event) =>
-                    updateStep("redline", event.target.value)
-                  }
-                />
-              </label>
-              <details className="implementation-settings">
-                <summary>实施高级设置（实施人员使用）</summary>
-                <p>
-                  这些参数用于现场调试，不改变教师定义的完成条件、评分规则和默认通过口径。
-                </p>
+              <section className="safety-rule-editor">
+                <label className="checkbox-row safety-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(active.hasSafetyRedline)}
+                    onChange={(event) =>
+                      updateStepFields({
+                        hasSafetyRedline: event.target.checked,
+                        redline: event.target.checked ? active.redline : "",
+                      })
+                    }
+                  />
+                  <span><strong>设置安全红线</strong><small>{active.hasSafetyRedline ? "本步骤包含必须立即干预的安全违规" : "本步骤无安全红线"}</small></span>
+                </label>
+                {active.hasSafetyRedline && (
+                  <>
+                    <label className="field">
+                      安全红线内容
+                      <textarea value={active.redline} onChange={(event) => updateStep("redline", event.target.value)} />
+                    </label>
+                    <p><AlertOutlined /> 触发后暂停当前学生评价，并通知教师处理。</p>
+                  </>
+                )}
+              </section>
+              <details className="business-rule-details">
+                <summary>高级评价规则</summary>
                 <div className="form-row">
-                  <label className="field">
-                    连续确认帧数
-                    <input
-                      type="number"
-                      min="1"
-                      value={active.confirmFrames}
-                      onChange={(event) =>
-                        updateStep("confirmFrames", Number(event.target.value))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    最低平均置信度
-                    <input
-                      value={active.minConfidence}
-                      onChange={(event) =>
-                        updateStep("minConfidence", event.target.value)
-                      }
-                    />
-                  </label>
+                  <label className="field">跳过步骤<select value={active.skipPolicy || "进入教师复核"} onChange={(event) => updateStep("skipPolicy", event.target.value)}><option>记录并继续</option><option>扣分并继续</option><option>进入教师复核</option></select></label>
+                  <label className="field">顺序错误<select value={active.orderPolicy || "进入教师复核"} onChange={(event) => updateStep("orderPolicy", event.target.value)}><option>提醒后继续</option><option>扣分并继续</option><option>进入教师复核</option></select></label>
+                  <label className="field">重复操作<select value={active.repeatPolicy || "允许一次重复"} onChange={(event) => updateStep("repeatPolicy", event.target.value)}><option>允许重复</option><option>允许一次重复</option><option>重复扣分</option><option>进入教师复核</option></select></label>
+                  <label className="field">超时处理<select value={active.timeoutPolicy || "仅记录超时"} onChange={(event) => updateStep("timeoutPolicy", event.target.value)}><option>仅记录超时</option><option>超时扣分并继续</option><option>进入教师复核</option><option>终止本次评价</option></select></label>
                 </div>
               </details>
-              <div className="form-row">
-                <label className="field">
-                  重复动作政策
-                  <select
-                    value={active.repeatPolicy || "重复即提示并扣分"}
-                    onChange={(event) =>
-                      updateStep("repeatPolicy", event.target.value)
-                    }
-                  >
-                    <option>重复即提示并扣分</option>
-                    <option>允许一次重复</option>
-                    <option>重复即进入人工复核</option>
-                  </select>
-                </label>
-                <label className="field">
-                  超时处置
-                  <select
-                    value={active.timeoutPolicy || "超时扣分并继续"}
-                    onChange={(event) =>
-                      updateStep("timeoutPolicy", event.target.value)
-                    }
-                  >
-                    <option>超时扣分并继续</option>
-                    <option>超时进入人工复核</option>
-                    <option>超时终止评价</option>
-                  </select>
-                </label>
-              </div>
-              <div className="exception-grid">
-                {[
-                  "跳步 SKIPPED",
-                  "错序 Sequence Break",
-                  "重复 Repeated",
-                  "超时 TIMEOUT",
-                  "未知 Other",
-                ].map((item) => (
-                  <span key={item}>
-                    <CheckCircleFilled /> {item}
-                  </span>
-                ))}
-              </div>
             </div>
           </section>
         </div>
+        </div>
       )}
-      {stage === 4 && (
+      {stage === 3 && (
         <section className="panel review-page">
           <div
             className={`review-hero ${issues.length ? "review-hero--warning" : ""}`}
@@ -4015,19 +3748,22 @@ function SopEditor({ setModal }) {
             <div>
               <h2>
                 {issues.length
-                  ? `还有 ${issues.length} 项发布校验未通过`
-                  : "SOP 业务标准已满足发布条件"}
+                  ? `还有 ${issues.length} 项内容需要完善`
+                  : "SOP 已满足发布条件"}
               </h2>
-              <p>校验只针对教师定义的 SOP；模型是否就绪不会阻止标准发布。</p>
+              <p>这里只检查教学与评价标准；AI评价尚未配置也可以正常发布 SOP。</p>
             </div>
           </div>
           <div className="review-list">
             {issues.length ? (
-              issues.map((issue) => (
-                <span key={issue}>
+              issues.map((issue, index) => (
+                <span key={`${issue.message}-${index}`}>
                   <ExclamationCircleFilled />
-                  <b>{issue}</b>
-                  <small>返回对应阶段完成修正</small>
+                  <b>{issue.message}</b>
+                  <button type="button" onClick={() => {
+                    if (issue.stepIndex !== null) setSelectedRuleStep(issue.stepIndex);
+                    setStage(issue.stage);
+                  }}>去修改</button>
                 </span>
               ))
             ) : (
@@ -4035,7 +3771,7 @@ function SopEditor({ setModal }) {
                 <span>
                   <CheckCircleFilled />
                   <b>{draft.steps.length} 个固定 Step ID</b>
-                  <small>顺序、依赖和规则完整</small>
+                  <small>步骤内容、顺序和依赖完整</small>
                 </span>
                 <span>
                   <CheckCircleFilled />
@@ -4044,16 +3780,18 @@ function SopEditor({ setModal }) {
                 </span>
                 <span>
                   <CheckCircleFilled />
-                  <b>Other 为强制类别</b>
-                  <small>未知动作不会强行归类</small>
+                  <b>自动评价 {judgementCounts.visual_auto || 0} 步</b>
+                  <small>发布后再完成AI评价和工位适配</small>
                 </span>
                 <span>
-                  <AlertOutlined />
-                  <b>
-                    模型 {model?.version || "未绑定"} ·{" "}
-                    {model?.status || "未就绪"}
-                  </b>
-                  <small>不影响 SOP 独立发布</small>
+                  <CheckCircleFilled />
+                  <b>AI辅助 {judgementCounts.visual_assist_default_pass || 0} 步 · 教师评价 {judgementCounts.default_pass_manual_deduction || 0} 步</b>
+                  <small>AI不确定时不会自动扣分</small>
+                </span>
+                <span>
+                  <CheckCircleFilled />
+                  <b>安全红线 {draft.steps.filter((step) => step.hasSafetyRedline).length} 项</b>
+                  <small>触发后暂停评价并通知教师</small>
                 </span>
               </>
             )}
@@ -4073,17 +3811,13 @@ function SopEditor({ setModal }) {
                 checked={signed}
                 onChange={(event) => setSigned(event.target.checked)}
               />{" "}
-              我已逐项审核并确认这是教师定义的业务真源，发布后需通过新版本修改。
+              我已逐项审核并确认当前内容为本实训项目正式教学与评价标准。
             </label>
           </div>
           <div className="publish-boundary">
             <span>
               <strong>发布 SOP {draft.version}</strong>
-              <small>签名后冻结业务标准</small>
-            </span>
-            <span>
-              <strong>模型独立管理</strong>
-              <small>训练、验证、部署、回滚不改写 SOP</small>
+              <small>签名后当前版本被冻结；后续调整需要创建新版本。AI评价能力在发布后独立建设。</small>
             </span>
           </div>
         </section>
@@ -4107,10 +3841,24 @@ function Learning({ setModal }) {
   const reviewRef = useRef(null);
   const review = (sample) => {
     const sop = store.data.sops.find((item) => item.id === sample.sopId);
+    const dataset = store.data.datasets.find(
+      (item) => item.sopId === sample.sopId,
+    );
     setModal({
       title: "复核动作训练样本",
       size: "large",
-      content: <ReviewSampleForm ref={reviewRef} sample={sample} sop={sop} />,
+      content: (
+        <ReviewSampleForm
+          ref={reviewRef}
+          sample={sample}
+          sop={sop}
+          acceptLabel={
+            dataset?.status === "已锁定"
+              ? `纳入 ${dataset.nextVersion || "下一版 Dataset"}`
+              : `纳入当前 ${dataset?.version || "Dataset"}`
+          }
+        />
+      ),
       confirmText: "保存复核结论",
       onConfirm: () => {
         const form = reviewRef.current.getValue();
@@ -4132,8 +3880,8 @@ function Learning({ setModal }) {
       title: "批量纳入已选择样本",
       content: (
         <p>
-          将把明确勾选的 {pending.length} 条待审样本按现有标签纳入各自下一版
-          Dataset。不会修改任何 SOP 或当前已锁定 Dataset。
+          将把明确勾选的 {pending.length} 条待审样本按现有标签纳入对应可编辑
+          Dataset；当前版本已锁定时进入下一版候选。不会修改任何 SOP 或已锁定版本。
         </p>
       ),
       confirmText: `纳入 ${pending.length} 条`,
@@ -4312,8 +4060,8 @@ const StationCheckForm = forwardRef(function StationCheckForm(
         </figure>
       </div>
       <p className="hint">
-        将使用{snapshot ? "已锁定" : "首次开放时生成"}的 SOP / Dataset /
-        模型快照；后续升级不会污染本次安排。
+        将使用{snapshot ? "已锁定" : "首次开放时生成"}
+        的教学标准与工位AI能力快照；后续标准或AI适配升级不会影响本次安排。
       </p>
       <div
         className={`evaluation-gate-callout ${readiness.gate.enabled ? "is-enabled" : "is-fallback"}`}
@@ -4473,6 +4221,7 @@ function ArrangementList({ exam = false }) {
 
 function ArrangementForm({ exam = false, setModal }) {
   const nav = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const store = usePrototypeData();
   const type = exam ? "exam" : "practice";
@@ -4484,13 +4233,18 @@ function ArrangementForm({ exam = false, setModal }) {
   const publishedSops = store.data.sops.filter(
     (item) => item.status === "已发布",
   );
+  const preferredSopId = publishedSops.some(
+    (item) => item.id === location.state?.sopId,
+  )
+    ? location.state.sopId
+    : publishedSops[0]?.id || "";
   const [draft, setDraft] = useState(() =>
     existing
       ? JSON.parse(JSON.stringify(existing))
       : {
           type,
           name: "",
-          sopId: publishedSops[0]?.id || "",
+          sopId: preferredSopId,
           scheduleStart: "2026-09-20T09:00",
           entryEnd: exam ? "2026-09-20T09:30" : "",
           studentIds: [],
@@ -4507,8 +4261,11 @@ function ArrangementForm({ exam = false, setModal }) {
         : [...draft[key], value],
     );
   const selectedSop = store.data.sops.find((item) => item.id === draft.sopId);
-  const selectedModel = store.data.models.find(
-    (item) => item.sopId === draft.sopId && item.status === "已部署",
+  const selectedAiStatus = store.getSopAiEvaluationStatus(
+    selectedSop?.id,
+    draft.workstationIds.length
+      ? { targetWorkstationIds: draft.workstationIds }
+      : {},
   );
   const submit = (finalize) =>
     setModal({
@@ -4543,7 +4300,7 @@ function ArrangementForm({ exam = false, setModal }) {
       <PageHeader
         back
         title={`${existing ? "编辑" : "创建"}${name}`}
-        subtitle="名单、工位和版本选择随同一安排 ID 保存"
+        subtitle="选择已发布 SOP、参与学生和候选工位；AI能力在准备阶段逐工位确认"
         actions={
           <>
             <Button onClick={() => submit(false)}>保存草稿</Button>
@@ -4586,7 +4343,7 @@ function ArrangementForm({ exam = false, setModal }) {
               </label>
             )}
           </div>
-          <h2>评价标准与自动识别能力</h2>
+          <h2>评价标准与 AI评价能力</h2>
           <label className="field">
             已发布 SOP
             <select
@@ -4600,23 +4357,20 @@ function ArrangementForm({ exam = false, setModal }) {
               ))}
             </select>
           </label>
-          <div className="selection-card selection-card--static">
-            <BookOutlined />
+          <div className="selection-card selection-card--static arrangement-ai-card">
+            <VideoCameraOutlined />
             <span>
               <strong>{selectedSop?.name || "未选择 SOP"}</strong>
-              <small>
-                SOP {selectedSop?.version || "—"} · Dataset{" "}
-                {store.data.datasets.find(
-                  (item) =>
-                    item.sopId === draft.sopId && item.status === "已锁定",
-                )?.version || "未锁定"}{" "}
-                · 模型 {selectedModel?.version || "未部署"}
-              </small>
+              <small>SOP {selectedSop?.version || "—"} · 自动评价目标 {selectedAiStatus.automaticTargetCount} 步 · 当前已适配 {selectedAiStatus.modelReadyCount} 步</small>
+              <small>工位能力 {selectedAiStatus.validatedWorkstationCount} / {selectedAiStatus.targetWorkstationCount} 已通过；具体工位将在准备阶段确认。</small>
             </span>
-            <Status tone="warning">
-              {selectedModel ? "待逐工位验证" : "默认通过模式可用"}
+            <Status tone={selectedAiStatus.status === "可用" ? "success" : "warning"}>
+              AI评价：{selectedAiStatus.status}
             </Status>
           </div>
+          <p className="arrangement-ai-note">
+            <SafetyCertificateOutlined /> AI能力不完整不会阻止创建{name}；不可用工位的自动评价步骤将安全降级，AI不确定或证据不足时不自动扣分。
+          </p>
           <h2>参与学生 · 已选 {draft.studentIds.length} 人</h2>
           <div className="entity-check-grid">
             {store.data.students
@@ -4753,7 +4507,7 @@ function PrepPage({ exam = false, setModal }) {
           workstation.id,
           checkRef.current.getValue(),
         );
-        return `${workstation.name} 已开放，使用 SOP ${result.snapshot.sopVersion} / 模型 ${result.snapshot.modelVersion}`;
+        return `${workstation.name} 已开放，使用 SOP ${result.snapshot.sopVersion}，${result.session.evaluationProfile.automaticEvaluationEnabled ? "自动评价已启用" : "自动评价已安全降级"}`;
       },
     });
   };
@@ -4808,12 +4562,12 @@ function PrepPage({ exam = false, setModal }) {
           <span>
             <strong>
               {arrangement.snapshot
-                ? `已锁定 SOP ${arrangement.snapshot.sopVersion} + Dataset ${arrangement.snapshot.datasetVersion} + 模型 ${arrangement.snapshot.modelVersion}`
-                : "首次开放工位时生成独立版本快照"}
+                ? `已锁定本次教学标准与AI能力快照 · SOP ${arrangement.snapshot.sopVersion}`
+                : "首次开放工位时生成本次教学与AI能力快照"}
             </strong>
             <small>
               {arrangement.snapshot
-                ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续标准和模型升级不影响本安排。`
+                ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续标准和AI适配升级不影响本安排。`
                 : "尚未开放工位，因此没有虚假显示已锁定。"}
             </small>
           </span>
@@ -5759,7 +5513,8 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               <small>标准要求</small>
               <strong>
                 {sop?.steps?.find((item) => item.id === activeStep.id)
-                  ?.completion || `${activeStep.name}满足教师冻结的完成条件。`}
+                  ?.completionCondition ||
+                  `${activeStep.name}满足教师冻结的完成条件。`}
               </strong>
             </span>
             <span>
@@ -5805,11 +5560,9 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               </strong>
             </span>
             <span>
-              <small>证据版本</small>
+              <small>评价快照</small>
               <strong>
-                SOP {activeStep.evidenceMetadata?.sopVersion || "—"} · 模型{" "}
-                {activeStep.evidenceMetadata?.modelVersion || "—"} · ROI{" "}
-                {activeStep.evidenceMetadata?.roiVersion || "—"}
+                SOP {activeStep.evidenceMetadata?.sopVersion || "—"} · 本次工位能力已锁定
               </strong>
             </span>
           </div>
@@ -6070,6 +5823,534 @@ function HistoryCompare() {
           </div>
         </div>
       </section>
+    </>
+  );
+}
+
+function versionNumber(value = "") {
+  const parts = String(value).match(/\d+/g)?.map(Number) || [];
+  return parts.reduce((total, part) => total * 10000 + part, 0);
+}
+
+function newestVersion(items = []) {
+  return [...items].sort(
+    (a, b) =>
+      versionNumber(b.version) - versionNumber(a.version) ||
+      String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
+  )[0];
+}
+
+function AiDatasetSamples({ sop, setModal }) {
+  const store = usePrototypeData();
+  const dataset = newestVersion(
+    store.data.datasets.filter((item) => item.sopId === sop.id),
+  );
+  const reviewRef = useRef(null);
+  const [status, setStatus] = useState("全部状态");
+  const [query, setQuery] = useState("");
+  const samples = store.data.learningSamples.filter(
+    (sample) =>
+      sample.sopId === sop.id &&
+      (status === "全部状态" || sample.status === status) &&
+      `${sample.fileName} ${sample.source} ${sample.label}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
+  const review = (sample) => {
+    setModal({
+      title: "复核动作训练样本",
+      size: "large",
+      content: (
+        <ReviewSampleForm
+          ref={reviewRef}
+          sample={sample}
+          sop={sop}
+          acceptLabel={
+            dataset?.status === "已锁定"
+              ? `纳入 ${dataset.nextVersion || `D${versionNumber(dataset.version) + 1}`}`
+              : `纳入当前 ${dataset?.version || "Dataset"}`
+          }
+        />
+      ),
+      confirmText: "保存复核结论",
+      onConfirm: () => {
+        const form = reviewRef.current.getValue();
+        const nextStatus = store.reviewLearningSample(
+          sample.id,
+          form.decision,
+          form.label,
+          form.note,
+        );
+        return `${sample.fileName}：${nextStatus}`;
+      },
+    });
+  };
+  return (
+    <section className="panel panel--table ai-sample-panel">
+      <PanelTitle
+        title="样本审核"
+        action={<Status>{samples.filter((item) => item.status === "待审核").length} 条待审核</Status>}
+      />
+      <Toolbar
+        placeholder="搜索视频文件、来源或标签"
+        filters={["全部状态", "待审核", "已纳入", "已拒绝"]}
+        value={query}
+        filterValue={status}
+        onChange={setQuery}
+        onFilterChange={setStatus}
+        onRefresh={() => {
+          setQuery("");
+          setStatus("全部状态");
+        }}
+      />
+      <DataTable
+        columns={["视频片段", "来源", "AI建议", "确认标签", "状态", "更新时间"]}
+        rows={samples.map((sample) => [
+          sample.fileName,
+          sample.source,
+          sample.aiPrediction,
+          sample.label,
+          sample.status,
+          sample.reviewedAt || sample.createdAt || "—",
+        ])}
+        statusColumns={[4]}
+        onView={(_, index) => review(samples[index])}
+        viewLabel="复核"
+        emptyText="当前 SOP 暂无样本"
+      />
+    </section>
+  );
+}
+
+function AiEvaluationList() {
+  const nav = useNavigate();
+  const store = usePrototypeData();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("全部状态");
+  const published = store.data.sops.filter((sop) => sop.status === "已发布");
+  const entries = published.map((sop) => {
+    const status = store.getSopAiEvaluationStatus(sop.id);
+    const datasets = store.data.datasets.filter((item) => item.sopId === sop.id);
+    const models = store.data.models.filter((item) => item.sopId === sop.id);
+    const currentDataset = status.dataset || newestVersion(datasets);
+    const currentModel = status.model || newestVersion(models);
+    const updatedAt = [sop.updatedAt, currentDataset?.updatedAt, currentModel?.updatedAt]
+      .filter(Boolean)
+      .sort((a, b) => String(b).localeCompare(String(a)))[0];
+    return { sop, status, currentDataset, currentModel, updatedAt };
+  });
+  const visible = entries.filter(
+    (entry) =>
+      (filter === "全部状态" || entry.status.status === filter) &&
+      `${entry.sop.name} ${entry.sop.version}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+  );
+  const count = (matcher) => entries.filter(matcher).length;
+  return (
+    <>
+      <PageHeader
+        title="AI评价管理"
+        subtitle="以已发布 SOP 为入口，管理 Dataset、动作模型和工位现场验证"
+      />
+      <section className="sop-boundary-note">
+        <SafetyCertificateOutlined />
+        <div>
+          <strong>AI 只适配教师发布的标准，不生成或改写 SOP</strong>
+          <p>Camera-only MVP：视频不能可靠判断时保持默认通过，由教师按需抽查和扣分。</p>
+        </div>
+        <Status tone="success">SOP / Dataset / Model 独立版本</Status>
+      </section>
+      <div className="metric-grid ai-evaluation-metrics">
+        <Metric label="已发布 SOP" value={entries.length} hint="进入 AI 适配范围" icon={<BookOutlined />} tone="blue" />
+        <Metric label="可用" value={count((item) => item.status.status === "可用")} hint="全部目标工位已通过" icon={<CheckCircleOutlined />} tone="green" />
+        <Metric label="配置中" value={count((item) => ["配置中", "部分可用"].includes(item.status.status))} hint="数据、模型或验证未完成" icon={<ReloadOutlined />} tone="amber" />
+        <Metric label="未配置" value={count((item) => item.status.status === "未配置")} hint="尚未创建首个 Dataset" icon={<DatabaseOutlined />} tone="purple" />
+      </div>
+      <section className="panel panel--table">
+        <Toolbar
+          placeholder="搜索 SOP 名称或版本"
+          filters={["全部状态", "可用", "部分可用", "配置中", "未配置"]}
+          value={query}
+          filterValue={filter}
+          onChange={setQuery}
+          onFilterChange={setFilter}
+          onRefresh={() => {
+            setQuery("");
+            setFilter("全部状态");
+          }}
+        />
+        <DataTable
+          columns={["SOP", "版本", "自动目标", "Dataset", "当前模型", "工位验证", "AI状态", "更新时间"]}
+          rows={visible.map((entry) => [
+            entry.sop.name,
+            entry.sop.version,
+            `${entry.status.automaticTargetCount} 步`,
+            entry.currentDataset ? `${entry.currentDataset.version} · ${entry.currentDataset.status}` : "未创建",
+            entry.currentModel ? `${entry.currentModel.version} · ${entry.currentModel.status}` : "未创建",
+            `${entry.status.validatedWorkstationCount}/${entry.status.targetWorkstationCount} 工位`,
+            entry.status.status,
+            entry.updatedAt || "—",
+          ])}
+          statusColumns={[3, 4, 6]}
+          onView={(_, index) => nav(`/admin/ai-evaluation/${visible[index].sop.id}`)}
+          viewLabel="进入适配"
+          rowKey={(_, index) => visible[index].sop.id}
+        />
+      </section>
+    </>
+  );
+}
+
+function AiEvaluationDetail({ setModal }) {
+  const { id } = useParams();
+  const store = usePrototypeData();
+  const sop = store.data.sops.find((item) => item.id === id);
+  const [tab, setTab] = useState("overview");
+  const [selectedWorkstationId, setSelectedWorkstationId] = useState("");
+  const uploadRef = useRef(null);
+  const implementationRef = useRef(null);
+  const validationRef = useRef(null);
+  if (!sop) return <MissingState title="AI 适配对象不存在" backTo="/admin/ai-evaluation" />;
+
+  const datasets = store.data.datasets
+    .filter((item) => item.sopId === sop.id)
+    .sort((a, b) => versionNumber(b.version) - versionNumber(a.version));
+  const models = store.data.models
+    .filter((item) => item.sopId === sop.id)
+    .sort((a, b) => versionNumber(b.version) - versionNumber(a.version));
+  const dataset = datasets[0];
+  const model = models.find((item) => item.status === "已部署") || models[0];
+  const aiStatus = store.getSopAiEvaluationStatus(sop.id);
+  const targetWorkstations = store.data.workstations.filter(
+    (workstation) =>
+      workstation.supportedProject === sop.name ||
+      store.data.fieldValidations.some(
+        (record) => record.sopId === sop.id && record.workstationId === workstation.id,
+      ),
+  );
+  const selectableWorkstations = targetWorkstations.length
+    ? targetWorkstations
+    : store.data.workstations;
+  const selectedWorkstation =
+    selectableWorkstations.find((item) => item.id === selectedWorkstationId) ||
+    selectableWorkstations[0];
+  const validations = store.data.fieldValidations.filter((record) => record.sopId === sop.id);
+  const selectedValidation = validations.find(
+    (record) =>
+      record.workstationId === selectedWorkstation?.id &&
+      record.sopVersion === sop.version,
+  );
+  const selectedGate = selectedWorkstation
+    ? store.getWorkstationEvaluationGate(selectedWorkstation.id, sop.id)
+    : null;
+
+  const beginAdaptation = () => {
+    setModal({
+      title: "开始首次 AI 适配",
+      content: <p>将为“{sop.name} {sop.version}”创建独立的 Dataset D1。SOP 内容和 Step ID 不会被修改。</p>,
+      confirmText: "创建 D1",
+      onConfirm: () => {
+        store.startAiAdaptation(sop.id);
+        return "已创建 Dataset D1，可开始上传和审核样本";
+      },
+    });
+  };
+  const uploadSample = () => {
+    if (!dataset) return beginAdaptation();
+    setModal({
+      title: "上传并标注视频样本",
+      size: "large",
+      content: <UploadSampleForm ref={uploadRef} sop={sop} />,
+      confirmText: "加入待审核样本",
+      onConfirm: () => {
+        const form = uploadRef.current.getValue();
+        store.addDatasetSample({ ...form, sopId: sop.id });
+        return `${form.fileName} 已进入样本审核`;
+      },
+    });
+  };
+  const advanceDataset = () => {
+    if (!dataset) return beginAdaptation();
+    if (dataset.status === "已锁定") {
+      setModal({
+        title: "创建下一版 Dataset",
+        content: <p>将基于 {dataset.version} 和已复核候选样本创建 {dataset.nextVersion || "下一版本"}，原版本保持锁定。</p>,
+        confirmText: "创建新版本",
+        onConfirm: () => {
+          const created = store.createDatasetVersion(sop.id);
+          return `已创建 ${created.version}`;
+        },
+      });
+      return;
+    }
+    const next = dataset.status === "采集中" ? "提交审核" : "锁定 Dataset";
+    setModal({
+      title: next,
+      content: <p>{next}后 Dataset 将进入下一生命周期状态，已发布 SOP 不受影响。</p>,
+      confirmText: next,
+      onConfirm: () => {
+        const updated = store.advanceDatasetLifecycle(dataset.id);
+        return `${updated.version} 已更新为${updated.status}`;
+      },
+    });
+  };
+  const createModel = () => {
+    setModal({
+      title: "创建模型候选版本",
+      content: <p>模型将明确绑定 SOP {sop.version} 与 Dataset {dataset?.version || "—"}，不会覆盖当前已部署模型。</p>,
+      confirmText: "创建候选版本",
+      onConfirm: () => {
+        const created = store.createModelCandidate(sop.id, dataset?.id);
+        return `已创建模型 ${created.version}`;
+      },
+    });
+  };
+  const advanceModel = (item) => {
+    const nextLabel = {
+      待训练: "开始训练",
+      训练中: "完成训练",
+      待验证: "验证通过",
+      可部署: "部署为生产模型",
+      已回滚: "重新部署",
+      失败: "重新训练",
+      验证未通过: "重新训练",
+    }[item.status];
+    setModal({
+      title: nextLabel || "推进模型生命周期",
+      content: <p>{item.version} 绑定 SOP {item.sopVersion} / Dataset {item.datasetVersion}。部署时同一 SOP 只保留一个生产模型。</p>,
+      confirmText: nextLabel || "确认",
+      onConfirm: () => {
+        const updated = store.advanceModelLifecycle(item.id);
+        return `${updated.version} 已更新为${updated.status}`;
+      },
+    });
+  };
+  const editImplementation = () => {
+    if (!selectedWorkstation) return;
+    setModal({
+      title: `${selectedWorkstation.name} · 摄像头与 ROI 配置`,
+      size: "large",
+      content: <ImplementationCheckForm ref={implementationRef} workstation={selectedWorkstation} />,
+      confirmText: "保存实施检查",
+      onConfirm: () => {
+        store.saveWorkstationImplementation(selectedWorkstation.id, implementationRef.current.getValue());
+        return `${selectedWorkstation.name} 实施检查已保存`;
+      },
+    });
+  };
+  const runFieldValidation = () => {
+    if (!selectedWorkstation) return;
+    setModal({
+      title: `${selectedWorkstation.name} · 8 场景现场验证`,
+      size: "large",
+      content: <FieldValidationForm ref={validationRef} workstation={selectedWorkstation} sops={[sop]} />,
+      confirmText: "提交验证结果",
+      onConfirm: () => {
+        const record = store.saveFieldValidation(validationRef.current.getValue());
+        return `现场验证结果：${record.status}`;
+      },
+    });
+  };
+
+  return (
+    <>
+      <PageHeader
+        back
+        title={`${sop.name} · AI评价适配`}
+        subtitle="管理员维护数据、模型与工位能力；教师发布的 SOP 标准保持冻结"
+        actions={<Button onClick={() => window.location.reload()} icon={<ReloadOutlined />}>刷新状态</Button>}
+      />
+      <section className="sop-boundary-note">
+        <LockOutlined />
+        <div><strong>{sop.version} 已发布冻结</strong><p>AI能力只能引用当前 Step ID；不确定、遮挡或不可视觉判断时，按既定规则默认通过。</p></div>
+        <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
+      </section>
+      <div className="ai-adaptation-summary">
+        <span><small>SOP 版本</small><strong>{sop.version}</strong></span>
+        <span><small>当前 Dataset</small><strong>{dataset ? `${dataset.version} · ${dataset.status}` : "未创建"}</strong></span>
+        <span><small>生产模型</small><strong>{aiStatus.model ? `${aiStatus.model.version} · 已部署` : "未部署"}</strong></span>
+        <span><small>AI 状态</small><strong>{aiStatus.status}</strong></span>
+      </div>
+      <div className="tabs sop-detail-tabs ai-adaptation-tabs" role="tablist" aria-label="AI适配详情">
+        {[
+          ["overview", "适配概览"],
+          ["dataset", "数据集"],
+          ["model", "动作模型"],
+          ["validation", "工位验证"],
+          ["history", "版本与记录"],
+        ].map(([value, label]) => (
+          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "overview" && (
+        <>
+          <section className="panel panel--table">
+            <PanelTitle title="步骤适配矩阵" action={!dataset && <Button type="primary" onClick={beginAdaptation}>开始 AI 适配</Button>} />
+            <p className="hint">有效运行方式由教师设定、模型能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。</p>
+            <DataTable
+              columns={["Step", "教师设定", "Dataset", "模型能力", "工位验证", "有效运行方式"]}
+              rows={sop.steps.map((step) => {
+                const labelCount = dataset?.labels?.[step.id] || 0;
+                const modelCompatible = model?.sopVersion === sop.version && model?.datasetVersion === dataset?.version;
+                const fieldState = !targetWorkstations.length ? "未设置工位" : `${aiStatus.validatedWorkstationCount}/${targetWorkstations.length} 通过`;
+                const effectiveMode = step.judgementMode === "visual_auto" && aiStatus.status !== "可用" ? "visual_assist_default_pass" : step.judgementMode;
+                return [
+                  `${step.id} · ${step.name}`,
+                  JUDGEMENT_MODES[step.judgementMode]?.shortLabel || "未设置",
+                  dataset ? `${labelCount} 条 · ${dataset.status}` : "未创建",
+                  modelCompatible ? `${model.version} · ${model.status}` : "未适配",
+                  fieldState,
+                  JUDGEMENT_MODES[effectiveMode]?.shortLabel || "教师评价",
+                ];
+              })}
+              statusColumns={[2, 3, 4, 5]}
+            />
+          </section>
+          <section className="panel ai-gate-reasons">
+            <PanelTitle title="Automatic evaluation gate" />
+            {aiStatus.reasons.length ? aiStatus.reasons.slice(0, 8).map((reason) => <span key={reason}><AlertOutlined /><b>{reason}</b></span>) : <span className="success"><CheckCircleFilled /><b>Dataset、生产模型与全部目标工位验证均满足自动评价门禁</b></span>}
+          </section>
+        </>
+      )}
+
+      {tab === "dataset" && (
+        <>
+          {!dataset ? (
+            <section className="panel empty-state"><DatabaseOutlined /><h2>尚未创建 Dataset</h2><p>首次 AI 适配从 D1 开始，标签范围只包含当前 Step ID 与 Other。</p><Button type="primary" onClick={beginAdaptation}>创建 D1</Button></section>
+          ) : (
+            <>
+              <section className="panel">
+                <PanelTitle title={`${dataset.name} · ${dataset.status}`} action={<div className="inline-actions"><Button onClick={uploadSample} icon={<UploadOutlined />}>上传样本</Button><Button type="primary" onClick={advanceDataset}>{dataset.status === "已锁定" ? `创建 ${dataset.nextVersion || "下一版"}` : dataset.status === "采集中" ? "提交审核" : "锁定 Dataset"}</Button></div>} />
+                <div className="ai-lifecycle"><Status>采集中</Status><i /><Status>待审核</Status><i /><Status>已锁定</Status></div>
+                <div className="ai-dataset-stats"><span><small>正式样本</small><strong>{dataset.sampleCount || 0}</strong></span><span><small>已纳入</small><strong>{dataset.acceptedCount || 0}</strong></span><span><small>待审核候选</small><strong>{dataset.candidateCount || 0}</strong></span><span><small>下一版本</small><strong>{dataset.nextVersion || "—"}</strong></span></div>
+                <div className="ai-label-grid">
+                  {[...sop.steps.map((step) => [step.id, step.name]), ["Other", "非 SOP / 遮挡 / 停顿"]].map(([stepId, name]) => {
+                    const count = dataset.labels?.[stepId] || 0;
+                    const readiness = count === 0 ? "不足" : dataset.status === "已锁定" ? "已验证" : dataset.status === "待审核" ? "可训练" : "待补充";
+                    return <article key={stepId}><span><b>{stepId}</b><small>{name}</small></span><strong>{count} 条</strong><Status>{readiness}</Status></article>;
+                  })}
+                </div>
+              </section>
+              <AiDatasetSamples sop={sop} setModal={setModal} />
+            </>
+          )}
+        </>
+      )}
+
+      {tab === "model" && (
+        <>
+          <section className="panel">
+            <PanelTitle title="动作模型生命周期" action={<Button type="primary" disabled={!dataset || dataset.status !== "已锁定"} onClick={createModel}>创建候选版本</Button>} />
+            <p className="hint">每个模型版本都绑定一个 SOP 版本和一个已锁定 Dataset 版本；同一 SOP 同时只保留一个生产模型。</p>
+            <div className="ai-model-list">
+              {models.map((item) => {
+                const rollbackTarget = models.find(
+                  (candidate) =>
+                    candidate.id !== item.id &&
+                    candidate.sopVersion === item.sopVersion &&
+                    candidate.status === "已回滚",
+                );
+                return (
+                  <article key={item.id}>
+                    <header><span><strong>{item.name} {item.version}</strong><small>SOP {item.sopVersion} · Dataset {item.datasetVersion}</small></span><Status>{item.status}</Status></header>
+                    <div><span><small>F1</small><b>{item.f1}</b></span><span><small>序列准确率</small><b>{item.sequenceAccuracy}</b></span><span><small>Other 召回率</small><b>{item.otherRecall}</b></span><span><small>部署范围</small><b>{item.deploymentTarget}</b></span></div>
+                    <footer>
+                      <small>更新于 {item.updatedAt}</small>
+                      <div className="inline-actions">
+                        {item.status === "已部署" ? (
+                          rollbackTarget ? (
+                            <Button
+                              onClick={() =>
+                                setModal({
+                                  title: "回滚生产模型",
+                                  content: <p>将停用 {item.version} 并恢复 {rollbackTarget.version}。模型版本变化后，既有工位现场验证会失效并需要重新验证。</p>,
+                                  confirmText: `恢复 ${rollbackTarget.version}`,
+                                  onConfirm: () => {
+                                    const result = store.rollbackModel(item.id);
+                                    return `已恢复生产模型 ${result.restored.version}`;
+                                  },
+                                })
+                              }
+                            >
+                              回滚至 {rollbackTarget.version}
+                            </Button>
+                          ) : (
+                            <Status tone="muted">当前唯一生产版本</Status>
+                          )
+                        ) : (
+                          <Button type="primary" onClick={() => advanceModel(item)}>推进生命周期</Button>
+                        )}
+                      </div>
+                    </footer>
+                  </article>
+                );
+              })}
+              {!models.length && <div className="empty-inline"><ProductOutlined /><b>暂无模型版本</b><p>{dataset?.status === "已锁定" ? "可以从当前锁定 Dataset 创建首个候选模型。" : "先完成并锁定 Dataset，才能创建模型。"}</p></div>}
+            </div>
+          </section>
+          {model && (
+            <section className="panel panel--table">
+              <PanelTitle title="步骤与场景验证" />
+              <DataTable
+                columns={["对象", "模型能力", "现场结果", "说明"]}
+                rows={[
+                  ...sop.steps.map((step) => [
+                    `${step.id} · ${step.name}`,
+                    model.status === "已部署"
+                      ? "已具备"
+                      : model.status === "可部署"
+                        ? "验证通过"
+                        : "待验证",
+                    validations.some((item) => item.status === "通过")
+                      ? "有通过记录"
+                      : "待现场验证",
+                    JUDGEMENT_MODES[step.judgementMode]?.shortLabel,
+                  ]),
+                  ...FIELD_VALIDATION_SCENARIOS.map(([key, label]) => [
+                    label,
+                    model.status === "已部署" ? "已覆盖" : "待验证",
+                    validations.some((record) =>
+                      record.tests?.some(
+                        (test) => test.key === key && test.result === "通过",
+                      ),
+                    )
+                      ? "通过"
+                      : "待验证",
+                    "以工位现场记录为准",
+                  ]),
+                ]}
+                statusColumns={[1, 2]}
+              />
+            </section>
+          )}
+        </>
+      )}
+
+      {tab === "validation" && (
+        <>
+          <section className="panel ai-workstation-picker">
+            <PanelTitle title="工位现场验证" />
+            <label className="field">目标工位<select value={selectedWorkstation?.id || ""} onChange={(event) => setSelectedWorkstationId(event.target.value)}>{selectableWorkstations.map((workstation) => <option key={workstation.id} value={workstation.id}>{workstation.name} · {workstation.code} · {workstation.status}</option>)}</select></label>
+          </section>
+          {selectedWorkstation && (
+            <div className="ai-validation-layout">
+              <section className="panel"><PanelTitle title="画面与 ROI" action={<Button onClick={editImplementation}>配置摄像头与 ROI</Button>} /><RoiPreview implementation={selectedWorkstation.implementation} /><div className="definition-list ai-implementation-facts"><span><small>机位</small><strong>{selectedWorkstation.implementation?.cameraPosition || "未确认"}</strong></span><span><small>光照</small><strong>{selectedWorkstation.implementation?.lighting || "未确认"}</strong></span><span><small>遮挡</small><strong>{selectedWorkstation.implementation?.occlusion || "未确认"}</strong></span><span><small>摄像头配置</small><strong>{selectedWorkstation.implementation?.cameraConfigVersion || "未配置"}</strong></span><span><small>ROI 版本</small><strong>{selectedWorkstation.implementation?.roiVersion || "未配置"}</strong></span></div></section>
+              <section className="panel"><PanelTitle title="Automatic evaluation gate" action={<Status tone={selectedGate?.enabled ? "success" : "warning"}>{selectedGate?.status || "未检查"}</Status>} /><div className="ai-gate-reasons">{selectedGate?.reasons.length ? selectedGate.reasons.map((reason) => <span key={reason}><AlertOutlined /><b>{reason}</b></span>) : <span className="success"><CheckCircleFilled /><b>当前工位允许启用自动评价</b></span>}</div><div className="version-binding"><span><small>SOP</small><b>{sop.version}</b></span><span><small>模型</small><b>{model?.version || "未部署"}</b></span><span><small>ROI</small><b>{selectedWorkstation.implementation?.roiVersion || "未配置"}</b></span><span><small>摄像头</small><b>{selectedWorkstation.implementation?.cameraConfigVersion || "未配置"}</b></span></div><Button type="primary" onClick={runFieldValidation}>执行 8 场景验证</Button></section>
+            </div>
+          )}
+          <section className="panel panel--table"><PanelTitle title="现场验证记录" /><DataTable columns={["工位", "结果", "SOP", "模型", "ROI", "摄像头", "验证人", "时间"]} rows={validations.map((record) => { const workstation = store.data.workstations.find((item) => item.id === record.workstationId); return [workstation?.name || record.workstationId, record.status, record.sopVersion, record.modelVersion, record.roiVersion, record.cameraConfigVersion, record.operator, record.createdAt]; })} statusColumns={[1]} emptyText="当前 SOP 暂无现场验证记录" /></section>
+        </>
+      )}
+
+      {tab === "history" && (
+        <div className="ai-history-grid">
+          <section className="panel panel--table"><PanelTitle title="Dataset 版本" /><DataTable columns={["版本", "状态", "样本", "基于", "更新时间"]} rows={datasets.map((item) => [item.version, item.status, item.sampleCount || 0, item.basedOn || "首次创建", item.updatedAt])} statusColumns={[1]} /></section>
+          <section className="panel panel--table"><PanelTitle title="模型版本" /><DataTable columns={["版本", "状态", "SOP", "Dataset", "更新时间"]} rows={models.map((item) => [item.version, item.status, item.sopVersion, item.datasetVersion, item.updatedAt])} statusColumns={[1]} /></section>
+          <section className="panel panel--table ai-history-wide"><PanelTitle title="适配操作记录" /><DataTable columns={["时间", "操作人", "动作", "对象", "结果"]} rows={store.data.auditLogs.filter((log) => `${log.target}`.includes(sop.name) || `${log.target}`.includes(sop.id)).map((log) => [log.time, log.actor, log.action, log.target, log.result])} statusColumns={[4]} emptyText="暂无与当前 SOP 关联的适配记录" /></section>
+        </div>
+      )}
     </>
   );
 }
@@ -9371,7 +9652,7 @@ function RoutedApp() {
               <Route path="/teacher/sop" element={<SopList />} />
               <Route
                 path="/teacher/sop/learning"
-                element={<Learning setModal={setModal} />}
+                element={<Navigate to="/admin/ai-evaluation" replace />}
               />
               <Route
                 path="/teacher/sop/new"
@@ -9487,6 +9768,14 @@ function RoutedApp() {
               <Route
                 path="/admin/devices/:id"
                 element={<AdminDetail type="device" setModal={setModal} />}
+              />
+              <Route
+                path="/admin/ai-evaluation"
+                element={<AiEvaluationList />}
+              />
+              <Route
+                path="/admin/ai-evaluation/:id"
+                element={<AiEvaluationDetail setModal={setModal} />}
               />
               <Route
                 path="/admin/practices"

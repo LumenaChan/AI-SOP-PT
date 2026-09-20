@@ -1,21 +1,21 @@
 export const JUDGEMENT_MODES = {
   visual_auto: {
-    label: "视频自动判定",
-    shortLabel: "自动判定",
+    label: "自动评价",
+    shortLabel: "自动评价",
     description:
-      "摄像头画面可稳定识别时自动计分；看不清或证据缺失时默认通过并提示抽查。",
+      "摄像头可以较稳定识别该步骤的主要操作过程，系统可自动参与评价。",
   },
   visual_assist_default_pass: {
-    label: "视频辅助判定，异常时默认通过",
-    shortLabel: "辅助判定",
+    label: "AI辅助评价",
+    shortLabel: "AI辅助评价",
     description:
-      "正常画面由系统判定；遮挡、低置信度或证据缺失时保持满分，并提示教师抽查。",
+      "系统能够辅助判断；画面遮挡、证据不足或无法确认时，不自动扣分，由教师按需复核。",
   },
   default_pass_manual_deduction: {
-    label: "视频不可可靠判定，默认通过",
-    shortLabel: "教师抽查",
+    label: "教师评价",
+    shortLabel: "教师评价",
     description:
-      "仅凭视频无法可靠确认，系统默认给满分；教师发现问题后填写依据并扣分。",
+      "该步骤无法仅依赖摄像头可靠判断，系统默认不扣分，需要时由教师根据现场或其他证据处理。",
   },
 };
 
@@ -56,6 +56,57 @@ export function isDefaultPassMode(mode) {
   ].includes(mode);
 }
 
+export function createSopStepDraft({
+  id = "Step 01",
+  predecessor = "无",
+  score = 10,
+} = {}) {
+  return {
+    id,
+    name: "",
+    attribute: "必做",
+    predecessor,
+    timeout: "01:00",
+    score,
+    completionCondition: "",
+    teachingInstruction: "",
+    keyPoints: "",
+    commonMistakes: "",
+    standardMediaType: "示教图片",
+    standardMediaUrl: "/assets/student-monitor-hand-tracking.png",
+    evidence: "",
+    deductionRule: "",
+    redline: "",
+    hasSafetyRedline: false,
+    judgementMode: "visual_assist_default_pass",
+    knownLimit:
+      "遮挡、低置信度或录像缺失时不做负向推断，系统默认通过并提示抽查。",
+    skipPolicy: "进入教师复核",
+    orderPolicy: "进入教师复核",
+    repeatPolicy: "允许一次重复",
+    timeoutPolicy: "仅记录超时",
+    confirmFrames: 5,
+    minConfidence: "0.80",
+  };
+}
+
+export function nextStableStepId({
+  steps = [],
+  historicalSteps = [],
+  usedStepIds = [],
+} = {}) {
+  const ids = [
+    ...steps.map((step) => step?.id),
+    ...historicalSteps.map((step) => step?.id),
+    ...usedStepIds,
+  ].filter(Boolean);
+  const max = ids.reduce((value, id) => {
+    const number = Number(String(id).match(/\d+/)?.[0] || 0);
+    return Math.max(value, number);
+  }, 0);
+  return `Step ${String(max + 1).padStart(2, "0")}`;
+}
+
 export function normalizeSopStep(step = {}, index = 0) {
   const text = `${step.name || ""}${step.completionCondition || ""}${step.evidence || ""}`;
   const inferredMode = /扭矩|力度|重量|内部状态|声音|读数精度/.test(text)
@@ -68,6 +119,14 @@ export function normalizeSopStep(step = {}, index = 0) {
       "遮挡、低置信度或录像缺失时不做负向推断，系统默认通过并提示抽查。",
     default_pass_manual_deduction:
       "该要求无法仅凭摄像头画面可靠确认，系统默认通过；教师发现问题后可留痕扣分。",
+  };
+  const repeatPolicyMap = {
+    重复即提示并扣分: "重复扣分",
+    重复即进入人工复核: "进入教师复核",
+  };
+  const timeoutPolicyMap = {
+    超时进入人工复核: "进入教师复核",
+    超时终止评价: "终止本次评价",
   };
   return {
     ...step,
@@ -88,9 +147,45 @@ export function normalizeSopStep(step = {}, index = 0) {
     standardMediaType: step.standardMediaType || "示教图片",
     standardMediaUrl:
       step.standardMediaUrl || "/assets/student-monitor-hand-tracking.png",
+    hasSafetyRedline:
+      step.hasSafetyRedline ?? Boolean(String(step.redline || "").trim()),
+    skipPolicy: step.skipPolicy || "进入教师复核",
+    orderPolicy: step.orderPolicy || "进入教师复核",
+    repeatPolicy:
+      repeatPolicyMap[step.repeatPolicy] ||
+      step.repeatPolicy ||
+      "允许一次重复",
+    timeoutPolicy:
+      timeoutPolicyMap[step.timeoutPolicy] ||
+      step.timeoutPolicy ||
+      "仅记录超时",
     confirmFrames: Number(step.confirmFrames || 5),
     minConfidence: String(step.minConfidence || "0.80"),
   };
+}
+
+export function createSessionStepsFromSop(sopSteps = []) {
+  return sopSteps.map((source, index) => {
+    const step = normalizeSopStep(source, index);
+    const maxScore = Number(step.maxScore ?? step.score ?? 0);
+    return {
+      ...step,
+      state: "pending",
+      result: "未进行",
+      duration: "--",
+      maxScore,
+      rawScore: 0,
+      effectiveScore: 0,
+      score: 0,
+      reviewStatus: "无需复核",
+      ruleId: step.ruleId || `RULE-${String(index + 1).padStart(3, "0")}`,
+      timeRange: "尚未产生",
+      evidenceStatus: "未产生",
+      evidenceSources: [],
+      evidence: "尚未产生证据",
+      observation: "等待进入步骤",
+    };
+  });
 }
 
 export function applyDefaultPassPolicy(step = {}) {
@@ -176,6 +271,7 @@ export function automaticEvaluationGate({
 } = {}) {
   const implementation = workstation?.implementation || {};
   const reasons = [];
+  if (!sop || sop.status !== "已发布") reasons.push("SOP 尚未发布");
   if (!model || model.status !== "已部署") reasons.push("没有兼容的已部署模型");
   if (model && sop && model.sopVersion !== sop.version)
     reasons.push("模型与当前 SOP 版本不兼容");
@@ -183,6 +279,8 @@ export function automaticEvaluationGate({
   if (implementation.lighting !== "已确认") reasons.push("光照尚未确认");
   if (implementation.occlusion !== "已确认") reasons.push("遮挡条件尚未确认");
   if (!implementation.roiVersion) reasons.push("尚未配置 ROI 版本");
+  if (!implementation.cameraConfigVersion)
+    reasons.push("尚未确认摄像头配置版本");
   if (!validation) reasons.push("当前 SOP 版本尚无现场验证记录");
   if (validation && validation.status !== "通过")
     reasons.push("现场验证未通过");
@@ -214,12 +312,139 @@ export function automaticEvaluationGate({
     automaticStepCount: automaticSteps.length,
     enabledStepCount: enabled ? automaticSteps.length : 0,
     effectiveMode(step) {
-      return step.judgementMode === "visual_auto" && enabled
-        ? "visual_auto"
-        : step.judgementMode === "visual_auto"
-          ? "visual_assist_default_pass"
-          : step.judgementMode;
+      return getEffectiveJudgementMode({ sopStep: step, gate: { enabled } });
     },
+  };
+}
+
+export function getEffectiveJudgementMode({ sopStep, gate } = {}) {
+  const configuredMode = normalizeSopStep(sopStep || {}).judgementMode;
+  if (configuredMode !== "visual_auto") return configuredMode;
+  return gate?.enabled
+    ? "visual_auto"
+    : "visual_assist_default_pass";
+}
+
+function versionNumber(value = "") {
+  const parts = String(value).match(/\d+/g) || [];
+  return parts.reduce((total, part, index) => {
+    const weight = 1000 ** Math.max(0, parts.length - index - 1);
+    return total + Number(part) * weight;
+  }, 0);
+}
+
+function latestVersion(items = [], field = "version") {
+  return [...items].sort(
+    (a, b) => versionNumber(b?.[field]) - versionNumber(a?.[field]),
+  )[0];
+}
+
+export function getSopAiEvaluationStatus({
+  sop,
+  datasets = [],
+  models = [],
+  workstations = [],
+  fieldValidations = [],
+  targetWorkstationIds,
+} = {}) {
+  if (!sop || sop.status !== "已发布") {
+    return {
+      status: "—",
+      automaticTargetCount: 0,
+      modelReadyCount: 0,
+      validatedCount: 0,
+      availableCount: 0,
+      targetWorkstationCount: 0,
+      validatedWorkstationCount: 0,
+      reasons: ["草稿或未发布 SOP 不进入 AI 评价适配"],
+    };
+  }
+
+  const automaticTargetCount = (sop.steps || []).filter(
+    (step) => step.judgementMode === "visual_auto",
+  ).length;
+  const sopDatasets = datasets.filter((item) => item.sopId === sop.id);
+  const lockedDataset = latestVersion(
+    sopDatasets.filter((item) => item.status === "已锁定"),
+  );
+  const compatibleModels = models.filter(
+    (item) =>
+      item.sopId === sop.id &&
+      item.sopVersion === sop.version &&
+      (!lockedDataset || item.datasetVersion === lockedDataset.version),
+  );
+  const deployedModel = latestVersion(
+    compatibleModels.filter((item) => item.status === "已部署"),
+  );
+  const hasStarted = sopDatasets.length > 0 || compatibleModels.length > 0;
+  const explicitTargets = Array.isArray(targetWorkstationIds)
+    ? new Set(targetWorkstationIds)
+    : null;
+  const targetWorkstations = workstations.filter((workstation) =>
+    explicitTargets
+      ? explicitTargets.has(workstation.id)
+      : workstation.supportedProject === sop.name ||
+        fieldValidations.some(
+          (record) =>
+            record.sopId === sop.id &&
+            record.workstationId === workstation.id,
+        ),
+  );
+  const gateResults = targetWorkstations.map((workstation) => {
+    const validation = [...fieldValidations]
+      .filter(
+        (record) =>
+          record.workstationId === workstation.id &&
+          record.sopId === sop.id &&
+          record.sopVersion === sop.version,
+      )
+      .sort((a, b) =>
+        String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
+      )[0];
+    return automaticEvaluationGate({
+      workstation,
+      sop,
+      model: deployedModel,
+      validation,
+    });
+  });
+  const validatedWorkstationCount = gateResults.filter(
+    (gate) => gate.enabled,
+  ).length;
+  const modelReadyCount = deployedModel ? automaticTargetCount : 0;
+  const validatedCount = validatedWorkstationCount
+    ? automaticTargetCount
+    : 0;
+  const availableCount = validatedCount;
+  const reasons = [];
+  if (!lockedDataset) reasons.push("尚无已锁定 Dataset");
+  if (!deployedModel) reasons.push("尚无兼容的已部署模型");
+  if (!targetWorkstations.length) reasons.push("尚未设置或识别目标工位");
+  for (const gate of gateResults) reasons.push(...gate.reasons);
+
+  let status = "配置中";
+  if (!hasStarted) status = "未配置";
+  else if (
+    lockedDataset &&
+    deployedModel &&
+    targetWorkstations.length > 0 &&
+    validatedWorkstationCount === targetWorkstations.length
+  )
+    status = "可用";
+  else if (lockedDataset && deployedModel && validatedWorkstationCount > 0)
+    status = "部分可用";
+
+  return {
+    status,
+    automaticTargetCount,
+    modelReadyCount,
+    validatedCount,
+    availableCount,
+    targetWorkstationCount: targetWorkstations.length,
+    validatedWorkstationCount,
+    dataset: lockedDataset || null,
+    model: deployedModel || null,
+    reasons: [...new Set(reasons)],
   };
 }
 

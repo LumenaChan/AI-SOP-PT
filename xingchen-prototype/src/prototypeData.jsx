@@ -3,9 +3,11 @@ import {
   applyDefaultPassPolicy,
   automaticEvaluationGate,
   canCloseIssue,
+  createSessionStepsFromSop,
   DIAGNOSTIC_ROOT_CAUSES,
   diagnoseNoTrigger,
   FIELD_VALIDATION_SCENARIOS,
+  getSopAiEvaluationStatus as calculateSopAiEvaluationStatus,
   getPublishBlockers,
   normalizeSopStep,
   requiresMandatoryReview,
@@ -13,8 +15,9 @@ import {
   validateSystemSettings,
 } from "./domainRules.js";
 
-const STORAGE_KEY = "xingchen-prototype-data-v11";
+const STORAGE_KEY = "xingchen-prototype-data-v12";
 const LEGACY_STORAGE_KEYS = [
+  "xingchen-prototype-data-v11",
   "xingchen-prototype-data-v10",
   "xingchen-prototype-data-v9",
   "xingchen-prototype-data-v8",
@@ -232,6 +235,14 @@ function enrichStepEvidence(
   recording,
   gate,
 ) {
+  const lockedProfile = session.evaluationProfile;
+  const automaticEvaluationEnabled =
+    lockedProfile?.automaticEvaluationEnabled ?? gate.enabled;
+  const lockedRoiVersion =
+    lockedProfile?.roiVersion || workstation?.implementation?.roiVersion;
+  const lockedCameraConfigVersion =
+    lockedProfile?.cameraConfigVersion ||
+    workstation?.implementation?.cameraConfigVersion;
   const incident = recording.incidents.find(
     (item) => item.affectedStepId === step.id,
   );
@@ -254,9 +265,8 @@ function enrichStepEvidence(
           : ["主视角", "辅助视角"],
     sopVersion: arrangement.snapshot?.sopVersion || "未锁定",
     modelVersion: arrangement.snapshot?.modelVersion || "未启用",
-    roiVersion: workstation?.implementation?.roiVersion || "未配置",
-    cameraConfigVersion:
-      workstation?.implementation?.cameraConfigVersion || "未配置",
+    roiVersion: lockedRoiVersion || "未配置",
+    cameraConfigVersion: lockedCameraConfigVersion || "未配置",
     systemAnomaly: Boolean(incident),
     scoringPolicy: incident
       ? step.result === "安全阻断" || step.redlineConfirmed
@@ -266,14 +276,16 @@ function enrichStepEvidence(
   };
   const checks = {
     configComplete:
-      step.judgementMode !== "visual_auto" || gate.enabled === true,
+      step.judgementMode !== "visual_auto" || automaticEvaluationEnabled,
     objectVisible: pending
       ? false
       : !/未看到|丢失/.test(step.observation || ""),
     actionSufficient: ["pass", "blocked"].includes(step.state),
-    roiMatched:
-      Boolean(workstation?.implementation?.roiVersion) &&
-      workstation?.implementation?.cameraPosition === "已确认",
+    roiMatched: lockedProfile
+      ? lockedRoiVersion !== "未配置" &&
+        lockedCameraConfigVersion !== "未配置"
+      : Boolean(workstation?.implementation?.roiVersion) &&
+        workstation?.implementation?.cameraPosition === "已确认",
     evidenceContinuous: !incident && recording.status !== "不可用",
   };
   const diagnostic = {
@@ -305,7 +317,7 @@ function enrichStepEvidence(
 }
 
 const seedData = {
-  version: 11,
+  version: 12,
   classes: [
     {
       id: "class-nev-2401",
@@ -1722,9 +1734,27 @@ function normalizePrototypeData(input) {
         }
       : null,
   };
-  next.sops = (next.sops || []).map((sop) => ({
+  const normalizedSops = (next.sops || []).map((sop) => ({
     ...sop,
+    major:
+      sop.major ||
+      (/机器人/.test(sop.name) ? "工业机器人技术" : /数控/.test(sop.name) ? "数控技术" : "新能源汽车技术"),
+    course: sop.course || sop.operation || "专业实训课程",
     steps: (sop.steps || []).map(normalizeSopStep),
+  }));
+  const usedIdsByFamily = new Map();
+  for (const sop of normalizedSops) {
+    const familyKey = sop.familyId || sop.id;
+    const usedIds = usedIdsByFamily.get(familyKey) || new Set();
+    for (const id of sop.usedStepIds || []) usedIds.add(id);
+    for (const step of sop.steps || []) usedIds.add(step.id);
+    usedIdsByFamily.set(familyKey, usedIds);
+  }
+  next.sops = normalizedSops.map((sop) => ({
+    ...sop,
+    usedStepIds: [
+      ...(usedIdsByFamily.get(sop.familyId || sop.id) || new Set()),
+    ],
   }));
   next.arrangements = (next.arrangements || []).map((arrangement) => {
     const sop = next.sops.find((item) => item.id === arrangement.sopId);
@@ -1752,6 +1782,18 @@ function normalizePrototypeData(input) {
         arrangement,
         next.systemSettings.current,
       );
+      const evaluationProfile = session.evaluationProfile || {
+        automaticEvaluationEnabled: gate.enabled,
+        enabledStepCount: gate.enabledStepCount,
+        automaticStepCount: gate.automaticStepCount,
+        roiVersion: workstation?.implementation?.roiVersion || "未配置",
+        cameraConfigVersion:
+          workstation?.implementation?.cameraConfigVersion || "未配置",
+        validationId: validation?.id || "未验证",
+        validationStatus: validation?.status || "未验证",
+        fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
+      };
+      const sessionWithProfile = { ...session, evaluationProfile };
       const normalizedSteps = (session.steps || []).map((step, index) => {
         const sopStep = sop?.steps.find((item) => item.id === step.id);
         return applyDefaultPassPolicy({ ...sopStep, ...step }, index);
@@ -1772,7 +1814,7 @@ function normalizePrototypeData(input) {
       const steps = stateNormalizedSteps.map((step) =>
         enrichStepEvidence(
           step,
-          session,
+          sessionWithProfile,
           arrangement,
           workstation,
           recording,
@@ -1790,17 +1832,7 @@ function normalizePrototypeData(input) {
         recording,
         score: session.resultStatus === "未参加" ? 0 : scoreOf(steps),
         resultStatus: wasDefaultPassOnly ? "正式成绩" : session.resultStatus,
-        evaluationProfile: session.evaluationProfile || {
-          automaticEvaluationEnabled: gate.enabled,
-          enabledStepCount: gate.enabledStepCount,
-          automaticStepCount: gate.automaticStepCount,
-          roiVersion: workstation?.implementation?.roiVersion || "未配置",
-          cameraConfigVersion:
-            workstation?.implementation?.cameraConfigVersion || "未配置",
-          validationId: validation?.id || "未验证",
-          validationStatus: validation?.status || "未验证",
-          fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
-        },
+        evaluationProfile,
         events: (session.events || []).map((event) =>
           wasDefaultPassOnly && event.title?.includes("证据不足")
             ? {
@@ -1836,9 +1868,20 @@ function uid(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function collectUsedStepIds(...sources) {
+  const ids = new Set();
+  for (const source of sources) {
+    for (const item of source || []) {
+      const id = typeof item === "string" ? item : item?.id;
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 function mergeLegacy(legacy) {
   const next = cloneSeed();
-  if (!legacy || ![2, 3, 4, 5, 6, 7, 8, 9, 10].includes(legacy.version))
+  if (!legacy || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(legacy.version))
     return next;
   const identityKeys = {
     classes: "code",
@@ -1857,7 +1900,7 @@ function mergeLegacy(legacy) {
     ];
   }
   if (
-    [5, 6, 7, 8, 9, 10].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11].includes(legacy.version) &&
     Array.isArray(legacy.arrangements)
   ) {
     const legacyIds = new Set(legacy.arrangements.map((item) => item.id));
@@ -1936,16 +1979,18 @@ function mergeLegacy(legacy) {
         workstationIdMap[session.workstationId] || session.workstationId,
     })),
   }));
-  if ([4, 5, 6, 7, 8, 9, 10].includes(legacy.version)) {
+  if ([4, 5, 6, 7, 8, 9, 10, 11].includes(legacy.version)) {
     for (const key of ["sops", "datasets", "models", "learningSamples"]) {
       if (legacy[key]?.length) next[key] = legacy[key];
     }
   }
   if (
-    [5, 6, 7, 8, 9, 10].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11].includes(legacy.version) &&
     Array.isArray(legacy.exportJobs)
   )
     next.exportJobs = legacy.exportJobs;
+  if (Array.isArray(legacy.fieldValidations))
+    next.fieldValidations = legacy.fieldValidations;
   for (const key of ["systemSettings", "backups", "issues", "notifications"]) {
     if (legacy[key]) next[key] = legacy[key];
   }
@@ -2564,6 +2609,17 @@ export function PrototypeDataProvider({ children }) {
         );
         return automaticEvaluationGate({ workstation, sop, model, validation });
       },
+      getSopAiEvaluationStatus(sopId, options = {}) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        return calculateSopAiEvaluationStatus({
+          sop,
+          datasets: data.datasets,
+          models: data.models,
+          workstations: data.workstations,
+          fieldValidations: data.fieldValidations,
+          targetWorkstationIds: options.targetWorkstationIds,
+        });
+      },
 
       createDevice(input) {
         const name = input.name.trim().toUpperCase();
@@ -2675,6 +2731,7 @@ export function PrototypeDataProvider({ children }) {
       },
       createSopDraft(input) {
         if (!input.name?.trim()) throw new Error("请填写 SOP 标准名称。");
+        const steps = (input.steps || []).map(normalizeSopStep);
         const created = {
           ...input,
           id: uid("sop"),
@@ -2688,28 +2745,13 @@ export function PrototypeDataProvider({ children }) {
           publishedAt: "",
           updatedAt: timestamp(),
           history: input.history || [],
+          steps,
+          usedStepIds: collectUsedStepIds(input.usedStepIds, steps),
         };
         setData((current) => {
-          const dataset = {
-            id: uid("dataset"),
-            sopId: created.id,
-            name: `${created.name} D1`,
-            version: "D1",
-            nextVersion: "D2",
-            status: "采集中",
-            sampleCount: 0,
-            acceptedCount: 0,
-            candidateCount: 0,
-            labels: Object.fromEntries([
-              ...(created.steps || []).map((step) => [step.id, 0]),
-              ["Other", 0],
-            ]),
-            updatedAt: timestamp(),
-          };
           const next = {
             ...current,
             sops: [created, ...current.sops],
-            datasets: [dataset, ...current.datasets],
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -2735,6 +2777,13 @@ export function PrototypeDataProvider({ children }) {
           status: "草稿",
           frozen: false,
           updatedAt: timestamp(),
+          steps: (input.steps || existing.steps || []).map(normalizeSopStep),
+          usedStepIds: collectUsedStepIds(
+            existing.usedStepIds,
+            existing.steps,
+            input.usedStepIds,
+            input.steps,
+          ),
         };
         setData((current) => {
           const next = {
@@ -2765,6 +2814,13 @@ export function PrototypeDataProvider({ children }) {
           signedBy: signature.trim(),
           publishedAt: timestamp(),
           updatedAt: timestamp(),
+          steps: (input.steps || existing.steps || []).map(normalizeSopStep),
+          usedStepIds: collectUsedStepIds(
+            existing.usedStepIds,
+            existing.steps,
+            input.usedStepIds,
+            input.steps,
+          ),
           history: [
             {
               version: input.version,
@@ -2809,28 +2865,15 @@ export function PrototypeDataProvider({ children }) {
           publishedAt: "",
           updatedAt: timestamp(),
           history: [...(existing.history || [])],
+          usedStepIds: collectUsedStepIds(
+            existing.usedStepIds,
+            existing.steps,
+          ),
         };
         setData((current) => {
-          const dataset = {
-            id: uid("dataset"),
-            sopId: created.id,
-            name: `${created.name} D1`,
-            version: "D1",
-            nextVersion: "D2",
-            status: "采集中",
-            sampleCount: 0,
-            acceptedCount: 0,
-            candidateCount: 0,
-            labels: Object.fromEntries([
-              ...(created.steps || []).map((step) => [step.id, 0]),
-              ["Other", 0],
-            ]),
-            updatedAt: timestamp(),
-          };
           const next = {
             ...current,
             sops: [created, ...current.sops],
-            datasets: [dataset, ...current.datasets],
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -2859,31 +2902,51 @@ export function PrototypeDataProvider({ children }) {
           publishedAt: "",
           updatedAt: timestamp(),
           history: [],
+          usedStepIds: collectUsedStepIds(existing.steps),
         };
         setData((current) => {
-          const dataset = {
-            id: uid("dataset"),
-            sopId: created.id,
-            name: `${created.name} D1`,
-            version: "D1",
-            nextVersion: "D2",
-            status: "采集中",
-            sampleCount: 0,
-            acceptedCount: 0,
-            candidateCount: 0,
-            labels: Object.fromEntries([
-              ...(created.steps || []).map((step) => [step.id, 0]),
-              ["Other", 0],
-            ]),
-            updatedAt: timestamp(),
-          };
           const next = {
             ...current,
             sops: [created, ...current.sops],
-            datasets: [dataset, ...current.datasets],
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(next, "复制 SOP", `${created.name} / V1.0`);
+          return next;
+        });
+        return created;
+      },
+      startAiAdaptation(sopId) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop) throw new Error("SOP 不存在或已失效。");
+        if (sop.status !== "已发布")
+          throw new Error("只有已发布的 SOP 才能开始 AI 适配。");
+        const existing = data.datasets.find((item) => item.sopId === sopId);
+        if (existing) return existing;
+        const when = timestamp();
+        const created = {
+          id: uid("dataset"),
+          sopId,
+          name: `${sop.name} D1`,
+          version: "D1",
+          nextVersion: "D2",
+          status: "采集中",
+          sampleCount: 0,
+          acceptedCount: 0,
+          candidateCount: 0,
+          labels: Object.fromEntries([
+            ...(sop.steps || []).map((step) => [step.id, 0]),
+            ["Other", 0],
+          ]),
+          basedOn: "首次 AI 适配",
+          updatedAt: when,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            datasets: [created, ...current.datasets],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "开始 AI 适配", `${sop.name} ${sop.version} / D1`);
           return next;
         });
         return created;
@@ -2950,6 +3013,12 @@ export function PrototypeDataProvider({ children }) {
         const dataset = data.datasets.find(
           (item) => item.sopId === sample.sopId,
         );
+        if (!dataset) throw new Error("请先为当前 SOP 开始 AI 适配。");
+        const targetDataset =
+          dataset.status === "已锁定"
+            ? dataset.nextVersion ||
+              `D${Number(dataset.version.replace("D", "")) + 1}`
+            : dataset.version;
         setData((current) => {
           const next = {
             ...current,
@@ -2962,10 +3031,7 @@ export function PrototypeDataProvider({ children }) {
                     note,
                     reviewedAt: timestamp(),
                     targetDataset:
-                      decision === "accept"
-                        ? dataset?.nextVersion ||
-                          `下一版 ${dataset?.version || "Dataset"}`
-                        : "",
+                      decision === "accept" ? targetDataset : "",
                   }
                 : item,
             ),
@@ -2975,9 +3041,20 @@ export function PrototypeDataProvider({ children }) {
                     ...item,
                     candidateCount: Math.max(0, (item.candidateCount || 0) - 1),
                     acceptedCount:
-                      decision === "accept"
+                      decision === "accept" && item.status !== "已锁定"
                         ? (item.acceptedCount || item.sampleCount || 0) + 1
                         : item.acceptedCount,
+                    sampleCount:
+                      decision === "accept" && item.status !== "已锁定"
+                        ? (item.sampleCount || 0) + 1
+                        : item.sampleCount,
+                    labels:
+                      decision === "accept" && item.status !== "已锁定"
+                        ? {
+                            ...(item.labels || {}),
+                            [label]: (item.labels?.[label] || 0) + 1,
+                          }
+                        : item.labels,
                     updatedAt: timestamp(),
                   }
                 : item,
@@ -2986,8 +3063,8 @@ export function PrototypeDataProvider({ children }) {
           };
           addAuditLog(
             next,
-            decision === "accept" ? "纳入下一版 Dataset" : "拒绝训练样本",
-            `${sample.fileName} / ${label}`,
+            decision === "accept" ? "纳入 Dataset" : "拒绝训练样本",
+            `${sample.fileName} / ${label}${decision === "accept" ? ` / ${targetDataset}` : ""}`,
           );
           return next;
         });
@@ -3076,6 +3153,63 @@ export function PrototypeDataProvider({ children }) {
         });
         return updated;
       },
+      createModelCandidate(sopId, datasetId) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || sop.status !== "已发布")
+          throw new Error("只有已发布的 SOP 才能创建模型候选版本。");
+        const dataset = data.datasets.find(
+          (item) =>
+            item.sopId === sopId && (!datasetId || item.id === datasetId),
+        );
+        if (!dataset) throw new Error("请先创建 Dataset。");
+        if (dataset.status !== "已锁定")
+          throw new Error("Dataset 锁定后才能创建模型候选版本。");
+        const existingCandidate = data.models.find(
+          (item) =>
+            item.sopId === sopId &&
+            item.datasetVersion === dataset.version &&
+            !["已部署", "已回滚"].includes(item.status),
+        );
+        if (existingCandidate) return existingCandidate;
+        const maxMinor = data.models
+          .filter((item) => item.sopId === sopId)
+          .reduce((max, item) => {
+            const matched = String(item.version).match(/^V1\.(\d+)$/);
+            return Math.max(max, Number(matched?.[1] || 0));
+          }, 0);
+        const version = `V1.${maxMinor + 1}`;
+        const when = timestamp();
+        const created = {
+          id: uid("model"),
+          sopId,
+          name: `${sop.name}动作模型`,
+          version,
+          status: "待训练",
+          datasetVersion: dataset.version,
+          sopVersion: sop.version,
+          progress: 0,
+          f1: "待评测",
+          sequenceAccuracy: "待评测",
+          otherRecall: "待评测",
+          evaluatedAt: "待训练",
+          deploymentTarget: "尚未部署",
+          updatedAt: when,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            models: [created, ...current.models],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "创建模型候选版本",
+            `${sop.name} ${sop.version} / ${dataset.version} / ${version}`,
+          );
+          return next;
+        });
+        return created;
+      },
       advanceModelLifecycle(id) {
         const existing = data.models.find((item) => item.id === id);
         if (!existing) throw new Error("模型版本不存在。");
@@ -3086,13 +3220,31 @@ export function PrototypeDataProvider({ children }) {
           可部署: "已部署",
           已回滚: "已部署",
           失败: "训练中",
+          验证未通过: "训练中",
         };
         const status = transitions[existing.status];
         if (!status) throw new Error("当前模型已部署，可使用回滚操作。");
         const updated = {
           ...existing,
           status,
-          progress: status === "待验证" ? 100 : existing.progress,
+          progress:
+            status === "训练中"
+              ? Math.max(35, Number(existing.progress || 0))
+              : status === "待验证"
+                ? 100
+                : existing.progress,
+          f1:
+            status === "可部署" && existing.f1 === "待评测"
+              ? "92.0%"
+              : existing.f1,
+          sequenceAccuracy:
+            status === "可部署" && existing.sequenceAccuracy === "待评测"
+              ? "88.0%"
+              : existing.sequenceAccuracy,
+          otherRecall:
+            status === "可部署" && existing.otherRecall === "待评测"
+              ? "93.0%"
+              : existing.otherRecall,
           evaluatedAt: status === "可部署" ? timestamp() : existing.evaluatedAt,
           deploymentTarget:
             status === "已部署" ? "A区兼容工位" : existing.deploymentTarget,
@@ -3126,24 +3278,53 @@ export function PrototypeDataProvider({ children }) {
         const existing = data.models.find((item) => item.id === id);
         if (!existing || existing.status !== "已部署")
           throw new Error("只有已部署模型可以回滚。");
+        const previous = data.models
+          .filter(
+            (item) =>
+              item.id !== id &&
+              item.sopId === existing.sopId &&
+              item.sopVersion === existing.sopVersion &&
+              item.status === "已回滚",
+          )
+          .sort((a, b) => {
+            const numberOf = (value) => {
+              const parts = String(value).match(/\d+/g)?.map(Number) || [];
+              return parts.reduce((total, part) => total * 10000 + part, 0);
+            };
+            return numberOf(b.version) - numberOf(a.version);
+          })[0];
+        if (!previous)
+          throw new Error("当前没有可恢复的上一生产模型版本。");
+        const when = timestamp();
         setData((current) => {
           const next = {
             ...current,
             models: current.models.map((item) =>
               item.id === id
-                ? { ...item, status: "已回滚", updatedAt: timestamp() }
-                : item,
+                ? { ...item, status: "已回滚", updatedAt: when }
+                : item.id === previous.id
+                  ? {
+                      ...item,
+                      status: "已部署",
+                      deploymentTarget:
+                        existing.deploymentTarget || item.deploymentTarget,
+                      updatedAt: when,
+                    }
+                  : item,
             ),
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
             next,
-            "回滚模型",
-            `${existing.name} / ${existing.version}`,
+            "回滚生产模型",
+            `${existing.name} ${existing.version} → ${previous.version}`,
           );
           return next;
         });
-        return { ...existing, status: "已回滚" };
+        return {
+          rolledBack: { ...existing, status: "已回滚", updatedAt: when },
+          restored: { ...previous, status: "已部署", updatedAt: when },
+        };
       },
       saveArrangement(input, finalize = false) {
         const existing = input.id
@@ -3174,9 +3355,6 @@ export function PrototypeDataProvider({ children }) {
         const sop = data.sops.find((item) => item.id === input.sopId);
         if (!sop || sop.status !== "已发布")
           throw new Error("只能选择已发布的 SOP 版本。");
-        const model = data.models.find(
-          (item) => item.sopId === sop.id && item.status === "已部署",
-        );
         if (finalize && !input.studentIds?.length)
           throw new Error("至少选择一名参与学生。");
         if (finalize && !input.workstationIds?.length)
@@ -3268,8 +3446,6 @@ export function PrototypeDataProvider({ children }) {
           model,
           validation,
         });
-        if (workstationId === "w3")
-          warnings.push("本地动作模型版本待同步，自动判定将降级为默认通过");
         warnings.push(...gate.reasons);
         return {
           ok: errors.length === 0,
@@ -3355,14 +3531,14 @@ export function PrototypeDataProvider({ children }) {
             arrangement,
             data.systemSettings.current,
           ),
-          steps: makeExecutionSteps("waiting"),
+          steps: createSessionStepsFromSop(sop.steps),
           events: [
             {
               time: timestamp().slice(-5),
               level: "blue",
               title: "工位检查通过",
               detail: readiness.gate.enabled
-                ? `锁定 SOP ${snapshot.sopVersion} / 模型 ${snapshot.modelVersion}，自动评价已启用`
+                ? `锁定 SOP ${snapshot.sopVersion} 与本次AI能力快照，自动评价已启用`
                 : `锁定 SOP ${snapshot.sopVersion}，自动评价降级为默认通过`,
             },
           ],
@@ -3419,12 +3595,26 @@ export function PrototypeDataProvider({ children }) {
           throw new Error("当前安排已开始或已结束，不能重复开始。");
         if (!arrangement.snapshot || !arrangement.openWorkstationIds.length)
           throw new Error("至少检查并开放一个工位后才能开始安排。");
-        const sessions = arrangement.sessions.map((session, index) =>
-          session.status === "可入场" && index === 0
+        const sessions = arrangement.sessions.map((session, index) => {
+          const firstStep =
+            session.steps.find((step) => step.state === "pending") ||
+            session.steps[0];
+          return session.status === "可入场" && index === 0
             ? {
                 ...session,
                 status: "进行中",
-                currentStepId: "Step 01",
+                currentStepId: firstStep?.id || "",
+                steps: session.steps.map((step) =>
+                  step.id === firstStep?.id
+                    ? {
+                        ...step,
+                        state: "active",
+                        result: "进行中",
+                        duration: "00:00",
+                        observation: "已进入当前步骤，等待连续动作判定",
+                      }
+                    : step,
+                ),
                 events: [
                   {
                     time: timestamp().slice(-5),
@@ -3437,8 +3627,8 @@ export function PrototypeDataProvider({ children }) {
               }
             : session.status === "可入场"
               ? { ...session, status: "待开始" }
-              : session,
-        );
+              : session;
+        });
         const updated = {
           ...arrangement,
           status: "进行中",
