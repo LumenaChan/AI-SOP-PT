@@ -2929,20 +2929,60 @@ function SopList() {
   );
 }
 
+function StandardMediaPreview({ step }) {
+  if (!step?.standardMediaUrl && !step?.standardMediaName) return null;
+  const mediaName =
+    step.standardMediaName ||
+    step.standardMediaUrl?.split("/").pop() ||
+    "已配置示教资料";
+  const isVideo =
+    step.standardMediaType === "示教视频" ||
+    /\.(mp4|mov|webm|m4v)$/i.test(mediaName);
+  const hideBrokenPreview = (event) => {
+    event.currentTarget.style.display = "none";
+  };
+  return (
+    <div className="media-reference">
+      {step.standardMediaUrl &&
+        (isVideo ? (
+          <video
+            controls
+            muted
+            preload="metadata"
+            src={step.standardMediaUrl}
+            onError={hideBrokenPreview}
+          />
+        ) : (
+          <img
+            src={step.standardMediaUrl}
+            alt={`${step.name || "当前步骤"}示教资料`}
+            onError={hideBrokenPreview}
+          />
+        ))}
+      <span className="media-reference__meta">
+        <small>{step.standardMediaType || "示教资料"}</small>
+        <strong>{mediaName}</strong>
+      </span>
+    </div>
+  );
+}
+
 function SopDetail({ setModal }) {
   const nav = useNavigate(),
     { id } = useParams(),
     store = usePrototypeData();
   const sop = store.data.sops.find((item) => item.id === id);
   const aiStatus = store.getSopAiEvaluationStatus(sop?.id);
-  const dataset =
-    aiStatus.dataset ||
-    newestVersion(
-      store.data.datasets.filter((item) => item.sopId === sop?.id),
-    );
-  const model =
-    aiStatus.model ||
-    newestVersion(store.data.models.filter((item) => item.sopId === sop?.id));
+  const productionDataset = aiStatus.productionDataset;
+  const researchDataset = aiStatus.researchDataset;
+  const productionModel = aiStatus.model;
+  const aiUpdatedAt = [
+    productionDataset?.updatedAt,
+    researchDataset?.updatedAt,
+    productionModel?.updatedAt,
+  ]
+    .filter(Boolean)
+    .sort((a, b) => String(b).localeCompare(String(a)))[0];
   const [tab, setTab] = useState("overview");
   const [selectedStep, setSelectedStep] = useState(0);
   const activeStep = sop?.steps[selectedStep] || sop?.steps[0];
@@ -3085,7 +3125,7 @@ function SopDetail({ setModal }) {
               <span><small>评价证据要求</small><strong>{activeStep.evidence || "无需视频证据"}</strong></span>
               <span><small>扣分规则</small><strong>{activeStep.deductionRule}</strong></span>
             </div>
-            {activeStep.standardMediaUrl && <div className="media-reference"><img src={activeStep.standardMediaUrl} alt={`${activeStep.name} 示教资料`} /><span>{activeStep.standardMediaType || "示教资料"}</span></div>}
+            <StandardMediaPreview step={activeStep} />
             {activeStep.redline && <div className="sop-redline"><AlertOutlined /><div><strong>安全红线</strong><p>{activeStep.redline}</p><small>触发后暂停当前学生评价，并通知教师处理。</small></div></div>}
             <details className="business-rule-details"><summary>高级异常规则</summary><div className="definition-list"><span><small>跳过步骤</small><strong>{activeStep.skipPolicy}</strong></span><span><small>顺序错误</small><strong>{activeStep.orderPolicy}</strong></span><span><small>重复操作</small><strong>{activeStep.repeatPolicy}</strong></span><span><small>超时处理</small><strong>{activeStep.timeoutPolicy}</strong></span></div></details>
           </section>
@@ -3095,18 +3135,22 @@ function SopDetail({ setModal }) {
         <section className="panel">
           <div className="ai-capability-hero">
             <div><small>当前 AI评价状态</small><h2>{aiStatus.status}</h2><p>当前 {sop.steps.length} 个步骤中，{judgementCounts.visual_auto || 0} 个设置为自动评价，{judgementCounts.visual_assist_default_pass || 0} 个使用AI辅助评价，{judgementCounts.default_pass_manual_deduction || 0} 个由教师评价。</p></div>
-            <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
+            <div className="inline-actions">
+              <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
+              <Button type="primary" onClick={() => nav(`/admin/ai-evaluation/${sop.id}`)}>查看AI适配详情</Button>
+            </div>
           </div>
           <div className="definition-list ai-capability-summary">
-            <span><small>当前Dataset</small><strong>{dataset ? `${dataset.version} · ${dataset.status}` : "尚未建立"}</strong></span>
-            <span><small>当前模型</small><strong>{model ? `${model.version} · ${model.status}` : "尚未建立"}</strong></span>
-            <span><small>最近更新</small><strong>{model?.updatedAt || dataset?.updatedAt || "—"}</strong></span>
+            <span><small>当前生产 Dataset</small><strong>{productionDataset ? `${productionDataset.version} · ${productionDataset.status}` : "—"}</strong></span>
+            <span><small>当前生产模型</small><strong>{productionModel ? `${productionModel.version} · ${productionModel.status}` : "—"}</strong></span>
+            <span><small>在研 Dataset</small><strong>{researchDataset ? `${researchDataset.version} · ${researchDataset.status}` : "—"}</strong></span>
+            <span><small>最近更新</small><strong>{aiUpdatedAt || "—"}</strong></span>
             <span><small>已验证工位</small><strong>{aiStatus.validatedWorkstationCount} / {aiStatus.targetWorkstationCount}</strong></span>
           </div>
           <DataTable columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]} statusColumns={[]} rows={sop.steps.map((step) => {
             const configured = JUDGEMENT_MODES[step.judgementMode]?.label || "未配置";
             const actual = step.judgementMode !== "visual_auto" ? configured : aiStatus.status === "可用" ? "自动评价" : aiStatus.status === "部分可用" ? "部分工位自动评价" : "AI辅助评价";
-            const reason = step.judgementMode !== "visual_auto" ? "按教师设定执行" : aiStatus.status === "可用" ? "模型与目标工位验证均已通过" : "自动能力未完全就绪，运行时安全降级";
+            const reason = step.judgementMode !== "visual_auto" ? "按教师设定执行" : aiStatus.status === "可用" ? "当前模型已具备对应步骤能力" : "自动能力未完全就绪，运行时安全降级";
             return [`${step.id} · ${step.name}`, configured, actual, reason];
           })} />
         </section>
@@ -3181,11 +3225,17 @@ function SopEditor({ setModal }) {
   const updateStepMedia = (file) => {
     if (!file) return;
     const mediaType = file.type.startsWith("video/") ? "示教视频" : "示教图片";
+    const previewUrl = URL.createObjectURL(file);
     setDraft((current) => ({
       ...current,
       steps: current.steps.map((step, index) =>
         index === selectedRuleStep
-          ? { ...step, standardMediaType: mediaType, standardMediaName: file.name }
+          ? {
+              ...step,
+              standardMediaType: mediaType,
+              standardMediaName: file.name,
+              standardMediaUrl: previewUrl,
+            }
           : step,
       ),
     }));
@@ -3561,6 +3611,7 @@ function SopEditor({ setModal }) {
                     {active.standardMediaName || `${active.standardMediaType || "示教资料"}已配置`}
                   </small>
                 </label>
+                <StandardMediaPreview step={active} />
               </div>
               <div className="form-row">
                 <label className="field">
@@ -6002,6 +6053,37 @@ function AiEvaluationList() {
   );
 }
 
+const ModelValidationFailureForm = forwardRef(
+  function ModelValidationFailureForm(_, ref) {
+    const [reason, setReason] = useState("");
+    useImperativeHandle(ref, () => ({
+      getValue() {
+        if (!reason.trim()) throw new Error("请填写验证未通过原因。");
+        return reason.trim();
+      },
+    }));
+    return (
+      <label className="field">
+        未通过原因 <b className="required">必填</b>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="例如：Step 04错工具场景召回率不足。"
+        />
+      </label>
+    );
+  },
+);
+
+const MODEL_LIFECYCLE_ACTIONS = {
+  待训练: "开始训练",
+  训练中: "完成训练",
+  可部署: "部署为生产模型",
+  已回滚: "重新部署",
+  失败: "重新训练",
+  验证未通过: "重新训练",
+};
+
 function AiEvaluationDetail({ setModal }) {
   const { id } = useParams();
   const store = usePrototypeData();
@@ -6011,6 +6093,7 @@ function AiEvaluationDetail({ setModal }) {
   const uploadRef = useRef(null);
   const implementationRef = useRef(null);
   const validationRef = useRef(null);
+  const modelValidationRef = useRef(null);
   if (!sop) return <MissingState title="AI 适配对象不存在" backTo="/admin/ai-evaluation" />;
 
   const datasets = store.data.datasets
@@ -6019,9 +6102,13 @@ function AiEvaluationDetail({ setModal }) {
   const models = store.data.models
     .filter((item) => item.sopId === sop.id)
     .sort((a, b) => versionNumber(b.version) - versionNumber(a.version));
-  const dataset = datasets[0];
-  const model = models.find((item) => item.status === "已部署") || models[0];
   const aiStatus = store.getSopAiEvaluationStatus(sop.id);
+  const dataset = datasets[0];
+  const productionDataset = aiStatus.productionDataset;
+  const researchDataset = aiStatus.researchDataset;
+  const productionModel = aiStatus.model;
+  const model = productionModel || models[0];
+  const matrixDataset = productionDataset || dataset;
   const targetWorkstations = store.data.workstations.filter(
     (workstation) =>
       workstation.supportedProject === sop.name ||
@@ -6107,21 +6194,31 @@ function AiEvaluationDetail({ setModal }) {
     });
   };
   const advanceModel = (item) => {
-    const nextLabel = {
-      待训练: "开始训练",
-      训练中: "完成训练",
-      待验证: "验证通过",
-      可部署: "部署为生产模型",
-      已回滚: "重新部署",
-      失败: "重新训练",
-      验证未通过: "重新训练",
-    }[item.status];
+    const nextLabel = MODEL_LIFECYCLE_ACTIONS[item.status];
     setModal({
       title: nextLabel || "推进模型生命周期",
       content: <p>{item.version} 绑定 SOP {item.sopVersion} / Dataset {item.datasetVersion}。部署时同一 SOP 只保留一个生产模型。</p>,
       confirmText: nextLabel || "确认",
       onConfirm: () => {
         const updated = store.advanceModelLifecycle(item.id);
+        return `${updated.version} 已更新为${updated.status}`;
+      },
+    });
+  };
+  const validateModel = (item, passed) => {
+    setModal({
+      title: passed ? "确认模型验证通过" : "记录模型验证未通过",
+      content: passed ? (
+        <p>
+          确认 {item.version} 已完成验证并进入可部署状态。
+        </p>
+      ) : (
+        <ModelValidationFailureForm ref={modelValidationRef} />
+      ),
+      confirmText: passed ? "验证通过" : "确认验证不通过",
+      onConfirm: () => {
+        const reason = passed ? "" : modelValidationRef.current.getValue();
+        const updated = store.recordModelValidation(item.id, passed, reason);
         return `${updated.version} 已更新为${updated.status}`;
       },
     });
@@ -6168,10 +6265,16 @@ function AiEvaluationDetail({ setModal }) {
       </section>
       <div className="ai-adaptation-summary">
         <span><small>SOP 版本</small><strong>{sop.version}</strong></span>
-        <span><small>当前 Dataset</small><strong>{dataset ? `${dataset.version} · ${dataset.status}` : "未创建"}</strong></span>
-        <span><small>生产模型</small><strong>{aiStatus.model ? `${aiStatus.model.version} · 已部署` : "未部署"}</strong></span>
+        <span><small>当前生产 Dataset</small><strong>{productionDataset ? productionDataset.version : "—"}</strong></span>
+        <span><small>当前生产模型</small><strong>{productionModel ? `${productionModel.version} · 已部署` : "—"}</strong></span>
+        <span><small>在研 Dataset</small><strong>{researchDataset ? `${researchDataset.version} · ${researchDataset.status}` : "—"}</strong></span>
         <span><small>AI 状态</small><strong>{aiStatus.status}</strong></span>
       </div>
+      {researchDataset && (
+        <p className="hint ai-research-note">
+          {researchDataset.version} 用于下一轮模型训练，不影响当前生产AI评价能力。
+        </p>
+      )}
       <div className="tabs sop-detail-tabs ai-adaptation-tabs" role="tablist" aria-label="AI适配详情">
         {[
           ["overview", "适配概览"],
@@ -6192,15 +6295,15 @@ function AiEvaluationDetail({ setModal }) {
             <DataTable
               columns={["Step", "教师设定", "Dataset", "模型能力", "工位验证", "有效运行方式"]}
               rows={sop.steps.map((step) => {
-                const labelCount = dataset?.labels?.[step.id] || 0;
-                const modelCompatible = model?.sopVersion === sop.version && model?.datasetVersion === dataset?.version;
+                const labelCount = matrixDataset?.labels?.[step.id] || 0;
+                const modelCompatible = productionModel?.sopVersion === sop.version && productionModel?.datasetVersion === productionDataset?.version;
                 const fieldState = !targetWorkstations.length ? "未设置工位" : `${aiStatus.validatedWorkstationCount}/${targetWorkstations.length} 通过`;
                 const effectiveMode = step.judgementMode === "visual_auto" && aiStatus.status !== "可用" ? "visual_assist_default_pass" : step.judgementMode;
                 return [
                   `${step.id} · ${step.name}`,
                   JUDGEMENT_MODES[step.judgementMode]?.shortLabel || "未设置",
-                  dataset ? `${labelCount} 条 · ${dataset.status}` : "未创建",
-                  modelCompatible ? `${model.version} · ${model.status}` : "未适配",
+                  matrixDataset ? `${matrixDataset.version} · ${labelCount} 条 · ${matrixDataset.status}` : "未创建",
+                  modelCompatible ? `${productionModel.version} · ${productionModel.status}` : "未形成生产基线",
                   fieldState,
                   JUDGEMENT_MODES[effectiveMode]?.shortLabel || "教师评价",
                 ];
@@ -6252,12 +6355,26 @@ function AiEvaluationDetail({ setModal }) {
                     candidate.sopVersion === item.sopVersion &&
                     candidate.status === "已回滚",
                 );
+                const lastFailedValidation = [
+                  ...(item.validationHistory || []),
+                ]
+                  .reverse()
+                  .find((record) => record.result === "未通过");
                 return (
                   <article key={item.id}>
                     <header><span><strong>{item.name} {item.version}</strong><small>SOP {item.sopVersion} · Dataset {item.datasetVersion}</small></span><Status>{item.status}</Status></header>
                     <div><span><small>F1</small><b>{item.f1}</b></span><span><small>序列准确率</small><b>{item.sequenceAccuracy}</b></span><span><small>Other 召回率</small><b>{item.otherRecall}</b></span><span><small>部署范围</small><b>{item.deploymentTarget}</b></span></div>
                     <footer>
-                      <small>更新于 {item.updatedAt}</small>
+                      <span>
+                        <small>更新于 {item.updatedAt}</small>
+                        {lastFailedValidation && (
+                          <small className="model-validation-record">
+                            最近未通过：{lastFailedValidation.reason} ·{" "}
+                            {lastFailedValidation.operator} ·{" "}
+                            {lastFailedValidation.time}
+                          </small>
+                        )}
+                      </span>
                       <div className="inline-actions">
                         {item.status === "已部署" ? (
                           rollbackTarget ? (
@@ -6279,8 +6396,15 @@ function AiEvaluationDetail({ setModal }) {
                           ) : (
                             <Status tone="muted">当前唯一生产版本</Status>
                           )
+                        ) : item.status === "待验证" ? (
+                          <>
+                            <Button onClick={() => validateModel(item, false)}>验证不通过</Button>
+                            <Button type="primary" onClick={() => validateModel(item, true)}>验证通过</Button>
+                          </>
                         ) : (
-                          <Button type="primary" onClick={() => advanceModel(item)}>推进生命周期</Button>
+                          <Button type="primary" onClick={() => advanceModel(item)}>
+                            {MODEL_LIFECYCLE_ACTIONS[item.status] || "推进生命周期"}
+                          </Button>
                         )}
                       </div>
                     </footer>

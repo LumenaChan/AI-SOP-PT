@@ -10,13 +10,15 @@ import {
   getSopAiEvaluationStatus as calculateSopAiEvaluationStatus,
   getPublishBlockers,
   normalizeSopStep,
+  recordModelValidationResult,
   requiresMandatoryReview,
   scoreOf,
   validateSystemSettings,
 } from "./domainRules.js";
 
-const STORAGE_KEY = "xingchen-prototype-data-v12";
+const STORAGE_KEY = "xingchen-prototype-data-v13";
 const LEGACY_STORAGE_KEYS = [
+  "xingchen-prototype-data-v12",
   "xingchen-prototype-data-v11",
   "xingchen-prototype-data-v10",
   "xingchen-prototype-data-v9",
@@ -317,7 +319,7 @@ function enrichStepEvidence(
 }
 
 const seedData = {
-  version: 12,
+  version: 13,
   classes: [
     {
       id: "class-nev-2401",
@@ -1881,7 +1883,7 @@ function collectUsedStepIds(...sources) {
 
 function mergeLegacy(legacy) {
   const next = cloneSeed();
-  if (!legacy || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(legacy.version))
+  if (!legacy || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version))
     return next;
   const identityKeys = {
     classes: "code",
@@ -1900,7 +1902,7 @@ function mergeLegacy(legacy) {
     ];
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version) &&
     Array.isArray(legacy.arrangements)
   ) {
     const legacyIds = new Set(legacy.arrangements.map((item) => item.id));
@@ -1979,13 +1981,20 @@ function mergeLegacy(legacy) {
         workstationIdMap[session.workstationId] || session.workstationId,
     })),
   }));
-  if ([4, 5, 6, 7, 8, 9, 10, 11].includes(legacy.version)) {
+  if ([4, 5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version)) {
     for (const key of ["sops", "datasets", "models", "learningSamples"]) {
       if (legacy[key]?.length) next[key] = legacy[key];
     }
   }
+  if (legacy.version === 12) {
+    next.datasets = next.datasets.map((item) =>
+      item.basedOn && item.status === "待审核"
+        ? { ...item, status: "采集中" }
+        : item,
+    );
+  }
   if (
-    [5, 6, 7, 8, 9, 10, 11].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version) &&
     Array.isArray(legacy.exportJobs)
   )
     next.exportJobs = legacy.exportJobs;
@@ -2972,7 +2981,7 @@ export function PrototypeDataProvider({ children }) {
           student: input.student || "—",
           aiPrediction: "待推理",
           reason: input.reason || "人工上传标注",
-          status: "待审核",
+          status: "采集中",
           createdAt: timestamp(),
         };
         setData((current) => {
@@ -3098,7 +3107,7 @@ export function PrototypeDataProvider({ children }) {
           name: `${sop.name} ${version}`,
           version,
           nextVersion,
-          status: "待审核",
+          status: "采集中",
           sampleCount: (currentDataset.sampleCount || 0) + accepted.length,
           acceptedCount: (currentDataset.sampleCount || 0) + accepted.length,
           candidateCount: 0,
@@ -3216,13 +3225,14 @@ export function PrototypeDataProvider({ children }) {
         const transitions = {
           待训练: "训练中",
           训练中: "待验证",
-          待验证: "可部署",
           可部署: "已部署",
           已回滚: "已部署",
           失败: "训练中",
           验证未通过: "训练中",
         };
         const status = transitions[existing.status];
+        if (existing.status === "待验证")
+          throw new Error("请选择验证通过或验证不通过。");
         if (!status) throw new Error("当前模型已部署，可使用回滚操作。");
         const updated = {
           ...existing,
@@ -3269,6 +3279,34 @@ export function PrototypeDataProvider({ children }) {
             next,
             `模型${status}`,
             `${updated.name} / ${updated.version}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      recordModelValidation(id, passed, reason = "") {
+        const existing = data.models.find((item) => item.id === id);
+        if (!existing) throw new Error("模型版本不存在。");
+        const updated = recordModelValidationResult(existing, {
+          passed,
+          reason,
+          operator: "系统管理员",
+          time: timestamp(),
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            models: current.models.map((item) =>
+              item.id === id ? updated : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            passed ? "模型验证通过" : "模型验证未通过",
+            passed
+              ? `${updated.name} / ${updated.version}`
+              : `${updated.name} / ${updated.version} / ${reason.trim()}`,
           );
           return next;
         });

@@ -14,6 +14,7 @@ import {
   nextStableStepId,
   normalizeSopStep,
   recordedDeductionOf,
+  recordModelValidationResult,
   requiresMandatoryReview,
   scoreOf,
   sessionPrimaryIssue,
@@ -346,6 +347,19 @@ test("explicit judgement modes are preserved instead of being inferred from keyw
   assert.equal(step.judgementMode, "visual_auto");
 });
 
+test("selected teaching media metadata is preserved for editor and detail views", () => {
+  const step = normalizeSopStep({
+    id: "Step 03",
+    name: "高压检查",
+    standardMediaType: "示教视频",
+    standardMediaName: "high-voltage-check.mp4",
+    standardMediaUrl: "blob:prototype-preview",
+  });
+  assert.equal(step.standardMediaType, "示教视频");
+  assert.equal(step.standardMediaName, "high-voltage-check.mp4");
+  assert.equal(step.standardMediaUrl, "blob:prototype-preview");
+});
+
 test("Step IDs remain monotonic after deletion and across SOP family history", () => {
   assert.equal(
     nextStableStepId({
@@ -482,6 +496,59 @@ test("SOP AI status follows unpublished, unconfigured, configuring, partial and 
   });
   assert.equal(available.status, "可用");
   assert.equal(available.validatedWorkstationCount, 2);
+
+  const withResearchDataset = getSopAiEvaluationStatus({
+    ...configured,
+    datasets: [
+      { sopId: automaticSop.id, version: "D1", status: "已锁定" },
+      { sopId: automaticSop.id, version: "D2", status: "采集中" },
+    ],
+    fieldValidations: [validation("w1"), validation("w2")],
+  });
+  assert.equal(withResearchDataset.status, "可用");
+  assert.equal(withResearchDataset.productionDataset.version, "D1");
+  assert.equal(withResearchDataset.researchDataset.version, "D2");
+  assert.equal(withResearchDataset.model.datasetVersion, "D1");
+});
+
+test("model validation supports both pass and fail paths with an audit record", () => {
+  const candidate = {
+    id: "model-candidate",
+    status: "待验证",
+    f1: "待评测",
+    sequenceAccuracy: "待评测",
+    otherRecall: "待评测",
+  };
+  const failed = recordModelValidationResult(candidate, {
+    passed: false,
+    reason: "Step 04错工具识别效果不足。",
+    operator: "系统管理员",
+    time: "2026-09-20 15:30",
+  });
+  assert.equal(failed.status, "验证未通过");
+  assert.deepEqual(failed.validationHistory.at(-1), {
+    result: "未通过",
+    reason: "Step 04错工具识别效果不足。",
+    operator: "系统管理员",
+    time: "2026-09-20 15:30",
+  });
+
+  const passed = recordModelValidationResult(candidate, {
+    passed: true,
+    operator: "系统管理员",
+    time: "2026-09-20 15:31",
+  });
+  assert.equal(passed.status, "可部署");
+  assert.equal(passed.f1, "92.0%");
+  assert.equal(passed.validationHistory.at(-1).result, "通过");
+  assert.throws(
+    () =>
+      recordModelValidationResult(candidate, {
+        passed: false,
+        reason: "",
+      }),
+    /未通过原因/,
+  );
 });
 
 test("a new SOP version does not inherit incompatible Dataset and Model readiness", () => {

@@ -2900,11 +2900,24 @@ tbody tr:hover {
   gap: 12px;
   align-items: center;
 }
-.media-reference img {
+.media-reference img,
+.media-reference video {
   width: 150px;
   height: 90px;
   object-fit: cover;
   border-radius: 7px;
+  background: #111827;
+}
+.media-reference__meta small,
+.media-reference__meta strong {
+  display: block;
+}
+.media-reference__meta small {
+  margin-bottom: 5px;
+  color: #7c899b;
+}
+.media-reference__meta strong {
+  overflow-wrap: anywhere;
 }
 .ai-capability-hero {
   padding: 16px;
@@ -4870,7 +4883,7 @@ tbody tr:hover {
 }
 .ai-adaptation-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow: hidden;
   margin-bottom: 14px;
   border: 1px solid #dfe7f0;
@@ -4899,6 +4912,9 @@ tbody tr:hover {
 }
 .ai-adaptation-tabs {
   margin-bottom: 14px;
+}
+.ai-research-note {
+  margin: -4px 0 14px;
 }
 .ai-gate-reasons {
   display: grid;
@@ -5012,6 +5028,12 @@ tbody tr:hover {
 .ai-model-list article footer small {
   margin-top: 4px;
   color: #7e8a9a;
+}
+.ai-model-list article footer .model-validation-record {
+  display: block;
+  max-width: 620px;
+  color: var(--red);
+  line-height: 1.5;
 }
 .ai-model-list article > div {
   display: grid;
@@ -5192,7 +5214,7 @@ tbody tr:hover {
   .ai-model-list article > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .ai-adaptation-summary > span:nth-child(3) {
+  .ai-adaptation-summary > span:nth-child(2n + 1) {
     border-left: 0;
   }
   .ai-adaptation-summary > span:nth-child(n + 3) {

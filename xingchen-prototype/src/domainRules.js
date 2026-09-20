@@ -364,17 +364,31 @@ export function getSopAiEvaluationStatus({
     (step) => step.judgementMode === "visual_auto",
   ).length;
   const sopDatasets = datasets.filter((item) => item.sopId === sop.id);
-  const lockedDataset = latestVersion(
+  const latestDataset = latestVersion(sopDatasets);
+  const latestLockedDataset = latestVersion(
     sopDatasets.filter((item) => item.status === "已锁定"),
   );
+  const deployedModel = latestVersion(
+    models.filter(
+      (item) =>
+        item.sopId === sop.id &&
+        item.sopVersion === sop.version &&
+        item.status === "已部署",
+    ),
+  );
+  const productionDataset = deployedModel
+    ? sopDatasets.find(
+        (item) => item.version === deployedModel.datasetVersion,
+      ) || null
+    : null;
+  const researchDataset =
+    latestDataset && latestDataset.version !== productionDataset?.version
+      ? latestDataset
+      : null;
   const compatibleModels = models.filter(
     (item) =>
       item.sopId === sop.id &&
-      item.sopVersion === sop.version &&
-      (!lockedDataset || item.datasetVersion === lockedDataset.version),
-  );
-  const deployedModel = latestVersion(
-    compatibleModels.filter((item) => item.status === "已部署"),
+      item.sopVersion === sop.version,
   );
   const hasStarted = sopDatasets.length > 0 || compatibleModels.length > 0;
   const explicitTargets = Array.isArray(targetWorkstationIds)
@@ -417,7 +431,10 @@ export function getSopAiEvaluationStatus({
     : 0;
   const availableCount = validatedCount;
   const reasons = [];
-  if (!lockedDataset) reasons.push("尚无已锁定 Dataset");
+  if (!productionDataset && !latestLockedDataset)
+    reasons.push("尚无已锁定 Dataset");
+  if (deployedModel && !productionDataset)
+    reasons.push("已部署模型绑定的 Dataset 不存在");
   if (!deployedModel) reasons.push("尚无兼容的已部署模型");
   if (!targetWorkstations.length) reasons.push("尚未设置或识别目标工位");
   for (const gate of gateResults) reasons.push(...gate.reasons);
@@ -425,13 +442,17 @@ export function getSopAiEvaluationStatus({
   let status = "配置中";
   if (!hasStarted) status = "未配置";
   else if (
-    lockedDataset &&
+    productionDataset &&
     deployedModel &&
     targetWorkstations.length > 0 &&
     validatedWorkstationCount === targetWorkstations.length
   )
     status = "可用";
-  else if (lockedDataset && deployedModel && validatedWorkstationCount > 0)
+  else if (
+    productionDataset &&
+    deployedModel &&
+    validatedWorkstationCount > 0
+  )
     status = "部分可用";
 
   return {
@@ -442,9 +463,44 @@ export function getSopAiEvaluationStatus({
     availableCount,
     targetWorkstationCount: targetWorkstations.length,
     validatedWorkstationCount,
-    dataset: lockedDataset || null,
+    dataset: productionDataset || latestLockedDataset || latestDataset || null,
+    productionDataset,
+    researchDataset,
+    latestDataset: latestDataset || null,
     model: deployedModel || null,
     reasons: [...new Set(reasons)],
+  };
+}
+
+export function recordModelValidationResult(
+  model = {},
+  { passed, reason = "", operator = "系统管理员", time = "" } = {},
+) {
+  if (model.status !== "待验证")
+    throw new Error("只有待验证模型可以提交验证结论。");
+  const normalizedReason = reason.trim();
+  if (!passed && !normalizedReason)
+    throw new Error("请填写验证未通过原因。");
+  const status = passed ? "可部署" : "验证未通过";
+  const record = {
+    result: passed ? "通过" : "未通过",
+    reason: passed ? "模型验证通过" : normalizedReason,
+    operator,
+    time,
+  };
+  return {
+    ...model,
+    status,
+    f1: passed && model.f1 === "待评测" ? "92.0%" : model.f1,
+    sequenceAccuracy:
+      passed && model.sequenceAccuracy === "待评测"
+        ? "88.0%"
+        : model.sequenceAccuracy,
+    otherRecall:
+      passed && model.otherRecall === "待评测" ? "93.0%" : model.otherRecall,
+    evaluatedAt: time,
+    updatedAt: time,
+    validationHistory: [...(model.validationHistory || []), record],
   };
 }
 
