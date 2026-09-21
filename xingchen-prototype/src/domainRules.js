@@ -597,27 +597,28 @@ export function normalizeMachineEvent(event = {}, index = 0) {
 }
 
 export function normalizeEvaluationMapping(mapping = {}, index = 0) {
+  const source = mapping && typeof mapping === "object" ? mapping : {};
   return {
-    ...mapping,
-    id: mapping.id || `mapping-${index + 1}`,
-    version: mapping.version || `MAP${index + 1}`,
-    status: mapping.status || "draft",
+    ...source,
+    id: source.id || `mapping-${index + 1}`,
+    version: source.version || `MAP${index + 1}`,
+    status: source.status || "draft",
     authoredFor: {
-      sopId: mapping.authoredFor?.sopId || mapping.sopId || "",
-      sopVersion: mapping.authoredFor?.sopVersion || mapping.sopVersion || "",
+      sopId: source.authoredFor?.sopId || source.sopId || "",
+      sopVersion: source.authoredFor?.sopVersion || source.sopVersion || "",
     },
-    compatibleSopVersions: Array.isArray(mapping.compatibleSopVersions)
-      ? mapping.compatibleSopVersions
+    compatibleSopVersions: Array.isArray(source.compatibleSopVersions)
+      ? source.compatibleSopVersions
       : [],
-    evaluationItems: (mapping.evaluationItems || []).map(
+    evaluationItems: (source.evaluationItems || []).map(
       normalizeEvaluationItem,
     ),
-    machineEvents: (mapping.machineEvents || []).map(normalizeMachineEvent),
+    machineEvents: (source.machineEvents || []).map(normalizeMachineEvent),
     teacherConfirmation: {
-      status: mapping.teacherConfirmation?.status || "未确认",
-      teacher: mapping.teacherConfirmation?.teacher || "",
-      comment: mapping.teacherConfirmation?.comment || "",
-      confirmedAt: mapping.teacherConfirmation?.confirmedAt || "",
+      status: source.teacherConfirmation?.status || "未确认",
+      teacher: source.teacherConfirmation?.teacher || "",
+      comment: source.teacherConfirmation?.comment || "",
+      confirmedAt: source.teacherConfirmation?.confirmedAt || "",
     },
   };
 }

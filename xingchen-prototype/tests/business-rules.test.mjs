@@ -1036,6 +1036,16 @@ test("data requirements include only Machine Events referenced by Evaluation Ite
   assert.equal(requirements.requiresTraining, true);
 });
 
+test("an SOP without Evaluation Mapping returns empty data requirements instead of crashing", () => {
+  const mapping = normalizeEvaluationMapping(null);
+  const requirements = deriveDataRequirements(null);
+  assert.equal(mapping.status, "draft");
+  assert.deepEqual(mapping.evaluationItems, []);
+  assert.deepEqual(mapping.machineEvents, []);
+  assert.equal(requirements.requiresTraining, false);
+  assert.deepEqual(requirements.trainingRequired, []);
+});
+
 test("Dataset split assignment keeps each Source Video in exactly one split", () => {
   const splits = assignSourceVideosToSplits([
     "video-01",
