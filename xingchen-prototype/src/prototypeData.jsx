@@ -8,16 +8,23 @@ import {
   diagnoseNoTrigger,
   FIELD_VALIDATION_SCENARIOS,
   getSopAiEvaluationStatus as calculateSopAiEvaluationStatus,
+  getMappingStatusForSop,
   getPublishBlockers,
+  normalizeEvaluationMapping,
+  normalizeSafetyRule,
+  normalizeScoreRule,
   normalizeSopStep,
   recordModelValidationResult,
   requiresMandatoryReview,
   scoreOf,
+  validateEvaluationMapping,
+  validateSopDefinition,
   validateSystemSettings,
 } from "./domainRules.js";
 
-const STORAGE_KEY = "xingchen-prototype-data-v13";
+const STORAGE_KEY = "xingchen-prototype-data-v14";
 const LEGACY_STORAGE_KEYS = [
+  "xingchen-prototype-data-v13",
   "xingchen-prototype-data-v12",
   "xingchen-prototype-data-v11",
   "xingchen-prototype-data-v10",
@@ -284,8 +291,7 @@ function enrichStepEvidence(
       : !/未看到|丢失/.test(step.observation || ""),
     actionSufficient: ["pass", "blocked"].includes(step.state),
     roiMatched: lockedProfile
-      ? lockedRoiVersion !== "未配置" &&
-        lockedCameraConfigVersion !== "未配置"
+      ? lockedRoiVersion !== "未配置" && lockedCameraConfigVersion !== "未配置"
       : Boolean(workstation?.implementation?.roiVersion) &&
         workstation?.implementation?.cameraPosition === "已确认",
     evidenceContinuous: !incident && recording.status !== "不可用",
@@ -319,7 +325,7 @@ function enrichStepEvidence(
 }
 
 const seedData = {
-  version: 13,
+  version: 14,
   classes: [
     {
       id: "class-nev-2401",
@@ -849,6 +855,87 @@ const seedData = {
         },
       ],
       history: [],
+    },
+  ],
+  evaluationMappings: [
+    {
+      id: "mapping-s1-map1",
+      sopFamilyId: "sop-family-hv",
+      version: "MAP1",
+      status: "pending_teacher_confirmation",
+      authoredFor: { sopId: "s1", sopVersion: "V3.2" },
+      compatibleSopVersions: [],
+      evaluationItems: [
+        {
+          id: "EI-S1-001",
+          stepId: "Step 01",
+          name: "安全防护检查完成",
+          type: "业务判断项",
+          roles: ["completion"],
+          sourceCompletion: "确认工位隔离、工具完好并佩戴完整防护用品。",
+          sourceScoreRuleIds: [],
+          sourceSafetyRuleIds: [],
+          machineEventIds: ["ME-S1-001", "ME-S1-002"],
+          scoreTreatment: { type: "", note: "" },
+          fallback: "no_negative_auto_decision",
+        },
+        {
+          id: "EI-S1-002",
+          stepId: "Step 02",
+          name: "下电与二次验电完成",
+          type: "业务判断项",
+          roles: ["completion"],
+          sourceCompletion: "按规定顺序完成下电、等待和二次验电。",
+          sourceScoreRuleIds: [],
+          sourceSafetyRuleIds: [],
+          machineEventIds: ["ME-S1-003", "ME-S1-004"],
+          scoreTreatment: { type: "", note: "" },
+          fallback: "no_negative_auto_decision",
+        },
+      ],
+      machineEvents: [
+        {
+          id: "ME-S1-001",
+          name: "绝缘手套出现",
+          factDefinition: "画面中确认双手均佩戴绝缘手套。",
+          capabilityMode: "existing_capability",
+          existingCapabilityRef: "防护用品检测",
+          implementationNote: "复用现有目标检测能力。",
+        },
+        {
+          id: "ME-S1-002",
+          name: "工具检查动作成立",
+          factDefinition: "工具依次进入检查区域并形成持续可见证据。",
+          capabilityMode: "configuration_only",
+          existingCapabilityRef: "工具检测",
+          implementationNote: "配置工具区与停留时长。",
+        },
+        {
+          id: "ME-S1-003",
+          name: "车辆下电动作发生",
+          factDefinition: "点火开关关闭且钥匙离开车辆操作区域。",
+          capabilityMode: "existing_capability",
+          existingCapabilityRef: "下电动作识别",
+          implementationNote: "复用既有动作能力。",
+        },
+        {
+          id: "ME-S1-004",
+          name: "二次验电动作成立",
+          factDefinition: "验电工具依次进入两个高压端点区域并满足有效停留。",
+          capabilityMode: "training_required",
+          existingCapabilityRef: "",
+          implementationNote: "需补充双端点验电动作样本。",
+        },
+      ],
+      teacherConfirmation: {
+        status: "待确认",
+        teacher: "",
+        comment: "",
+        confirmedAt: "",
+      },
+      createdBy: "刘工",
+      createdAt: "2026-09-20 16:10",
+      updatedAt: "2026-09-20 16:10",
     },
   ],
   datasets: [
@@ -1740,9 +1827,15 @@ function normalizePrototypeData(input) {
     ...sop,
     major:
       sop.major ||
-      (/机器人/.test(sop.name) ? "工业机器人技术" : /数控/.test(sop.name) ? "数控技术" : "新能源汽车技术"),
+      (/机器人/.test(sop.name)
+        ? "工业机器人技术"
+        : /数控/.test(sop.name)
+          ? "数控技术"
+          : "新能源汽车技术"),
     course: sop.course || sop.operation || "专业实训课程",
     steps: (sop.steps || []).map(normalizeSopStep),
+    scoreRules: (sop.scoreRules || []).map(normalizeScoreRule),
+    safetyRules: (sop.safetyRules || []).map(normalizeSafetyRule),
   }));
   const usedIdsByFamily = new Map();
   for (const sop of normalizedSops) {
@@ -1758,6 +1851,9 @@ function normalizePrototypeData(input) {
       ...(usedIdsByFamily.get(sop.familyId || sop.id) || new Set()),
     ],
   }));
+  next.evaluationMappings = Array.isArray(next.evaluationMappings)
+    ? next.evaluationMappings.map(normalizeEvaluationMapping)
+    : [];
   next.arrangements = (next.arrangements || []).map((arrangement) => {
     const sop = next.sops.find((item) => item.id === arrangement.sopId);
     const sessions = (arrangement.sessions || []).map((session) => {
@@ -1773,11 +1869,17 @@ function normalizePrototypeData(input) {
           item.sopId === sop?.id &&
           item.sopVersion === sop?.version,
       );
+      const mappingStatus = getMappingStatusForSop({
+        sop,
+        mappings: next.evaluationMappings || [],
+      });
       const gate = automaticEvaluationGate({
         workstation,
         sop,
         model,
         validation,
+        mapping: mappingStatus.mapping,
+        requireConfirmedMapping: true,
       });
       const recording = defaultSessionRecording(
         session,
@@ -1883,7 +1985,10 @@ function collectUsedStepIds(...sources) {
 
 function mergeLegacy(legacy) {
   const next = cloneSeed();
-  if (!legacy || ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version))
+  if (
+    !legacy ||
+    ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version)
+  )
     return next;
   const identityKeys = {
     classes: "code",
@@ -1902,7 +2007,7 @@ function mergeLegacy(legacy) {
     ];
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version) &&
     Array.isArray(legacy.arrangements)
   ) {
     const legacyIds = new Set(legacy.arrangements.map((item) => item.id));
@@ -1981,11 +2086,13 @@ function mergeLegacy(legacy) {
         workstationIdMap[session.workstationId] || session.workstationId,
     })),
   }));
-  if ([4, 5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version)) {
+  if ([4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version)) {
     for (const key of ["sops", "datasets", "models", "learningSamples"]) {
       if (legacy[key]?.length) next[key] = legacy[key];
     }
   }
+  if (Array.isArray(legacy.evaluationMappings))
+    next.evaluationMappings = legacy.evaluationMappings;
   if (legacy.version === 12) {
     next.datasets = next.datasets.map((item) =>
       item.basedOn && item.status === "待审核"
@@ -1994,7 +2101,7 @@ function mergeLegacy(legacy) {
     );
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version) &&
     Array.isArray(legacy.exportJobs)
   )
     next.exportJobs = legacy.exportJobs;
@@ -2616,7 +2723,25 @@ export function PrototypeDataProvider({ children }) {
             item.sopId === sopId &&
             item.sopVersion === sop?.version,
         );
-        return automaticEvaluationGate({ workstation, sop, model, validation });
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
+        return automaticEvaluationGate({
+          workstation,
+          sop,
+          model,
+          validation,
+          mapping: mappingStatus.mapping,
+          requireConfirmedMapping: true,
+        });
+      },
+      getSopMappingStatus(sopId) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        return getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
       },
       getSopAiEvaluationStatus(sopId, options = {}) {
         const sop = data.sops.find((item) => item.id === sopId);
@@ -2626,6 +2751,7 @@ export function PrototypeDataProvider({ children }) {
           models: data.models,
           workstations: data.workstations,
           fieldValidations: data.fieldValidations,
+          evaluationMappings: data.evaluationMappings || [],
           targetWorkstationIds: options.targetWorkstationIds,
         });
       },
@@ -2741,6 +2867,8 @@ export function PrototypeDataProvider({ children }) {
       createSopDraft(input) {
         if (!input.name?.trim()) throw new Error("请填写 SOP 标准名称。");
         const steps = (input.steps || []).map(normalizeSopStep);
+        const scoreRules = (input.scoreRules || []).map(normalizeScoreRule);
+        const safetyRules = (input.safetyRules || []).map(normalizeSafetyRule);
         const created = {
           ...input,
           id: uid("sop"),
@@ -2755,6 +2883,8 @@ export function PrototypeDataProvider({ children }) {
           updatedAt: timestamp(),
           history: input.history || [],
           steps,
+          scoreRules,
+          safetyRules,
           usedStepIds: collectUsedStepIds(input.usedStepIds, steps),
         };
         setData((current) => {
@@ -2787,6 +2917,12 @@ export function PrototypeDataProvider({ children }) {
           frozen: false,
           updatedAt: timestamp(),
           steps: (input.steps || existing.steps || []).map(normalizeSopStep),
+          scoreRules: (input.scoreRules || existing.scoreRules || []).map(
+            normalizeScoreRule,
+          ),
+          safetyRules: (input.safetyRules || existing.safetyRules || []).map(
+            normalizeSafetyRule,
+          ),
           usedStepIds: collectUsedStepIds(
             existing.usedStepIds,
             existing.steps,
@@ -2814,6 +2950,9 @@ export function PrototypeDataProvider({ children }) {
         if (!existing) throw new Error("SOP 不存在或已失效。");
         if (existing.frozen) throw new Error("当前版本已经冻结发布。");
         if (!signature?.trim()) throw new Error("请填写专业教师签名。");
+        const validationIssues = validateSopDefinition(input);
+        if (validationIssues.length)
+          throw new Error(`仍有 ${validationIssues.length} 项业务标准未完善。`);
         const published = {
           ...existing,
           ...input,
@@ -2824,6 +2963,12 @@ export function PrototypeDataProvider({ children }) {
           publishedAt: timestamp(),
           updatedAt: timestamp(),
           steps: (input.steps || existing.steps || []).map(normalizeSopStep),
+          scoreRules: (input.scoreRules || existing.scoreRules || []).map(
+            normalizeScoreRule,
+          ),
+          safetyRules: (input.safetyRules || existing.safetyRules || []).map(
+            normalizeSafetyRule,
+          ),
           usedStepIds: collectUsedStepIds(
             existing.usedStepIds,
             existing.steps,
@@ -2874,10 +3019,7 @@ export function PrototypeDataProvider({ children }) {
           publishedAt: "",
           updatedAt: timestamp(),
           history: [...(existing.history || [])],
-          usedStepIds: collectUsedStepIds(
-            existing.usedStepIds,
-            existing.steps,
-          ),
+          usedStepIds: collectUsedStepIds(existing.usedStepIds, existing.steps),
         };
         setData((current) => {
           const next = {
@@ -2924,11 +3066,217 @@ export function PrototypeDataProvider({ children }) {
         });
         return created;
       },
+      createEvaluationMapping(sopId) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || sop.status !== "已发布")
+          throw new Error("只有已发布的 SOP 才能创建 Evaluation Mapping。");
+        const applicable = (data.evaluationMappings || [])
+          .map(normalizeEvaluationMapping)
+          .filter(
+            (mapping) =>
+              mapping.authoredFor.sopId === sop.id &&
+              mapping.authoredFor.sopVersion === sop.version,
+          );
+        const editable = applicable.find(
+          (mapping) => mapping.status !== "confirmed",
+        );
+        if (editable) return editable;
+        const familyMappings = (data.evaluationMappings || []).filter(
+          (mapping) => mapping.sopFamilyId === (sop.familyId || sop.id),
+        );
+        const nextNumber =
+          familyMappings.reduce(
+            (max, mapping) =>
+              Math.max(
+                max,
+                Number(String(mapping.version).match(/\d+/)?.[0] || 0),
+              ),
+            0,
+          ) + 1;
+        const when = timestamp();
+        const created = normalizeEvaluationMapping({
+          id: uid("mapping"),
+          sopFamilyId: sop.familyId || sop.id,
+          version: `MAP${nextNumber}`,
+          status: "draft",
+          authoredFor: { sopId: sop.id, sopVersion: sop.version },
+          compatibleSopVersions: [],
+          evaluationItems: [],
+          machineEvents: [],
+          teacherConfirmation: { status: "未确认" },
+          createdBy: "AI实施工程师",
+          createdAt: when,
+          updatedAt: when,
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            evaluationMappings: [
+              created,
+              ...(current.evaluationMappings || []),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "创建 Evaluation Mapping",
+            `${sop.name} / ${created.version}`,
+          );
+          return next;
+        });
+        return created;
+      },
+      saveEvaluationMapping(id, input) {
+        const existing = (data.evaluationMappings || []).find(
+          (item) => item.id === id,
+        );
+        if (!existing) throw new Error("Evaluation Mapping 不存在或已失效。");
+        if (existing.status === "confirmed")
+          throw new Error("已确认 Mapping 已冻结，请创建新版本后再调整。");
+        const updated = normalizeEvaluationMapping({
+          ...existing,
+          ...input,
+          id,
+          status: "draft",
+          teacherConfirmation: {
+            status: "未确认",
+            teacher: "",
+            comment: "",
+            confirmedAt: "",
+          },
+          updatedAt: timestamp(),
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            evaluationMappings: (current.evaluationMappings || []).map(
+              (item) => (item.id === id ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "保存 Evaluation Mapping",
+            `${updated.version} / ${updated.id}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      submitEvaluationMapping(id) {
+        const existing = (data.evaluationMappings || []).find(
+          (item) => item.id === id,
+        );
+        if (!existing) throw new Error("Evaluation Mapping 不存在或已失效。");
+        if (existing.status === "confirmed")
+          throw new Error("当前 Mapping 已完成教师确认。");
+        const sop = data.sops.find(
+          (item) =>
+            item.id === existing.authoredFor?.sopId &&
+            item.version === existing.authoredFor?.sopVersion,
+        );
+        if (!sop) throw new Error("Mapping 对应的 SOP 版本不存在。");
+        const validation = validateEvaluationMapping({
+          sop,
+          mapping: existing,
+        });
+        if (!validation.passed) {
+          const blocked = {
+            ...existing,
+            status: "coverage_blocked",
+            coverage: validation.coverage,
+            validationIssues: validation.issues,
+            updatedAt: timestamp(),
+          };
+          setData((current) => ({
+            ...current,
+            evaluationMappings: (current.evaluationMappings || []).map(
+              (item) => (item.id === id ? blocked : item),
+            ),
+          }));
+          throw new Error(validation.issues[0] || "Mapping 尚未满足提交条件。");
+        }
+        const updated = {
+          ...existing,
+          status: "pending_teacher_confirmation",
+          coverage: validation.coverage,
+          validationIssues: [],
+          teacherConfirmation: {
+            status: "待确认",
+            teacher: "",
+            comment: "",
+            confirmedAt: "",
+          },
+          updatedAt: timestamp(),
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            evaluationMappings: (current.evaluationMappings || []).map(
+              (item) => (item.id === id ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "提交教师业务口径确认",
+            `${sop.name} / ${updated.version}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      reviewEvaluationMapping(id, confirmed, comment = "") {
+        const existing = (data.evaluationMappings || []).find(
+          (item) => item.id === id,
+        );
+        if (!existing || existing.status !== "pending_teacher_confirmation")
+          throw new Error("只有待教师确认的 Mapping 可以提交确认结论。");
+        const cleanComment = comment.trim();
+        if (!confirmed && !cleanComment)
+          throw new Error("退回时必须填写修改意见。");
+        const when = timestamp();
+        const updated = {
+          ...existing,
+          status: confirmed ? "confirmed" : "changes_requested",
+          teacherConfirmation: {
+            status: confirmed ? "已确认" : "已退回",
+            teacher: "王老师",
+            comment: cleanComment || "业务判断口径与当前 SOP 一致。",
+            confirmedAt: when,
+          },
+          updatedAt: when,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            evaluationMappings: (current.evaluationMappings || []).map(
+              (item) => (item.id === id ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            confirmed ? "确认 AI 业务口径" : "退回 AI 业务口径",
+            `${updated.version} / ${cleanComment || "确认通过"}`,
+            "成功",
+            { actor: "王老师", role: "教师" },
+          );
+          return next;
+        });
+        return updated;
+      },
       startAiAdaptation(sopId) {
         const sop = data.sops.find((item) => item.id === sopId);
         if (!sop) throw new Error("SOP 不存在或已失效。");
         if (sop.status !== "已发布")
           throw new Error("只有已发布的 SOP 才能开始 AI 适配。");
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
+        if (!mappingStatus.confirmed)
+          throw new Error("请先完成 Evaluation Mapping 并由教师确认业务口径。");
         const existing = data.datasets.find((item) => item.sopId === sopId);
         if (existing) return existing;
         const when = timestamp();
@@ -3039,8 +3387,7 @@ export function PrototypeDataProvider({ children }) {
                     status,
                     note,
                     reviewedAt: timestamp(),
-                    targetDataset:
-                      decision === "accept" ? targetDataset : "",
+                    targetDataset: decision === "accept" ? targetDataset : "",
                   }
                 : item,
             ),
@@ -3331,8 +3678,7 @@ export function PrototypeDataProvider({ children }) {
             };
             return numberOf(b.version) - numberOf(a.version);
           })[0];
-        if (!previous)
-          throw new Error("当前没有可恢复的上一生产模型版本。");
+        if (!previous) throw new Error("当前没有可恢复的上一生产模型版本。");
         const when = timestamp();
         setData((current) => {
           const next = {
@@ -3478,11 +3824,17 @@ export function PrototypeDataProvider({ children }) {
             item.sopId === sop?.id &&
             item.sopVersion === sop?.version,
         );
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
         const gate = automaticEvaluationGate({
           workstation,
           sop,
           model,
           validation,
+          mapping: mappingStatus.mapping,
+          requireConfirmedMapping: true,
         });
         warnings.push(...gate.reasons);
         return {
@@ -3517,6 +3869,10 @@ export function PrototypeDataProvider({ children }) {
         if (!checklist || Object.values(checklist).some((value) => !value))
           throw new Error("请逐项确认主辅画面、设备状态和本地缓存。");
         const sop = data.sops.find((item) => item.id === arrangement.sopId);
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
         const dataset = data.datasets.find(
           (item) => item.sopId === sop.id && item.status === "已锁定",
         );
@@ -3526,6 +3882,7 @@ export function PrototypeDataProvider({ children }) {
         const snapshot = arrangement.snapshot || {
           lockedAt: timestamp(),
           sopVersion: sop.version,
+          mappingVersion: mappingStatus.mapping?.version || "未确认",
           datasetVersion: dataset?.version || "未绑定",
           modelVersion: model?.version || "未启用",
         };

@@ -16,6 +16,7 @@ import {
 } from "react-router-dom";
 import {
   AlertOutlined,
+  ApartmentOutlined,
   AppstoreOutlined,
   BarChartOutlined,
   BellOutlined,
@@ -65,13 +66,27 @@ import {
   automaticEvaluationGate,
   arrangementDestination,
   canCloseIssue,
+  checkCompletionScoringCoverage,
+  CORRECTION_TREATMENTS,
+  createSafetyRuleDraft,
+  createScoreRuleDraft,
   createSopStepDraft,
   DIAGNOSTIC_ROOT_CAUSES,
+  EVALUATION_ITEM_ROLES,
   FIELD_VALIDATION_SCENARIOS,
+  INCOMPLETE_POLICIES,
   JUDGEMENT_MODES,
+  MACHINE_EVENT_CAPABILITY_MODES,
   nextStableStepId,
+  nextBusinessRuleId,
   recordedDeductionOf,
+  SAFETY_SCORE_TREATMENTS,
+  SAFETY_SESSION_TREATMENTS,
+  SCORE_DEDUCTION_MODES,
+  SCORE_RULE_TYPES,
   sessionPrimaryIssue,
+  validateEvaluationMapping,
+  validateSopDefinition,
   workstationFeedbackPolicy,
 } from "./domainRules.js";
 
@@ -1145,8 +1160,8 @@ function Dashboard() {
               </button>
             ))}
             {!reviewTasks.length && !pendingPublishExams.length && (
-                <p className="hint">当前没有需要立即处理的事项。</p>
-              )}
+              <p className="hint">当前没有需要立即处理的事项。</p>
+            )}
           </div>
         </section>
       </div>
@@ -1271,8 +1286,8 @@ function MonitorPage({ exam = false, setModal }) {
           <span>
             <Status>{arrangement.status}</Status>　开始时间{" "}
             {arrangement.startedAt || "尚未开始"} · 快照 SOP{" "}
-            {arrangement.snapshot?.sopVersion} · AI评价可用工位{" "}
-            {aiEnabledCount}/{sessions.length}
+            {arrangement.snapshot?.sopVersion} · AI评价可用工位 {aiEnabledCount}
+            /{sessions.length}
           </span>
         }
         actions={
@@ -1280,12 +1295,12 @@ function MonitorPage({ exam = false, setModal }) {
             {canControlArrangement &&
               arrangement.openWorkstationIds.length <
                 arrangement.workstationIds.length && (
-              <Button
-                onClick={() => nav(`/teacher/${base}/${arrangement.id}/prep`)}
-              >
-                开放更多工位
-              </Button>
-            )}
+                <Button
+                  onClick={() => nav(`/teacher/${base}/${arrangement.id}/prep`)}
+                >
+                  开放更多工位
+                </Button>
+              )}
             {canControlArrangement ? (
               <>
                 <Button
@@ -2562,81 +2577,14 @@ const emptySopDraft = () => ({
   conditions: "",
   standardDuration: "15 分钟",
   history: [],
+  scoreRules: [],
+  safetyRules: [],
   usedStepIds: ["Step 01"],
-  steps: [
-    createSopStepDraft({ id: "Step 01", predecessor: "无", score: 100 }),
-  ],
+  steps: [createSopStepDraft({ id: "Step 01", predecessor: "无", score: 100 })],
 });
 
 function validateSopDraft(draft) {
-  const issues = [];
-  const add = (stage, message, stepIndex = null) =>
-    issues.push({ stage, message, stepIndex });
-  if (!draft.name?.trim()) add(0, "未填写 SOP 名称");
-  if (!draft.operation?.trim()) add(0, "未填写适用操作");
-  if (!draft.basis?.trim()) add(0, "未填写标准依据");
-  if (!draft.conditions?.trim()) add(0, "未填写适用实训环境");
-  if (!draft.steps?.length) add(1, "至少需要一个操作步骤");
-  const ids = new Set();
-  for (const [index, step] of (draft.steps || []).entries()) {
-    if (ids.has(step.id)) add(1, `${step.id} 重复`, index);
-    ids.add(step.id);
-    if (!step.name?.trim()) add(1, `${step.id} 未填写步骤名称`, index);
-    if (!step.completionCondition?.trim())
-      add(1, `${step.id} 未填写完成条件`, index);
-    if (!step.teachingInstruction?.trim())
-      add(1, `${step.id} 未填写标准操作说明`, index);
-    if (!step.keyPoints?.trim()) add(1, `${step.id} 未填写操作要点`, index);
-    if (!JUDGEMENT_MODES[step.judgementMode])
-      add(2, `${step.id} 未选择有效的评价方式`, index);
-    if (
-      step.judgementMode !== "default_pass_manual_deduction" &&
-      !step.evidence?.trim()
-    )
-      add(2, `${step.id} 未填写评价证据要求`, index);
-    if (step.judgementMode !== "visual_auto" && !step.knownLimit?.trim())
-      add(2, `${step.id} 未填写视频评价限制`, index);
-    if (!step.deductionRule?.trim())
-      add(2, `${step.id} 未填写扣分规则`, index);
-    if (step.hasSafetyRedline && !step.redline?.trim())
-      add(2, `${step.id} 已启用安全红线但未填写内容`, index);
-    if (!/^\d{2}:\d{2}$/.test(step.timeout || ""))
-      add(1, `${step.id} 建议完成时间格式应为 mm:ss`, index);
-    if (!(Number(step.score) > 0))
-      add(2, `${step.id} 分值必须大于 0`, index);
-    if (
-      step.predecessor !== "无" &&
-      !draft.steps.some((item) => item.id === step.predecessor)
-    )
-      add(1, `${step.id} 的前置步骤不存在`, index);
-    if (step.predecessor === step.id)
-      add(1, `${step.id} 不能依赖自身`, index);
-  }
-  for (const [index, step] of (draft.steps || []).entries()) {
-    const visited = new Set([step.id]);
-    let predecessor = step.predecessor;
-    while (predecessor && predecessor !== "无") {
-      if (visited.has(predecessor)) {
-        add(1, `${step.id} 存在循环依赖`, index);
-        break;
-      }
-      visited.add(predecessor);
-      predecessor = draft.steps.find(
-        (item) => item.id === predecessor,
-      )?.predecessor;
-    }
-  }
-  const roots = (draft.steps || []).filter(
-    (step) => !step.predecessor || step.predecessor === "无",
-  );
-  if ((draft.steps || []).length > 1 && roots.length !== 1)
-    add(1, `当前有 ${roots.length} 个起始步骤，必须且只能有一个`);
-  const total = (draft.steps || []).reduce(
-    (sum, step) => sum + Number(step.score || 0),
-    0,
-  );
-  if (total !== 100) add(2, `步骤总分为 ${total}，必须等于 100`);
-  return issues;
+  return validateSopDefinition(draft);
 }
 
 const CopySopForm = forwardRef(function CopySopForm({ initialName }, ref) {
@@ -2795,19 +2743,17 @@ function SopList() {
     [query, setQuery] = useState(""),
     [statusFilter, setStatusFilter] = useState("全部"),
     [aiFilter, setAiFilter] = useState("全部");
-  const visible = data.sops.filter(
-    (sop) => {
-      const aiStatus = store.getSopAiEvaluationStatus(sop.id).status;
-      return (
-        (tab === "school" || sop.owner === "王老师") &&
-        (statusFilter === "全部" || sop.status === statusFilter) &&
-        (aiFilter === "全部" || aiStatus === aiFilter) &&
-        `${sop.name} ${sop.major || ""} ${sop.course || ""} ${sop.owner}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase())
-      );
-    },
-  );
+  const visible = data.sops.filter((sop) => {
+    const aiStatus = store.getSopAiEvaluationStatus(sop.id).status;
+    return (
+      (tab === "school" || sop.owner === "王老师") &&
+      (statusFilter === "全部" || sop.status === statusFilter) &&
+      (aiFilter === "全部" || aiStatus === aiFilter) &&
+      `${sop.name} ${sop.major || ""} ${sop.course || ""} ${sop.owner}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase())
+    );
+  });
   const rows = visible.map((sop) => [
     sop.name,
     `${sop.major || "未设置专业"}${sop.course ? ` / ${sop.course}` : ""}`,
@@ -2882,7 +2828,9 @@ function SopList() {
               onChange={(event) => setAiFilter(event.target.value)}
             >
               {["全部", "—", "未配置", "配置中", "部分可用", "可用"].map(
-                (item) => <option key={item}>{item}</option>,
+                (item) => (
+                  <option key={item}>{item}</option>
+                ),
               )}
             </select>
           </label>
@@ -2967,32 +2915,143 @@ function StandardMediaPreview({ step }) {
   );
 }
 
+function ReadonlyBusinessRules({ sop, step }) {
+  const scoreRules = (sop.scoreRules || []).filter(
+    (rule) => rule.stepId === step.id,
+  );
+  const safetyRules = (sop.safetyRules || []).filter(
+    (rule) => rule.stepId === step.id,
+  );
+  const flowLabels = {
+    allow: "允许并记录",
+    teacher_review: "教师确认",
+    apply_score_rule: "应用评分规则",
+    record_only: "仅记录超时",
+  };
+  const ruleName = (id) =>
+    scoreRules.find((rule) => rule.id === id)?.name || id || "—";
+  return (
+    <div className="readonly-business-rules">
+      <section>
+        <h3>评分规则</h3>
+        {scoreRules.map((rule) => (
+          <article key={rule.id}>
+            <span>
+              <code>{rule.id}</code>
+              <strong>{rule.name}</strong>
+            </span>
+            <small>
+              {SCORE_RULE_TYPES[rule.type] || rule.type} ·{" "}
+              {SCORE_DEDUCTION_MODES[rule.deductionMode] || rule.deductionMode}
+              {rule.deductionMode === "fixed_deduction"
+                ? ` ${rule.deductionValue} 分`
+                : ""}{" "}
+              · 最多 {rule.maxTriggerCount} 次
+            </small>
+            <p>
+              {CORRECTION_TREATMENTS[rule.correctionTreatment] ||
+                rule.correctionTreatment}
+              {rule.description ? `；${rule.description}` : ""}
+            </p>
+          </article>
+        ))}
+        {!scoreRules.length && (
+          <p className="hint">本步骤暂无结构化评分规则。</p>
+        )}
+        {step.legacyScoringNote && (
+          <div className="legacy-rule-note">
+            <AlertOutlined />
+            <span>
+              <strong>历史评分补充说明</strong>
+              <small>{step.legacyScoringNote}</small>
+            </span>
+          </div>
+        )}
+      </section>
+      <section>
+        <h3>安全规则</h3>
+        {safetyRules.map((rule) => (
+          <article key={rule.id}>
+            <span>
+              <code>{rule.id}</code>
+              <strong>{rule.name}</strong>
+            </span>
+            <small>
+              {SAFETY_SESSION_TREATMENTS[rule.sessionTreatment]} ·{" "}
+              {SAFETY_SCORE_TREATMENTS[rule.scoreTreatment]}
+              {rule.scoreTreatment === "fixed_deduction"
+                ? ` ${rule.deductionValue} 分`
+                : ""}
+            </small>
+            <p>{rule.violationCondition}</p>
+          </article>
+        ))}
+        {!safetyRules.length && (
+          <p className="hint">本步骤暂无结构化安全规则。</p>
+        )}
+        {step.legacySafetyNote && (
+          <div className="legacy-rule-note legacy-rule-note--danger">
+            <AlertOutlined />
+            <span>
+              <strong>历史安全红线说明</strong>
+              <small>{step.legacySafetyNote}</small>
+            </span>
+          </div>
+        )}
+      </section>
+      <details className="business-rule-details">
+        <summary>流程规则</summary>
+        <div className="definition-list">
+          {[
+            ["wrongOrder", "顺序错误"],
+            ["repeat", "重复操作"],
+            ["timeout", "操作超时"],
+          ].map(([key, label]) => {
+            const action = step.flowPolicy?.[key] || {};
+            return (
+              <span key={key}>
+                <small>{label}</small>
+                <strong>
+                  {flowLabels[action.treatment] || "教师确认"}
+                  {action.scoreRuleId
+                    ? ` · ${ruleName(action.scoreRuleId)}`
+                    : ""}
+                </strong>
+              </span>
+            );
+          })}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function SopDetail({ setModal }) {
   const nav = useNavigate(),
     { id } = useParams(),
     store = usePrototypeData();
   const sop = store.data.sops.find((item) => item.id === id);
   const aiStatus = store.getSopAiEvaluationStatus(sop?.id);
-  const productionDataset = aiStatus.productionDataset;
-  const researchDataset = aiStatus.researchDataset;
-  const productionModel = aiStatus.model;
-  const aiUpdatedAt = [
-    productionDataset?.updatedAt,
-    researchDataset?.updatedAt,
-    productionModel?.updatedAt,
-  ]
-    .filter(Boolean)
-    .sort((a, b) => String(b).localeCompare(String(a)))[0];
+  const mappingStatus =
+    aiStatus.mappingStatus || store.getSopMappingStatus(sop?.id);
+  const mapping = mappingStatus.mapping;
   const [tab, setTab] = useState("overview");
   const [selectedStep, setSelectedStep] = useState(0);
   const activeStep = sop?.steps[selectedStep] || sop?.steps[0];
   const judgementCounts = (sop?.steps || []).reduce(
     (counts, step) => ({
       ...counts,
-      [step.judgementMode]: (counts[step.judgementMode] || 0) + 1,
+      [step.expectedJudgementMode || step.judgementMode]:
+        (counts[step.expectedJudgementMode || step.judgementMode] || 0) + 1,
     }),
     {},
   );
+  const structuredSafetyCount = (sop?.safetyRules || []).length;
+  const legacySafetyCount = (sop?.steps || []).filter(
+    (step) =>
+      step.legacySafetyNote &&
+      !(sop?.safetyRules || []).some((rule) => rule.stepId === step.id),
+  ).length;
   const copyRef = useRef(null);
   if (!sop)
     return <MissingState title="SOP 不存在或已失效" backTo="/teacher/sop" />;
@@ -3066,11 +3125,42 @@ function SopDetail({ setModal }) {
         </Status>
       </section>
       <div className="detail-grid sop-top-metrics">
-        <Metric label="操作步骤" value={`${sop.steps.length} 步`} hint="固定 Step ID" icon={<BookOutlined />} />
-        <Metric label="总分" value={`${sop.steps.reduce((sum, step) => sum + Number(step.score), 0)} 分`} hint="教师评分标准" icon={<FileTextOutlined />} />
-        <Metric label="标准耗时" value={sop.standardDuration} hint="不直接参与扣分" icon={<ClockCircleOutlined />} />
-        <Metric label="安全红线" value={`${sop.steps.filter((step) => step.redline).length} 项`} hint="触发后暂停评价" icon={<AlertOutlined />} tone="warning" />
-        <Metric label="AI评价" value={aiStatus.status} hint="与SOP发布相互独立" icon={<VideoCameraOutlined />} tone={aiStatus.status === "可用" ? "success" : "warning"} />
+        <Metric
+          label="操作步骤"
+          value={`${sop.steps.length} 步`}
+          hint="固定 Step ID"
+          icon={<BookOutlined />}
+        />
+        <Metric
+          label="总分"
+          value={`${sop.steps.reduce((sum, step) => sum + Number(step.score), 0)} 分`}
+          hint="教师评分标准"
+          icon={<FileTextOutlined />}
+        />
+        <Metric
+          label="标准耗时"
+          value={sop.standardDuration}
+          hint="不直接参与扣分"
+          icon={<ClockCircleOutlined />}
+        />
+        <Metric
+          label="安全规则"
+          value={`${structuredSafetyCount + legacySafetyCount} 项`}
+          hint={
+            legacySafetyCount
+              ? `${structuredSafetyCount} 项结构化 · ${legacySafetyCount} 项历史说明`
+              : "由教师定义处置标准"
+          }
+          icon={<AlertOutlined />}
+          tone="warning"
+        />
+        <Metric
+          label="AI评价"
+          value={aiStatus.status}
+          hint="与SOP发布相互独立"
+          icon={<VideoCameraOutlined />}
+          tone={aiStatus.status === "可用" ? "success" : "warning"}
+        />
       </div>
       <div className="tabs sop-detail-tabs" role="tablist" aria-label="SOP详情">
         {[
@@ -3079,23 +3169,50 @@ function SopDetail({ setModal }) {
           ["ai", "AI评价能力"],
           ["versions", "版本记录"],
         ].map(([value, label]) => (
-          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
+          <button
+            key={value}
+            role="tab"
+            aria-selected={tab === value}
+            className={tab === value ? "active" : ""}
+            onClick={() => setTab(value)}
+          >
+            {label}
+          </button>
         ))}
       </div>
       {tab === "overview" && (
         <section className="panel">
           <PanelTitle title="标准概览" />
           <div className="definition-list sop-detail-overview">
-            <span><small>所属专业</small><strong>{sop.major || "未设置"}</strong></span>
-            <span><small>适用课程</small><strong>{sop.course || "—"}</strong></span>
-            <span><small>适用操作</small><strong>{sop.operation}</strong></span>
-            <span><small>标准依据</small><strong>{sop.basis}</strong></span>
-            <span><small>适用实训环境</small><strong>{sop.conditions}</strong></span>
+            <span>
+              <small>所属专业</small>
+              <strong>{sop.major || "未设置"}</strong>
+            </span>
+            <span>
+              <small>适用课程</small>
+              <strong>{sop.course || "—"}</strong>
+            </span>
+            <span>
+              <small>适用操作</small>
+              <strong>{sop.operation}</strong>
+            </span>
+            <span>
+              <small>标准依据</small>
+              <strong>{sop.basis}</strong>
+            </span>
+            <span>
+              <small>适用实训环境</small>
+              <strong>{sop.conditions}</strong>
+            </span>
           </div>
           <PanelTitle title="操作流程预览" />
           <div className="sop-flow-preview">
             {sop.steps.map((step, index) => (
-              <span key={step.id}><b>{String(index + 1).padStart(2, "0")}</b><strong>{step.name}</strong><small>{step.timeout}</small></span>
+              <span key={step.id}>
+                <b>{String(index + 1).padStart(2, "0")}</b>
+                <strong>{step.name}</strong>
+                <small>{step.timeout}</small>
+              </span>
             ))}
           </div>
         </section>
@@ -3105,54 +3222,188 @@ function SopDetail({ setModal }) {
           <aside className="panel rule-steps">
             <PanelTitle title="操作步骤" />
             {sop.steps.map((step, index) => (
-              <button className={index === selectedStep ? "active" : ""} key={step.id} onClick={() => setSelectedStep(index)}>
-                <b>{String(index + 1).padStart(2, "0")}</b><span>{step.name}</span><small>{step.id} · {step.attribute}</small>
+              <button
+                className={index === selectedStep ? "active" : ""}
+                key={step.id}
+                onClick={() => setSelectedStep(index)}
+              >
+                <b>{String(index + 1).padStart(2, "0")}</b>
+                <span>{step.name}</span>
+                <small>{step.id} · 线性必做</small>
               </button>
             ))}
           </aside>
           <section className="panel rule-editor">
-            <PanelTitle title={`${activeStep.id} · ${activeStep.name}`} action={<Status>{JUDGEMENT_MODES[activeStep.judgementMode]?.label}</Status>} />
+            <PanelTitle
+              title={`${activeStep.id} · ${activeStep.name}`}
+              action={
+                <Status>
+                  {
+                    JUDGEMENT_MODES[
+                      activeStep.expectedJudgementMode ||
+                        activeStep.judgementMode
+                    ]?.label
+                  }
+                </Status>
+              }
+            />
             <div className="definition-list sop-step-readonly">
-              <span><small>步骤属性</small><strong>{activeStep.attribute}</strong></span>
-              <span><small>前置步骤</small><strong>{activeStep.predecessor}</strong></span>
-              <span><small>建议时间</small><strong>{activeStep.timeout}</strong></span>
-              <span><small>分值</small><strong>{activeStep.score} 分</strong></span>
-              <span><small>标准操作说明</small><strong>{activeStep.teachingInstruction}</strong></span>
-              <span><small>操作要点</small><strong>{activeStep.keyPoints}</strong></span>
-              <span><small>常见错误</small><strong>{activeStep.commonMistakes || "—"}</strong></span>
-              <span><small>完成条件</small><strong>{activeStep.completionCondition}</strong></span>
-              <span><small>视频评价限制</small><strong>{activeStep.judgementMode === "visual_auto" ? "—" : activeStep.knownLimit}</strong></span>
-              <span><small>评价证据要求</small><strong>{activeStep.evidence || "无需视频证据"}</strong></span>
-              <span><small>扣分规则</small><strong>{activeStep.deductionRule}</strong></span>
+              <span>
+                <small>步骤类型</small>
+                <strong>线性必做</strong>
+              </span>
+              <span>
+                <small>前置步骤</small>
+                <strong>{activeStep.predecessor}</strong>
+              </span>
+              <span>
+                <small>建议时间</small>
+                <strong>{activeStep.timeout}</strong>
+              </span>
+              <span>
+                <small>分值</small>
+                <strong>{activeStep.score} 分</strong>
+              </span>
+              <span>
+                <small>标准操作说明</small>
+                <strong>{activeStep.teachingInstruction}</strong>
+              </span>
+              <span>
+                <small>操作要点</small>
+                <strong>{activeStep.keyPoints}</strong>
+              </span>
+              <span>
+                <small>常见错误</small>
+                <strong>{activeStep.commonMistakes || "—"}</strong>
+              </span>
+              <span>
+                <small>完成条件</small>
+                <strong>{activeStep.completionCondition}</strong>
+              </span>
+              <span>
+                <small>未完成计分</small>
+                <strong>
+                  {INCOMPLETE_POLICIES[activeStep.incompletePolicy]?.label ||
+                    "历史版本未明确"}
+                </strong>
+              </span>
+              <span>
+                <small>视频评价限制</small>
+                <strong>
+                  {(activeStep.expectedJudgementMode ||
+                    activeStep.judgementMode) === "visual_auto"
+                    ? "—"
+                    : activeStep.knownLimit}
+                </strong>
+              </span>
+              <span>
+                <small>评价证据要求</small>
+                <strong>{activeStep.evidence || "无需视频证据"}</strong>
+              </span>
             </div>
             <StandardMediaPreview step={activeStep} />
-            {activeStep.redline && <div className="sop-redline"><AlertOutlined /><div><strong>安全红线</strong><p>{activeStep.redline}</p><small>触发后暂停当前学生评价，并通知教师处理。</small></div></div>}
-            <details className="business-rule-details"><summary>高级异常规则</summary><div className="definition-list"><span><small>跳过步骤</small><strong>{activeStep.skipPolicy}</strong></span><span><small>顺序错误</small><strong>{activeStep.orderPolicy}</strong></span><span><small>重复操作</small><strong>{activeStep.repeatPolicy}</strong></span><span><small>超时处理</small><strong>{activeStep.timeoutPolicy}</strong></span></div></details>
+            <ReadonlyBusinessRules sop={sop} step={activeStep} />
           </section>
         </div>
       )}
       {tab === "ai" && (
         <section className="panel">
           <div className="ai-capability-hero">
-            <div><small>当前 AI评价状态</small><h2>{aiStatus.status}</h2><p>当前 {sop.steps.length} 个步骤中，{judgementCounts.visual_auto || 0} 个设置为自动评价，{judgementCounts.visual_assist_default_pass || 0} 个使用AI辅助评价，{judgementCounts.default_pass_manual_deduction || 0} 个由教师评价。</p></div>
+            <div>
+              <small>当前实际 AI评价能力</small>
+              <h2>{aiStatus.status}</h2>
+              <p>
+                当前 {sop.steps.length} 个步骤中，
+                {judgementCounts.visual_auto || 0} 个期望自动评价，
+                {judgementCounts.visual_assist_default_pass || 0}{" "}
+                个期望AI辅助评价，
+                {judgementCounts.default_pass_manual_deduction || 0}{" "}
+                个由教师评价。教师选择表示业务期望，不代表系统已经具备能力。
+              </p>
+            </div>
             <div className="inline-actions">
-              <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
-              <Button type="primary" onClick={() => nav(`/admin/ai-evaluation/${sop.id}`)}>查看AI适配详情</Button>
+              <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>
+                {aiStatus.status}
+              </Status>
+              {mapping?.status === "pending_teacher_confirmation" && (
+                <Button
+                  type="primary"
+                  onClick={() =>
+                    nav(`/teacher/sop/${sop.id}/ai-mapping/${mapping.id}`)
+                  }
+                >
+                  确认AI业务口径
+                </Button>
+              )}
+              <Button onClick={() => nav(`/admin/ai-evaluation/${sop.id}`)}>
+                查看AI适配详情
+              </Button>
             </div>
           </div>
           <div className="definition-list ai-capability-summary">
-            <span><small>当前生产 Dataset</small><strong>{productionDataset ? `${productionDataset.version} · ${productionDataset.status}` : "—"}</strong></span>
-            <span><small>当前生产模型</small><strong>{productionModel ? `${productionModel.version} · ${productionModel.status}` : "—"}</strong></span>
-            <span><small>在研 Dataset</small><strong>{researchDataset ? `${researchDataset.version} · ${researchDataset.status}` : "—"}</strong></span>
-            <span><small>最近更新</small><strong>{aiUpdatedAt || "—"}</strong></span>
-            <span><small>已验证工位</small><strong>{aiStatus.validatedWorkstationCount} / {aiStatus.targetWorkstationCount}</strong></span>
+            <span>
+              <small>业务口径状态</small>
+              <strong>{mappingStatus.status}</strong>
+            </span>
+            <span>
+              <small>业务口径版本</small>
+              <strong>{mapping?.version || "—"}</strong>
+            </span>
+            <span>
+              <small>完成判断项</small>
+              <strong>
+                {mapping?.evaluationItems.filter((item) =>
+                  item.roles.includes("completion"),
+                ).length || 0}{" "}
+                项
+              </strong>
+            </span>
+            <span>
+              <small>评分依据项</small>
+              <strong>
+                {mapping?.evaluationItems.filter((item) =>
+                  item.roles.includes("scoring"),
+                ).length || 0}{" "}
+                项
+              </strong>
+            </span>
+            <span>
+              <small>安全提醒项</small>
+              <strong>
+                {mapping?.evaluationItems.filter((item) =>
+                  item.roles.includes("safety"),
+                ).length || 0}{" "}
+                项
+              </strong>
+            </span>
           </div>
-          <DataTable columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]} statusColumns={[]} rows={sop.steps.map((step) => {
-            const configured = JUDGEMENT_MODES[step.judgementMode]?.label || "未配置";
-            const actual = step.judgementMode !== "visual_auto" ? configured : aiStatus.status === "可用" ? "自动评价" : aiStatus.status === "部分可用" ? "部分工位自动评价" : "AI辅助评价";
-            const reason = step.judgementMode !== "visual_auto" ? "按教师设定执行" : aiStatus.status === "可用" ? "当前模型已具备对应步骤能力" : "自动能力未完全就绪，运行时安全降级";
-            return [`${step.id} · ${step.name}`, configured, actual, reason];
-          })} />
+          <DataTable
+            columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]}
+            statusColumns={[]}
+            rows={sop.steps.map((step) => {
+              const expectedMode =
+                step.expectedJudgementMode || step.judgementMode;
+              const configured =
+                JUDGEMENT_MODES[expectedMode]?.label || "未配置";
+              const actual =
+                expectedMode !== "visual_auto"
+                  ? configured
+                  : aiStatus.status === "可用"
+                    ? "自动评价"
+                    : aiStatus.status === "部分可用"
+                      ? "部分工位自动评价"
+                      : "AI辅助评价";
+              const reason =
+                expectedMode !== "visual_auto"
+                  ? "按教师设定执行"
+                  : mappingStatus.status !== "已确认"
+                    ? "业务判断口径尚未确认，不能启用自动评价"
+                    : aiStatus.status === "可用"
+                      ? "当前能力与现场条件均已就绪"
+                      : "自动能力未完全就绪，运行时安全降级";
+              return [`${step.id} · ${step.name}`, configured, actual, reason];
+            })}
+          />
         </section>
       )}
       {tab === "versions" && (
@@ -3160,7 +3411,19 @@ function SopDetail({ setModal }) {
           <PanelTitle title="SOP 版本记录" />
           <div className="mapping-list">
             {(sop.history || []).map((item) => (
-              <div className="mapping-row sop-version-row" key={`${item.version}-${item.time}`}><code>{item.version}</code><span><strong>{item.note}</strong><small>{item.actor} · {item.time}</small></span><Status>{item.status}</Status></div>
+              <div
+                className="mapping-row sop-version-row"
+                key={`${item.version}-${item.time}`}
+              >
+                <code>{item.version}</code>
+                <span>
+                  <strong>{item.note}</strong>
+                  <small>
+                    {item.actor} · {item.time}
+                  </small>
+                </span>
+                <Status>{item.status}</Status>
+              </div>
             ))}
           </div>
         </section>
@@ -3196,10 +3459,22 @@ function SopEditor({ setModal }) {
   const judgementCounts = draft.steps.reduce(
     (counts, step) => ({
       ...counts,
-      [step.judgementMode]: (counts[step.judgementMode] || 0) + 1,
+      [step.expectedJudgementMode || step.judgementMode]:
+        (counts[step.expectedJudgementMode || step.judgementMode] || 0) + 1,
     }),
     {},
   );
+  const activeScoreRules = (draft.scoreRules || []).filter(
+    (rule) => rule.stepId === active?.id,
+  );
+  const activeSafetyRules = (draft.safetyRules || []).filter(
+    (rule) => rule.stepId === active?.id,
+  );
+  const linearizeSteps = (steps) =>
+    steps.map((step, index) => ({
+      ...step,
+      predecessor: index === 0 ? "无" : steps[index - 1].id,
+    }));
   const updateDraft = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
     setDirty(true);
@@ -3255,6 +3530,7 @@ function SopEditor({ setModal }) {
         index === selectedRuleStep
           ? {
               ...step,
+              expectedJudgementMode: value,
               judgementMode: value,
               knownLimit: defaultLimits[value],
             }
@@ -3263,6 +3539,80 @@ function SopEditor({ setModal }) {
     }));
     setDirty(true);
   };
+  const addScoreRule = () => {
+    const rules = draft.scoreRules || [];
+    const idValue = nextBusinessRuleId({
+      rules,
+      stepId: active.id,
+      prefix: "SR",
+    });
+    updateDraft("scoreRules", [
+      ...rules,
+      createScoreRuleDraft({ id: idValue, stepId: active.id }),
+    ]);
+  };
+  const updateScoreRule = (idValue, key, value) =>
+    updateDraft(
+      "scoreRules",
+      (draft.scoreRules || []).map((rule) =>
+        rule.id === idValue ? { ...rule, [key]: value } : rule,
+      ),
+    );
+  const removeScoreRule = (idValue) => {
+    updateDraft(
+      "scoreRules",
+      (draft.scoreRules || []).filter((rule) => rule.id !== idValue),
+    );
+    updateStepFields({
+      flowPolicy: {
+        ...active.flowPolicy,
+        ...Object.fromEntries(
+          Object.entries(active.flowPolicy || {}).map(([key, action]) => [
+            key,
+            action.scoreRuleId === idValue
+              ? {
+                  ...action,
+                  treatment:
+                    key === "timeout" ? "record_only" : "teacher_review",
+                  scoreRuleId: "",
+                }
+              : action,
+          ]),
+        ),
+      },
+    });
+  };
+  const addSafetyRule = () => {
+    const rules = draft.safetyRules || [];
+    const idValue = nextBusinessRuleId({
+      rules,
+      stepId: active.id,
+      prefix: "SAFE",
+    });
+    updateDraft("safetyRules", [
+      ...rules,
+      createSafetyRuleDraft({ id: idValue, stepId: active.id }),
+    ]);
+  };
+  const updateSafetyRule = (idValue, key, value) =>
+    updateDraft(
+      "safetyRules",
+      (draft.safetyRules || []).map((rule) =>
+        rule.id === idValue ? { ...rule, [key]: value } : rule,
+      ),
+    );
+  const removeSafetyRule = (idValue) =>
+    updateDraft(
+      "safetyRules",
+      (draft.safetyRules || []).filter((rule) => rule.id !== idValue),
+    );
+  const updateFlowPolicy = (key, field, value) =>
+    updateStepFields({
+      flowPolicy: {
+        ...active.flowPolicy,
+        [key]: { ...active.flowPolicy?.[key], [field]: value },
+      },
+    });
   const persistDraft = () => {
     const saved = id
       ? store.updateSopDraft(id, draft)
@@ -3284,7 +3634,11 @@ function SopEditor({ setModal }) {
         const saved = persistDraft();
         if (!id)
           window.setTimeout(
-            () => nav(`/teacher/sop/edit/${saved.id}`, { replace: true, state: { stage } }),
+            () =>
+              nav(`/teacher/sop/edit/${saved.id}`, {
+                replace: true,
+                state: { stage },
+              }),
             0,
           );
         return `${saved.name} ${saved.version} 已保存`;
@@ -3299,7 +3653,11 @@ function SopEditor({ setModal }) {
       const saved = persistDraft();
       if (!id)
         window.setTimeout(
-          () => nav(`/teacher/sop/edit/${saved.id}`, { replace: true, state: { stage: target } }),
+          () =>
+            nav(`/teacher/sop/edit/${saved.id}`, {
+              replace: true,
+              state: { stage: target },
+            }),
           0,
         );
       else setStage(target);
@@ -3336,14 +3694,12 @@ function SopEditor({ setModal }) {
       steps[target],
       steps[selectedRuleStep],
     ];
-    updateDraft("steps", steps);
+    updateDraft("steps", linearizeSteps(steps));
     setSelectedRuleStep(target);
   };
   const addStep = () => {
     const historicalSteps = store.data.sops
-      .filter(
-        (item) => draft.familyId && item.familyId === draft.familyId,
-      )
+      .filter((item) => draft.familyId && item.familyId === draft.familyId)
       .flatMap((item) => item.steps || []);
     const idValue = nextStableStepId({
       steps: draft.steps,
@@ -3373,12 +3729,20 @@ function SopEditor({ setModal }) {
   const removeStep = () => {
     if (draft.steps.length === 1) return;
     const removed = active.id;
-    const steps = draft.steps
-      .filter((_, index) => index !== selectedRuleStep)
-      .map((step) =>
-        step.predecessor === removed ? { ...step, predecessor: "无" } : step,
-      );
-    updateDraft("steps", steps);
+    const steps = linearizeSteps(
+      draft.steps.filter((_, index) => index !== selectedRuleStep),
+    );
+    setDraft((current) => ({
+      ...current,
+      steps,
+      scoreRules: (current.scoreRules || []).filter(
+        (rule) => rule.stepId !== removed,
+      ),
+      safetyRules: (current.safetyRules || []).filter(
+        (rule) => rule.stepId !== removed,
+      ),
+    }));
+    setDirty(true);
     setSelectedRuleStep(Math.max(0, selectedRuleStep - 1));
   };
   return (
@@ -3448,14 +3812,18 @@ function SopEditor({ setModal }) {
                     "工业机器人技术",
                     "数控技术",
                     "其他",
-                  ].map((item) => <option key={item}>{item}</option>)}
+                  ].map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
                 </select>
               </label>
               <label className="field">
                 适用课程（选填）
                 <input
                   value={draft.course || ""}
-                  onChange={(event) => updateDraft("course", event.target.value)}
+                  onChange={(event) =>
+                    updateDraft("course", event.target.value)
+                  }
                 />
               </label>
             </div>
@@ -3482,8 +3850,15 @@ function SopEditor({ setModal }) {
                   <input
                     type="number"
                     min="1"
-                    value={Number(String(draft.standardDuration).match(/\d+/)?.[0] || 15)}
-                    onChange={(event) => updateDraft("standardDuration", `${event.target.value} 分钟`)}
+                    value={Number(
+                      String(draft.standardDuration).match(/\d+/)?.[0] || 15,
+                    )}
+                    onChange={(event) =>
+                      updateDraft(
+                        "standardDuration",
+                        `${event.target.value} 分钟`,
+                      )
+                    }
                   />
                   <b>分钟</b>
                 </span>
@@ -3502,10 +3877,21 @@ function SopEditor({ setModal }) {
           <aside className="panel sop-responsibility-card">
             <SafetyCertificateOutlined />
             <h2>标准责任</h2>
-            <span><small>标准责任人</small><strong>{draft.owner}</strong></span>
-            <span><small>当前版本</small><strong>{draft.version}</strong></span>
-            <span><small>当前状态</small><strong>{draft.status || "草稿"}</strong></span>
-            <p>SOP是教学与评价的正式业务标准。步骤、评分和安全规则由专业教师定义，AI不会自动生成或改写本标准。</p>
+            <span>
+              <small>标准责任人</small>
+              <strong>{draft.owner}</strong>
+            </span>
+            <span>
+              <small>当前版本</small>
+              <strong>{draft.version}</strong>
+            </span>
+            <span>
+              <small>当前状态</small>
+              <strong>{draft.status || "草稿"}</strong>
+            </span>
+            <p>
+              SOP是教学与评价的正式业务标准。步骤、评分和安全规则由专业教师定义，AI不会自动生成或改写本标准。
+            </p>
           </aside>
         </div>
       )}
@@ -3528,9 +3914,7 @@ function SopEditor({ setModal }) {
               >
                 <b>{String(index + 1).padStart(2, "0")}</b>
                 <span>{step.name || "未命名步骤"}</span>
-                <small>
-                  {step.attribute} · 建议 {step.timeout}
-                </small>
+                <small>线性必做 · 建议 {step.timeout}</small>
                 <small className="step-system-id">系统标识：{step.id}</small>
               </button>
             ))}
@@ -3547,6 +3931,31 @@ function SopEditor({ setModal }) {
                 <p>调整顺序不会改变系统标识；删除步骤后也不会复用该编号。</p>
               </div>
             </div>
+            {draft.steps.some(
+              (step) =>
+                step.attribute &&
+                !["必做", "required"].includes(step.attribute),
+            ) && (
+              <div className="evaluation-notice evaluation-notice--warning">
+                <AlertOutlined />
+                <span>
+                  当前草稿来自旧版可选/分支结构。请确认后将全部步骤转为一期线性必做流程；原
+                  Step ID 不会改变。
+                </span>
+                <Button
+                  onClick={() =>
+                    updateDraft(
+                      "steps",
+                      linearizeSteps(
+                        draft.steps.map(({ attribute, ...step }) => step),
+                      ),
+                    )
+                  }
+                >
+                  转为线性必做
+                </Button>
+              </div>
+            )}
             <div className="rule-form">
               <label className="field">
                 步骤名称
@@ -3605,52 +4014,34 @@ function SopEditor({ setModal }) {
                   <input
                     type="file"
                     accept="image/*,video/*"
-                    onChange={(event) => updateStepMedia(event.target.files?.[0])}
+                    onChange={(event) =>
+                      updateStepMedia(event.target.files?.[0])
+                    }
                   />
                   <small>
-                    {active.standardMediaName || `${active.standardMediaType || "示教资料"}已配置`}
+                    {active.standardMediaName ||
+                      `${active.standardMediaType || "示教资料"}已配置`}
                   </small>
                 </label>
                 <StandardMediaPreview step={active} />
               </div>
-              <div className="form-row">
-                <label className="field">
-                  前置步骤
-                  <select
-                    value={active.predecessor}
-                    onChange={(event) =>
-                      updateStep("predecessor", event.target.value)
-                    }
-                  >
-                    <option value="无">无</option>
-                    {draft.steps
-                      .filter((step) => step.id !== active.id)
-                      .map((step) => (
-                        <option key={step.id} value={step.id}>
-                          {step.id} · {step.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="field">
-                  步骤属性
-                  <select
-                    value={active.attribute}
-                    onChange={(event) =>
-                      updateStep("attribute", event.target.value)
-                    }
-                  >
-                    <option>必做</option>
-                    <option>可选</option>
-                    <option value="允许分支">分支步骤</option>
-                  </select>
-                </label>
+              <div className="definition-list linear-step-facts">
+                <span>
+                  <small>前置步骤</small>
+                  <strong>{active.predecessor}</strong>
+                </span>
+                <span>
+                  <small>步骤类型</small>
+                  <strong>线性必做</strong>
+                </span>
               </div>
               <label className="field compact-field">
                 建议完成时间（mm:ss）
                 <input
                   value={active.timeout}
-                  onChange={(event) => updateStep("timeout", event.target.value)}
+                  onChange={(event) =>
+                    updateStep("timeout", event.target.value)
+                  }
                 />
               </label>
               <div className="definition-actions">
@@ -3681,113 +4072,542 @@ function SopEditor({ setModal }) {
       )}
       {stage === 2 && (
         <div className="evaluation-stage">
-          <div className={`score-allocation ${totalScore === 100 ? "score-allocation--complete" : totalScore > 100 ? "score-allocation--over" : ""}`}>
-            <span><small>当前总分</small><strong>{totalScore} / 100</strong></span>
-            <p>{totalScore === 100 ? "✓ 总分已配置完成" : totalScore < 100 ? `还需分配 ${100 - totalScore} 分` : `已超出 ${totalScore - 100} 分`}</p>
+          <div
+            className={`score-allocation ${totalScore === 100 ? "score-allocation--complete" : totalScore > 100 ? "score-allocation--over" : ""}`}
+          >
+            <span>
+              <small>当前总分</small>
+              <strong>{totalScore} / 100</strong>
+            </span>
+            <p>
+              {totalScore === 100
+                ? "✓ 总分已配置完成"
+                : totalScore < 100
+                  ? `还需分配 ${100 - totalScore} 分`
+                  : `已超出 ${totalScore - 100} 分`}
+            </p>
           </div>
           <div className="rule-layout">
-          <aside className="panel rule-steps">
-            <PanelTitle title="评价步骤" />
-            {draft.steps.map((step, index) => (
-              <button
-                className={index === selectedRuleStep ? "active" : ""}
-                key={step.id}
-                onClick={() => setSelectedRuleStep(index)}
-              >
-                <b>{String(index + 1).padStart(2, "0")}</b>
-                <span>{step.name || "未命名步骤"}</span>
-                <small>
-                  {step.score} 分 · {JUDGEMENT_MODES[step.judgementMode]?.shortLabel}
-                </small>
-              </button>
-            ))}
-          </aside>
-          <section className="panel rule-editor">
-            <PanelTitle
-              title={`${active.id} · 评价规则`}
-              action={<Status>{active.score} 分</Status>}
-            />
-            <div className="rule-form">
-              <label className="field compact-field">
-                本步骤分值
-                <input type="number" min="1" value={active.score} onChange={(event) => updateStep("score", Number(event.target.value))} />
-              </label>
-              <div className="field">
-                评价方式
-                <div className="judgement-mode-options" role="radiogroup" aria-label="评价方式">
-                  {Object.entries(JUDGEMENT_MODES).map(([value, config]) => (
-                    <button type="button" role="radio" aria-checked={active.judgementMode === value} className={active.judgementMode === value ? "active" : ""} key={value} onClick={() => updateJudgementMode(value)}>
-                      <span className="mode-radio" /><strong>{config.label}</strong><small>{config.description}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {active.judgementMode === "visual_auto" && (
-                <p className="evaluation-notice"><AlertOutlined /> 最终是否能启用自动评价，还需完成AI模型适配和工位现场验证。本设置仅表示教师认为该步骤适合视频自动评价。</p>
-              )}
-              {active.judgementMode !== "visual_auto" && <label className="field">
-                视频评价限制
-                <textarea
-                  value={active.knownLimit || ""}
-                  onChange={(event) =>
-                    updateStep("knownLimit", event.target.value)
-                  }
-                />
-              </label>}
-              {active.judgementMode !== "default_pass_manual_deduction" && <label className="field">
-                评价证据要求
-                <textarea
-                  value={active.evidence}
-                  onChange={(event) =>
-                    updateStep("evidence", event.target.value)
-                  }
-                />
-              </label>}
-              <label className="field">
-                扣分规则
-                <textarea
-                  value={active.deductionRule}
-                  onChange={(event) =>
-                    updateStep("deductionRule", event.target.value)
-                  }
-                />
-              </label>
-              <section className="safety-rule-editor">
-                <label className="checkbox-row safety-toggle">
+            <aside className="panel rule-steps">
+              <PanelTitle title="评价步骤" />
+              {draft.steps.map((step, index) => (
+                <button
+                  className={index === selectedRuleStep ? "active" : ""}
+                  key={step.id}
+                  onClick={() => setSelectedRuleStep(index)}
+                >
+                  <b>{String(index + 1).padStart(2, "0")}</b>
+                  <span>{step.name || "未命名步骤"}</span>
+                  <small>
+                    {step.score} 分 ·{" "}
+                    {JUDGEMENT_MODES[step.judgementMode]?.shortLabel}
+                  </small>
+                </button>
+              ))}
+            </aside>
+            <section className="panel rule-editor">
+              <PanelTitle
+                title={`${active.id} · 评价规则`}
+                action={<Status>{active.score} 分</Status>}
+              />
+              <div className="rule-form">
+                <label className="field compact-field">
+                  本步骤分值
                   <input
-                    type="checkbox"
-                    checked={Boolean(active.hasSafetyRedline)}
+                    type="number"
+                    min="1"
+                    value={active.score}
                     onChange={(event) =>
-                      updateStepFields({
-                        hasSafetyRedline: event.target.checked,
-                        redline: event.target.checked ? active.redline : "",
-                      })
+                      updateStep("score", Number(event.target.value))
                     }
                   />
-                  <span><strong>设置安全红线</strong><small>{active.hasSafetyRedline ? "本步骤包含必须立即干预的安全违规" : "本步骤无安全红线"}</small></span>
                 </label>
-                {active.hasSafetyRedline && (
-                  <>
-                    <label className="field">
-                      安全红线内容
-                      <textarea value={active.redline} onChange={(event) => updateStep("redline", event.target.value)} />
-                    </label>
-                    <p><AlertOutlined /> 触发后暂停当前学生评价，并通知教师处理。</p>
-                  </>
-                )}
-              </section>
-              <details className="business-rule-details">
-                <summary>高级评价规则</summary>
-                <div className="form-row">
-                  <label className="field">跳过步骤<select value={active.skipPolicy || "进入教师复核"} onChange={(event) => updateStep("skipPolicy", event.target.value)}><option>记录并继续</option><option>扣分并继续</option><option>进入教师复核</option></select></label>
-                  <label className="field">顺序错误<select value={active.orderPolicy || "进入教师复核"} onChange={(event) => updateStep("orderPolicy", event.target.value)}><option>提醒后继续</option><option>扣分并继续</option><option>进入教师复核</option></select></label>
-                  <label className="field">重复操作<select value={active.repeatPolicy || "允许一次重复"} onChange={(event) => updateStep("repeatPolicy", event.target.value)}><option>允许重复</option><option>允许一次重复</option><option>重复扣分</option><option>进入教师复核</option></select></label>
-                  <label className="field">超时处理<select value={active.timeoutPolicy || "仅记录超时"} onChange={(event) => updateStep("timeoutPolicy", event.target.value)}><option>仅记录超时</option><option>超时扣分并继续</option><option>进入教师复核</option><option>终止本次评价</option></select></label>
+                <div className="field">
+                  步骤未完整完成时如何计分
+                  <div
+                    className="incomplete-policy-options"
+                    role="radiogroup"
+                    aria-label="未完成计分方式"
+                  >
+                    {Object.entries(INCOMPLETE_POLICIES).map(
+                      ([value, config]) => (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={active.incompletePolicy === value}
+                          className={
+                            active.incompletePolicy === value ? "active" : ""
+                          }
+                          key={value}
+                          onClick={() => updateStep("incompletePolicy", value)}
+                        >
+                          <span className="mode-radio" />
+                          <strong>{config.label}</strong>
+                          <small>{config.description}</small>
+                        </button>
+                      ),
+                    )}
+                  </div>
                 </div>
-              </details>
-            </div>
-          </section>
-        </div>
+                <div className="field">
+                  评价方式
+                  <div
+                    className="judgement-mode-options"
+                    role="radiogroup"
+                    aria-label="评价方式"
+                  >
+                    {Object.entries(JUDGEMENT_MODES).map(([value, config]) => (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={
+                          (active.expectedJudgementMode ||
+                            active.judgementMode) === value
+                        }
+                        className={
+                          (active.expectedJudgementMode ||
+                            active.judgementMode) === value
+                            ? "active"
+                            : ""
+                        }
+                        key={value}
+                        onClick={() => updateJudgementMode(value)}
+                      >
+                        <span className="mode-radio" />
+                        <strong>{config.label}</strong>
+                        <small>{config.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {(active.expectedJudgementMode || active.judgementMode) ===
+                  "visual_auto" && (
+                  <p className="evaluation-notice">
+                    <AlertOutlined />{" "}
+                    最终是否能启用自动评价，还需完成AI模型适配和工位现场验证。本设置仅表示教师认为该步骤适合视频自动评价。
+                  </p>
+                )}
+                {(active.expectedJudgementMode || active.judgementMode) !==
+                  "visual_auto" && (
+                  <label className="field">
+                    视频评价限制
+                    <textarea
+                      value={active.knownLimit || ""}
+                      onChange={(event) =>
+                        updateStep("knownLimit", event.target.value)
+                      }
+                    />
+                  </label>
+                )}
+                {(active.expectedJudgementMode || active.judgementMode) !==
+                  "default_pass_manual_deduction" && (
+                  <label className="field">
+                    评价证据要求
+                    <textarea
+                      value={active.evidence}
+                      onChange={(event) =>
+                        updateStep("evidence", event.target.value)
+                      }
+                    />
+                  </label>
+                )}
+                <section className="structured-rule-section">
+                  <header>
+                    <span>
+                      <strong>评分规则</strong>
+                      <small>扣分值由教师定义，AI实施人员只能引用规则。</small>
+                    </span>
+                    <Button icon={<PlusOutlined />} onClick={addScoreRule}>
+                      新增评分规则
+                    </Button>
+                  </header>
+                  {active.legacyScoringNote && !activeScoreRules.length && (
+                    <div className="legacy-rule-note">
+                      <AlertOutlined />
+                      <span>
+                        <strong>历史评分补充说明</strong>
+                        <small>{active.legacyScoringNote}</small>
+                      </span>
+                      <em>不会自动转换成正式评分规则</em>
+                    </div>
+                  )}
+                  <div className="structured-rule-list">
+                    {activeScoreRules.map((rule) => (
+                      <article key={rule.id}>
+                        <header>
+                          <code>{rule.id}</code>
+                          <Button
+                            type="danger"
+                            onClick={() => removeScoreRule(rule.id)}
+                          >
+                            删除
+                          </Button>
+                        </header>
+                        <div className="form-row">
+                          <label className="field">
+                            错误名称
+                            <input
+                              value={rule.name}
+                              onChange={(event) =>
+                                updateScoreRule(
+                                  rule.id,
+                                  "name",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            错误类型
+                            <select
+                              value={rule.type}
+                              onChange={(event) =>
+                                updateScoreRule(
+                                  rule.id,
+                                  "type",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {Object.entries(SCORE_RULE_TYPES).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="rule-fields-grid">
+                          <label className="field">
+                            扣分方式
+                            <select
+                              value={rule.deductionMode}
+                              onChange={(event) =>
+                                updateScoreRule(
+                                  rule.id,
+                                  "deductionMode",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {Object.entries(SCORE_DEDUCTION_MODES).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                          {rule.deductionMode === "fixed_deduction" && (
+                            <label className="field">
+                              每次扣分
+                              <input
+                                type="number"
+                                min="1"
+                                max={active.score}
+                                value={rule.deductionValue}
+                                onChange={(event) =>
+                                  updateScoreRule(
+                                    rule.id,
+                                    "deductionValue",
+                                    Number(event.target.value),
+                                  )
+                                }
+                              />
+                            </label>
+                          )}
+                          <label className="field">
+                            最大触发次数
+                            <input
+                              type="number"
+                              min="1"
+                              value={rule.maxTriggerCount}
+                              onChange={(event) =>
+                                updateScoreRule(
+                                  rule.id,
+                                  "maxTriggerCount",
+                                  Number(event.target.value),
+                                )
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            纠正后处理
+                            <select
+                              value={rule.correctionTreatment}
+                              onChange={(event) =>
+                                updateScoreRule(
+                                  rule.id,
+                                  "correctionTreatment",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {Object.entries(CORRECTION_TREATMENTS).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                        </div>
+                        <label className="field">
+                          规则说明（选填）
+                          <textarea
+                            value={rule.description || ""}
+                            onChange={(event) =>
+                              updateScoreRule(
+                                rule.id,
+                                "description",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </label>
+                      </article>
+                    ))}
+                    {!activeScoreRules.length && (
+                      <div className="empty-inline">
+                        <FileTextOutlined />
+                        <b>尚未创建结构化评分规则</b>
+                        <p>
+                          如果选择“按评分规则计算”，后续 Mapping
+                          必须把每个完成判断项关联到这里的规则，或明确不扣分。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="structured-rule-section safety-rule-editor">
+                  <header>
+                    <span>
+                      <strong>安全规则</strong>
+                      <small>
+                        安全违规是否扣分、暂停或终止，均由教师明确。
+                      </small>
+                    </span>
+                    <Button icon={<PlusOutlined />} onClick={addSafetyRule}>
+                      新增安全规则
+                    </Button>
+                  </header>
+                  {active.legacySafetyNote && !activeSafetyRules.length && (
+                    <div className="legacy-rule-note legacy-rule-note--danger">
+                      <AlertOutlined />
+                      <span>
+                        <strong>历史安全红线说明</strong>
+                        <small>{active.legacySafetyNote}</small>
+                      </span>
+                      <em>请在新版本中由教师结构化确认</em>
+                    </div>
+                  )}
+                  <div className="structured-rule-list">
+                    {activeSafetyRules.map((rule) => (
+                      <article key={rule.id}>
+                        <header>
+                          <code>{rule.id}</code>
+                          <Button
+                            type="danger"
+                            onClick={() => removeSafetyRule(rule.id)}
+                          >
+                            删除
+                          </Button>
+                        </header>
+                        <div className="form-row">
+                          <label className="field">
+                            安全规则名称
+                            <input
+                              value={rule.name}
+                              onChange={(event) =>
+                                updateSafetyRule(
+                                  rule.id,
+                                  "name",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            违规成立条件
+                            <textarea
+                              value={rule.violationCondition}
+                              onChange={(event) =>
+                                updateSafetyRule(
+                                  rule.id,
+                                  "violationCondition",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                        <div className="rule-fields-grid">
+                          <label className="field">
+                            现场处置
+                            <select
+                              value={rule.sessionTreatment}
+                              onChange={(event) =>
+                                updateSafetyRule(
+                                  rule.id,
+                                  "sessionTreatment",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {Object.entries(SAFETY_SESSION_TREATMENTS).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                          <label className="field">
+                            成绩处理
+                            <select
+                              value={rule.scoreTreatment}
+                              onChange={(event) =>
+                                updateSafetyRule(
+                                  rule.id,
+                                  "scoreTreatment",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {Object.entries(SAFETY_SCORE_TREATMENTS).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                          {rule.scoreTreatment === "fixed_deduction" && (
+                            <label className="field">
+                              扣分值
+                              <input
+                                type="number"
+                                min="1"
+                                max={active.score}
+                                value={rule.deductionValue}
+                                onChange={(event) =>
+                                  updateSafetyRule(
+                                    rule.id,
+                                    "deductionValue",
+                                    Number(event.target.value),
+                                  )
+                                }
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                    {!activeSafetyRules.length && (
+                      <div className="empty-inline">
+                        <SafetyCertificateOutlined />
+                        <b>本步骤未配置结构化安全规则</b>
+                        <p>没有安全红线时可以保持为空。</p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <details className="business-rule-details">
+                  <summary>流程规则</summary>
+                  <p className="hint">
+                    步骤未完成统一由 Incomplete Policy
+                    处理；流程异常如需扣分，必须引用上方教师评分规则。
+                  </p>
+                  <div className="flow-policy-grid">
+                    {[
+                      [
+                        "wrongOrder",
+                        "顺序错误",
+                        [
+                          ["allow", "允许并记录"],
+                          ["teacher_review", "教师确认"],
+                          ["apply_score_rule", "应用评分规则"],
+                        ],
+                      ],
+                      [
+                        "repeat",
+                        "重复操作",
+                        [
+                          ["allow", "允许并记录"],
+                          ["teacher_review", "教师确认"],
+                          ["apply_score_rule", "应用评分规则"],
+                        ],
+                      ],
+                      [
+                        "timeout",
+                        "操作超时",
+                        [
+                          ["record_only", "仅记录超时"],
+                          ["teacher_review", "教师确认"],
+                          ["apply_score_rule", "应用评分规则"],
+                        ],
+                      ],
+                    ].map(([key, label, options]) => {
+                      const action = active.flowPolicy?.[key] || {};
+                      return (
+                        <div key={key}>
+                          <label className="field">
+                            {label}
+                            <select
+                              value={action.treatment || options[0][0]}
+                              onChange={(event) =>
+                                updateFlowPolicy(
+                                  key,
+                                  "treatment",
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {options.map(([value, text]) => (
+                                <option key={value} value={value}>
+                                  {text}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {action.treatment === "apply_score_rule" && (
+                            <label className="field">
+                              关联评分规则
+                              <select
+                                value={action.scoreRuleId || ""}
+                                onChange={(event) =>
+                                  updateFlowPolicy(
+                                    key,
+                                    "scoreRuleId",
+                                    event.target.value,
+                                  )
+                                }
+                              >
+                                <option value="">请选择</option>
+                                {activeScoreRules.map((rule) => (
+                                  <option key={rule.id} value={rule.id}>
+                                    {rule.id} · {rule.name || "未命名规则"}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              </div>
+            </section>
+          </div>
         </div>
       )}
       {stage === 3 && (
@@ -3802,7 +4622,9 @@ function SopEditor({ setModal }) {
                   ? `还有 ${issues.length} 项内容需要完善`
                   : "SOP 已满足发布条件"}
               </h2>
-              <p>这里只检查教学与评价标准；AI评价尚未配置也可以正常发布 SOP。</p>
+              <p>
+                这里只检查教学与评价标准；AI评价尚未配置也可以正常发布 SOP。
+              </p>
             </div>
           </div>
           <div className="review-list">
@@ -3811,10 +4633,16 @@ function SopEditor({ setModal }) {
                 <span key={`${issue.message}-${index}`}>
                   <ExclamationCircleFilled />
                   <b>{issue.message}</b>
-                  <button type="button" onClick={() => {
-                    if (issue.stepIndex !== null) setSelectedRuleStep(issue.stepIndex);
-                    setStage(issue.stage);
-                  }}>去修改</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (issue.stepIndex !== null)
+                        setSelectedRuleStep(issue.stepIndex);
+                      setStage(issue.stage);
+                    }}
+                  >
+                    去修改
+                  </button>
                 </span>
               ))
             ) : (
@@ -3836,13 +4664,17 @@ function SopEditor({ setModal }) {
                 </span>
                 <span>
                   <CheckCircleFilled />
-                  <b>AI辅助 {judgementCounts.visual_assist_default_pass || 0} 步 · 教师评价 {judgementCounts.default_pass_manual_deduction || 0} 步</b>
+                  <b>
+                    AI辅助 {judgementCounts.visual_assist_default_pass || 0} 步
+                    · 教师评价{" "}
+                    {judgementCounts.default_pass_manual_deduction || 0} 步
+                  </b>
                   <small>AI不确定时不会自动扣分</small>
                 </span>
                 <span>
                   <CheckCircleFilled />
-                  <b>安全红线 {draft.steps.filter((step) => step.hasSafetyRedline).length} 项</b>
-                  <small>触发后暂停评价并通知教师</small>
+                  <b>安全规则 {(draft.safetyRules || []).length} 项</b>
+                  <small>现场与成绩处置均由教师明确</small>
                 </span>
               </>
             )}
@@ -3868,7 +4700,9 @@ function SopEditor({ setModal }) {
           <div className="publish-boundary">
             <span>
               <strong>发布 SOP {draft.version}</strong>
-              <small>签名后当前版本被冻结；后续调整需要创建新版本。AI评价能力在发布后独立建设。</small>
+              <small>
+                签名后当前版本被冻结；后续调整需要创建新版本。AI评价能力在发布后独立建设。
+              </small>
             </span>
           </div>
         </section>
@@ -3932,7 +4766,8 @@ function Learning({ setModal }) {
       content: (
         <p>
           将把明确勾选的 {pending.length} 条待审样本按现有标签纳入对应可编辑
-          Dataset；当前版本已锁定时进入下一版候选。不会修改任何 SOP 或已锁定版本。
+          Dataset；当前版本已锁定时进入下一版候选。不会修改任何 SOP
+          或已锁定版本。
         </p>
       ),
       confirmText: `纳入 ${pending.length} 条`,
@@ -4412,15 +5247,26 @@ function ArrangementForm({ exam = false, setModal }) {
             <VideoCameraOutlined />
             <span>
               <strong>{selectedSop?.name || "未选择 SOP"}</strong>
-              <small>SOP {selectedSop?.version || "—"} · 自动评价目标 {selectedAiStatus.automaticTargetCount} 步 · 当前已适配 {selectedAiStatus.modelReadyCount} 步</small>
-              <small>工位能力 {selectedAiStatus.validatedWorkstationCount} / {selectedAiStatus.targetWorkstationCount} 已通过；具体工位将在准备阶段确认。</small>
+              <small>
+                SOP {selectedSop?.version || "—"} · 自动评价目标{" "}
+                {selectedAiStatus.automaticTargetCount} 步 · 当前已适配{" "}
+                {selectedAiStatus.modelReadyCount} 步
+              </small>
+              <small>
+                工位能力 {selectedAiStatus.validatedWorkstationCount} /{" "}
+                {selectedAiStatus.targetWorkstationCount}{" "}
+                已通过；具体工位将在准备阶段确认。
+              </small>
             </span>
-            <Status tone={selectedAiStatus.status === "可用" ? "success" : "warning"}>
+            <Status
+              tone={selectedAiStatus.status === "可用" ? "success" : "warning"}
+            >
               AI评价：{selectedAiStatus.status}
             </Status>
           </div>
           <p className="arrangement-ai-note">
-            <SafetyCertificateOutlined /> AI能力不完整不会阻止创建{name}；不可用工位的自动评价步骤将安全降级，AI不确定或证据不足时不自动扣分。
+            <SafetyCertificateOutlined /> AI能力不完整不会阻止创建{name}
+            ；不可用工位的自动评价步骤将安全降级，AI不确定或证据不足时不自动扣分。
           </p>
           <h2>参与学生 · 已选 {draft.studentIds.length} 人</h2>
           <div className="entity-check-grid">
@@ -4872,7 +5718,8 @@ function getArrangementResultStats(arrangement) {
 }
 
 function ArrangementResultMetrics({ arrangement, exam = false }) {
-  const { sessions, average, blockers } = getArrangementResultStats(arrangement);
+  const { sessions, average, blockers } =
+    getArrangementResultStats(arrangement);
   return (
     <div className="metric-grid">
       <Metric
@@ -4923,8 +5770,8 @@ function WorkstationReleasePanel({ arrangement, store, onReset }) {
         title="工位复位与释放"
         action={
           <span>
-            已复位 {sessions.filter((item) => item.status === "已复位").length} /{" "}
-            {sessions.length}
+            已复位 {sessions.filter((item) => item.status === "已复位").length}{" "}
+            / {sessions.length}
           </span>
         }
       />
@@ -5181,7 +6028,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       />
       {adminReadOnly && (
         <p className="readonly-note readonly-note--prominent">
-          <EyeOutlined /> 管理员只读查看同一份教学结果；技术诊断位于页面底部，不提供发布、复位、复核或改分操作。
+          <EyeOutlined />{" "}
+          管理员只读查看同一份教学结果；技术诊断位于页面底部，不提供发布、复位、复核或改分操作。
         </p>
       )}
       <ArrangementResultMetrics arrangement={arrangement} exam={exam} />
@@ -5194,7 +6042,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         <PanelTitle
           title="学生结果"
           action={
-            !exam && !adminReadOnly && (
+            !exam &&
+            !adminReadOnly && (
               <button
                 onClick={() =>
                   nav(`/teacher/practices/${arrangement.id}/history`)
@@ -5613,7 +6462,8 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
             <span>
               <small>评价快照</small>
               <strong>
-                SOP {activeStep.evidenceMetadata?.sopVersion || "—"} · 本次工位能力已锁定
+                SOP {activeStep.evidenceMetadata?.sopVersion || "—"} ·
+                本次工位能力已锁定
               </strong>
             </span>
           </div>
@@ -5940,7 +6790,11 @@ function AiDatasetSamples({ sop, setModal }) {
     <section className="panel panel--table ai-sample-panel">
       <PanelTitle
         title="样本审核"
-        action={<Status>{samples.filter((item) => item.status === "待审核").length} 条待审核</Status>}
+        action={
+          <Status>
+            {samples.filter((item) => item.status === "待审核").length} 条待审核
+          </Status>
+        }
       />
       <Toolbar
         placeholder="搜索视频文件、来源或标签"
@@ -5973,6 +6827,198 @@ function AiDatasetSamples({ sop, setModal }) {
   );
 }
 
+const MappingRejectForm = forwardRef(function MappingRejectForm(_, ref) {
+  const [comment, setComment] = useState("");
+  useImperativeHandle(ref, () => ({
+    getValue() {
+      if (!comment.trim()) throw new Error("请填写需要修改的业务口径。");
+      return comment.trim();
+    },
+  }));
+  return (
+    <label className="field">
+      修改意见<b className="required">必填</b>
+      <textarea
+        value={comment}
+        onChange={(event) => setComment(event.target.value)}
+        placeholder="请指出与SOP业务标准不一致的判断项或处置方式。"
+      />
+    </label>
+  );
+});
+
+function TeacherMappingReview({ setModal }) {
+  const nav = useNavigate();
+  const { id, mappingId } = useParams();
+  const store = usePrototypeData();
+  const sop = store.data.sops.find((item) => item.id === id);
+  const status = sop ? store.getSopMappingStatus(sop.id) : null;
+  const mapping = status?.mapping?.id === mappingId ? status.mapping : null;
+  const rejectRef = useRef(null);
+  if (!sop || !mapping)
+    return (
+      <MissingState
+        title="AI业务口径不存在或已失效"
+        backTo={`/teacher/sop/${id}`}
+      />
+    );
+  const roleText = (roles) =>
+    roles.map((role) => EVALUATION_ITEM_ROLES[role]).join("、");
+  const confirm = () =>
+    setModal({
+      title: "确认AI业务判断口径",
+      content: (
+        <p>
+          确认后 {mapping.version}{" "}
+          将被冻结。此操作只确认业务含义，不代表当前AI能力已经可用。
+        </p>
+      ),
+      confirmText: "确认业务口径",
+      onConfirm: () => {
+        store.reviewEvaluationMapping(mapping.id, true);
+        window.setTimeout(() => nav(`/teacher/sop/${sop.id}`), 0);
+        return "业务口径已确认；AI能力仍需独立完成建设和验证";
+      },
+    });
+  const reject = () =>
+    setModal({
+      title: "退回修改",
+      content: <MappingRejectForm ref={rejectRef} />,
+      confirmText: "退回AI实施人员",
+      onConfirm: () => {
+        const comment = rejectRef.current.getValue();
+        store.reviewEvaluationMapping(mapping.id, false, comment);
+        window.setTimeout(() => nav(`/teacher/sop/${sop.id}`), 0);
+        return "已退回修改";
+      },
+    });
+  return (
+    <>
+      <PageHeader
+        back
+        title={`${sop.name} · AI业务口径确认`}
+        subtitle={`${sop.version} / ${mapping.version} · 教师只确认业务含义、规则来源和无法判断时的处理`}
+        actions={
+          mapping.status === "pending_teacher_confirmation" ? (
+            <>
+              <Button onClick={reject}>退回修改</Button>
+              <Button type="primary" onClick={confirm}>
+                确认业务口径
+              </Button>
+            </>
+          ) : null
+        }
+      />
+      <section className="sop-boundary-note">
+        <SafetyCertificateOutlined />
+        <div>
+          <strong>确认 Mapping ≠ AI能力可用</strong>
+          <p>后续数据、能力包和工位验证未完成时，系统仍不能启用自动评价。</p>
+        </div>
+        <Status>{status.status}</Status>
+      </section>
+      <section className="panel mapping-teacher-summary">
+        <PanelTitle title="评价口径摘要" />
+        <div className="definition-list">
+          <span>
+            <small>评价项</small>
+            <strong>{mapping.evaluationItems.length} 项</strong>
+          </span>
+          <span>
+            <small>完成判断</small>
+            <strong>
+              {
+                mapping.evaluationItems.filter((item) =>
+                  item.roles.includes("completion"),
+                ).length
+              }{" "}
+              项
+            </strong>
+          </span>
+          <span>
+            <small>评分依据</small>
+            <strong>
+              {
+                mapping.evaluationItems.filter((item) =>
+                  item.roles.includes("scoring"),
+                ).length
+              }{" "}
+              项
+            </strong>
+          </span>
+          <span>
+            <small>安全提醒</small>
+            <strong>
+              {
+                mapping.evaluationItems.filter((item) =>
+                  item.roles.includes("safety"),
+                ).length
+              }{" "}
+              项
+            </strong>
+          </span>
+        </div>
+      </section>
+      <section className="panel mapping-teacher-items">
+        <PanelTitle title="逐项核对" />
+        {mapping.evaluationItems.map((item) => {
+          const step = sop.steps.find((entry) => entry.id === item.stepId);
+          const scoreRules = (sop.scoreRules || []).filter((rule) =>
+            item.sourceScoreRuleIds.includes(rule.id),
+          );
+          const safetyRules = (sop.safetyRules || []).filter((rule) =>
+            item.sourceSafetyRuleIds.includes(rule.id),
+          );
+          return (
+            <article key={item.id}>
+              <header>
+                <span>
+                  <small>
+                    {step?.id} · {step?.name}
+                  </small>
+                  <strong>{item.name}</strong>
+                </span>
+                <Status>{roleText(item.roles)}</Status>
+              </header>
+              {item.roles.includes("completion") && (
+                <p>
+                  <b>完成判断：</b>
+                  {item.sourceCompletion}
+                </p>
+              )}
+              {scoreRules.map((rule) => (
+                <p key={rule.id}>
+                  <b>评分依据：</b>
+                  {rule.name}（{SCORE_DEDUCTION_MODES[rule.deductionMode]}
+                  {rule.deductionMode === "fixed_deduction"
+                    ? ` ${rule.deductionValue}分`
+                    : ""}
+                  ）
+                </p>
+              ))}
+              {safetyRules.map((rule) => (
+                <p key={rule.id}>
+                  <b>安全标准：</b>
+                  {rule.name}；{SAFETY_SCORE_TREATMENTS[rule.scoreTreatment]}
+                </p>
+              ))}
+              {item.scoreTreatment?.type === "no_deduction" && (
+                <p>
+                  <b>未完成处置：</b>不扣分；{item.scoreTreatment.note}
+                </p>
+              )}
+              <footer>
+                <SafetyCertificateOutlined />
+                系统无法可靠确认时，不自动作负向判断，由教师按需复核。
+              </footer>
+            </article>
+          );
+        })}
+      </section>
+    </>
+  );
+}
+
 function AiEvaluationList() {
   const nav = useNavigate();
   const store = usePrototypeData();
@@ -5981,11 +7027,17 @@ function AiEvaluationList() {
   const published = store.data.sops.filter((sop) => sop.status === "已发布");
   const entries = published.map((sop) => {
     const status = store.getSopAiEvaluationStatus(sop.id);
-    const datasets = store.data.datasets.filter((item) => item.sopId === sop.id);
+    const datasets = store.data.datasets.filter(
+      (item) => item.sopId === sop.id,
+    );
     const models = store.data.models.filter((item) => item.sopId === sop.id);
     const currentDataset = status.dataset || newestVersion(datasets);
     const currentModel = status.model || newestVersion(models);
-    const updatedAt = [sop.updatedAt, currentDataset?.updatedAt, currentModel?.updatedAt]
+    const updatedAt = [
+      sop.updatedAt,
+      currentDataset?.updatedAt,
+      currentModel?.updatedAt,
+    ]
       .filter(Boolean)
       .sort((a, b) => String(b).localeCompare(String(a)))[0];
     return { sop, status, currentDataset, currentModel, updatedAt };
@@ -6008,15 +7060,44 @@ function AiEvaluationList() {
         <SafetyCertificateOutlined />
         <div>
           <strong>AI 只适配教师发布的标准，不生成或改写 SOP</strong>
-          <p>Camera-only MVP：视频不能可靠判断时保持默认通过，由教师按需抽查和扣分。</p>
+          <p>
+            Camera-only
+            MVP：视频不能可靠判断时保持默认通过，由教师按需抽查和扣分。
+          </p>
         </div>
         <Status tone="success">SOP / Dataset / Model 独立版本</Status>
       </section>
       <div className="metric-grid ai-evaluation-metrics">
-        <Metric label="已发布 SOP" value={entries.length} hint="进入 AI 适配范围" icon={<BookOutlined />} tone="blue" />
-        <Metric label="可用" value={count((item) => item.status.status === "可用")} hint="全部目标工位已通过" icon={<CheckCircleOutlined />} tone="green" />
-        <Metric label="配置中" value={count((item) => ["配置中", "部分可用"].includes(item.status.status))} hint="数据、模型或验证未完成" icon={<ReloadOutlined />} tone="amber" />
-        <Metric label="未配置" value={count((item) => item.status.status === "未配置")} hint="尚未创建首个 Dataset" icon={<DatabaseOutlined />} tone="purple" />
+        <Metric
+          label="已发布 SOP"
+          value={entries.length}
+          hint="进入 AI 适配范围"
+          icon={<BookOutlined />}
+          tone="blue"
+        />
+        <Metric
+          label="可用"
+          value={count((item) => item.status.status === "可用")}
+          hint="全部目标工位已通过"
+          icon={<CheckCircleOutlined />}
+          tone="green"
+        />
+        <Metric
+          label="配置中"
+          value={count((item) =>
+            ["配置中", "部分可用"].includes(item.status.status),
+          )}
+          hint="数据、模型或验证未完成"
+          icon={<ReloadOutlined />}
+          tone="amber"
+        />
+        <Metric
+          label="未配置"
+          value={count((item) => item.status.status === "未配置")}
+          hint="尚未创建首个 Dataset"
+          icon={<DatabaseOutlined />}
+          tone="purple"
+        />
       </div>
       <section className="panel panel--table">
         <Toolbar
@@ -6032,19 +7113,36 @@ function AiEvaluationList() {
           }}
         />
         <DataTable
-          columns={["SOP", "版本", "自动目标", "Dataset", "当前模型", "工位验证", "AI状态", "更新时间"]}
+          columns={[
+            "SOP",
+            "版本",
+            "Mapping",
+            "自动目标",
+            "Dataset",
+            "当前模型",
+            "工位验证",
+            "AI能力",
+            "更新时间",
+          ]}
           rows={visible.map((entry) => [
             entry.sop.name,
             entry.sop.version,
+            entry.status.mappingStatus.status,
             `${entry.status.automaticTargetCount} 步`,
-            entry.currentDataset ? `${entry.currentDataset.version} · ${entry.currentDataset.status}` : "未创建",
-            entry.currentModel ? `${entry.currentModel.version} · ${entry.currentModel.status}` : "未创建",
+            entry.currentDataset
+              ? `${entry.currentDataset.version} · ${entry.currentDataset.status}`
+              : "未创建",
+            entry.currentModel
+              ? `${entry.currentModel.version} · ${entry.currentModel.status}`
+              : "未创建",
             `${entry.status.validatedWorkstationCount}/${entry.status.targetWorkstationCount} 工位`,
             entry.status.status,
             entry.updatedAt || "—",
           ])}
-          statusColumns={[3, 4, 6]}
-          onView={(_, index) => nav(`/admin/ai-evaluation/${visible[index].sop.id}`)}
+          statusColumns={[2, 4, 5, 7]}
+          onView={(_, index) =>
+            nav(`/admin/ai-evaluation/${visible[index].sop.id}`)
+          }
           viewLabel="进入适配"
           rowKey={(_, index) => visible[index].sop.id}
         />
@@ -6075,6 +7173,567 @@ const ModelValidationFailureForm = forwardRef(
   },
 );
 
+function AiMappingPanel({ sop, mappingStatus, store }) {
+  const source = mappingStatus.mapping;
+  const [draft, setDraft] = useState(() =>
+    source ? JSON.parse(JSON.stringify(source)) : null,
+  );
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    setDraft(source ? JSON.parse(JSON.stringify(source)) : null);
+    setDirty(false);
+  }, [source?.id, source?.updatedAt, source?.status]);
+
+  if (!draft) {
+    return (
+      <section className="panel empty-state">
+        <ApartmentOutlined />
+        <h2>尚未建立 Evaluation Mapping</h2>
+        <p>
+          先把教师业务标准拆为评价项，再定义机器可确认的事实；这里不能新增或修改扣分值。
+        </p>
+        <Button
+          type="primary"
+          onClick={() => store.createEvaluationMapping(sop.id)}
+        >
+          创建 Mapping 草稿
+        </Button>
+      </section>
+    );
+  }
+
+  const editable = ["draft", "coverage_blocked", "changes_requested"].includes(
+    draft.status,
+  );
+  const validation = validateEvaluationMapping({ sop, mapping: draft });
+  const coverage = checkCompletionScoringCoverage({ sop, mapping: draft });
+  const setField = (key, value) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setDirty(true);
+  };
+  const updateItem = (id, patchValue) =>
+    setField(
+      "evaluationItems",
+      draft.evaluationItems.map((item) =>
+        item.id === id ? { ...item, ...patchValue } : item,
+      ),
+    );
+  const updateEvent = (id, patchValue) =>
+    setField(
+      "machineEvents",
+      draft.machineEvents.map((event) =>
+        event.id === id ? { ...event, ...patchValue } : event,
+      ),
+    );
+  const addEvent = () => {
+    const id = `ME-${draft.version}-${String(draft.machineEvents.length + 1).padStart(3, "0")}`;
+    setField("machineEvents", [
+      ...draft.machineEvents,
+      {
+        id,
+        name: "",
+        factDefinition: "",
+        capabilityMode: "existing_capability",
+        existingCapabilityRef: "",
+        implementationNote: "",
+      },
+    ]);
+  };
+  const addItem = () => {
+    const step = sop.steps[0];
+    const id = `EI-${draft.version}-${String(draft.evaluationItems.length + 1).padStart(3, "0")}`;
+    setField("evaluationItems", [
+      ...draft.evaluationItems,
+      {
+        id,
+        stepId: step?.id || "",
+        name: "",
+        type: "业务判断项",
+        roles: ["completion"],
+        sourceCompletion: step?.completionCondition || "",
+        sourceScoreRuleIds: [],
+        sourceSafetyRuleIds: [],
+        machineEventIds: [],
+        scoreTreatment: { type: "", note: "" },
+        fallback: "no_negative_auto_decision",
+      },
+    ]);
+  };
+  const save = () => {
+    const saved = store.saveEvaluationMapping(draft.id, draft);
+    setDraft(JSON.parse(JSON.stringify(saved)));
+    setDirty(false);
+  };
+  const submit = () => store.submitEvaluationMapping(draft.id);
+  return (
+    <div className="mapping-workbench">
+      <section className="panel mapping-overview-card">
+        <PanelTitle
+          title={`${draft.version} · Evaluation Mapping`}
+          action={
+            <div className="inline-actions">
+              <Status>{mappingStatus.status}</Status>
+              {editable && (
+                <Button onClick={save} disabled={!dirty}>
+                  保存草稿
+                </Button>
+              )}
+              <Button
+                type="primary"
+                disabled={!editable || dirty || !validation.passed}
+                onClick={submit}
+              >
+                提交教师确认
+              </Button>
+            </div>
+          }
+        />
+        <div className="definition-list">
+          <span>
+            <small>创作来源</small>
+            <strong>{draft.authoredFor.sopVersion}</strong>
+          </span>
+          <span>
+            <small>未来兼容复用</small>
+            <strong>
+              {draft.compatibleSopVersions.length
+                ? `${draft.compatibleSopVersions.length} 个版本`
+                : "尚未判定"}
+            </strong>
+          </span>
+          <span>
+            <small>评价项</small>
+            <strong>{draft.evaluationItems.length} 项</strong>
+          </span>
+          <span>
+            <small>机器事实</small>
+            <strong>{draft.machineEvents.length} 项</strong>
+          </span>
+        </div>
+        <p className="hint">
+          创作来源版本用于本批安全绑定；数据结构保留兼容版本引用，后续可由
+          Compatibility Decision 判定复用，不做永久一对一限制。
+        </p>
+      </section>
+
+      <section
+        className={`panel coverage-gate ${coverage.passed ? "coverage-gate--pass" : "coverage-gate--blocked"}`}
+      >
+        <PanelTitle
+          title="Completion Scoring Coverage"
+          action={
+            <Status tone={coverage.passed ? "success" : "warning"}>
+              {coverage.passed ? "通过" : "阻断提交"}
+            </Status>
+          }
+        />
+        <p>
+          {coverage.passed
+            ? `需要覆盖的 ${coverage.totalCount} 个完成判断项均已明确评分处置。`
+            : "Incomplete Policy 为“按评分规则计算”的步骤，所有完成判断项都必须引用教师评分规则或明确不扣分。AI实施人员不能自行填写扣分值。"}
+        </p>
+        {!!coverage.issues.length && (
+          <div className="ai-gate-reasons">
+            {coverage.issues.map((issue) => (
+              <span key={issue}>
+                <AlertOutlined />
+                <b>{issue}</b>
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel mapping-editor-section">
+        <PanelTitle
+          title="Evaluation Item"
+          action={
+            editable && (
+              <Button icon={<PlusOutlined />} onClick={addItem}>
+                新增评价项
+              </Button>
+            )
+          }
+        />
+        <p className="hint">
+          评价项承接教师业务标准；Machine Event
+          只能提供事实，不能直接扣分或形成学生结果。
+        </p>
+        <div className="mapping-card-list">
+          {draft.evaluationItems.map((item) => {
+            const step =
+              sop.steps.find((entry) => entry.id === item.stepId) ||
+              sop.steps[0];
+            const stepScoreRules = (sop.scoreRules || []).filter(
+              (rule) => rule.stepId === item.stepId,
+            );
+            const stepSafetyRules = (sop.safetyRules || []).filter(
+              (rule) => rule.stepId === item.stepId,
+            );
+            const toggle = (values, value) =>
+              values.includes(value)
+                ? values.filter((entry) => entry !== value)
+                : [...values, value];
+            return (
+              <article key={item.id}>
+                <header>
+                  <code>{item.id}</code>
+                  {editable && (
+                    <Button
+                      type="danger"
+                      onClick={() =>
+                        setField(
+                          "evaluationItems",
+                          draft.evaluationItems.filter(
+                            (entry) => entry.id !== item.id,
+                          ),
+                        )
+                      }
+                    >
+                      删除
+                    </Button>
+                  )}
+                </header>
+                <div className="form-row">
+                  <label className="field">
+                    关联步骤
+                    <select
+                      disabled={!editable}
+                      value={item.stepId}
+                      onChange={(event) => {
+                        const selected = sop.steps.find(
+                          (entry) => entry.id === event.target.value,
+                        );
+                        updateItem(item.id, {
+                          stepId: event.target.value,
+                          sourceCompletion: selected?.completionCondition || "",
+                          sourceScoreRuleIds: [],
+                          sourceSafetyRuleIds: [],
+                        });
+                      }}
+                    >
+                      {sop.steps.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.id} · {entry.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    评价项名称
+                    <input
+                      disabled={!editable}
+                      value={item.name}
+                      onChange={(event) =>
+                        updateItem(item.id, { name: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="mapping-role-picker">
+                  <small>roles</small>
+                  {Object.entries(EVALUATION_ITEM_ROLES).map(
+                    ([role, label]) => (
+                      <label key={role}>
+                        <input
+                          disabled={!editable}
+                          type="checkbox"
+                          checked={item.roles.includes(role)}
+                          onChange={() =>
+                            updateItem(item.id, {
+                              roles: toggle(item.roles, role),
+                            })
+                          }
+                        />
+                        {label}
+                      </label>
+                    ),
+                  )}
+                </div>
+                {item.roles.includes("completion") && (
+                  <label className="field">
+                    来源完成条件
+                    <textarea
+                      disabled={!editable}
+                      value={
+                        item.sourceCompletion || step?.completionCondition || ""
+                      }
+                      onChange={(event) =>
+                        updateItem(item.id, {
+                          sourceCompletion: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                )}
+                {item.roles.includes("scoring") && (
+                  <div className="mapping-reference-picker">
+                    <small>引用教师 Score Rule</small>
+                    {stepScoreRules.map((rule) => (
+                      <label key={rule.id}>
+                        <input
+                          disabled={!editable}
+                          type="checkbox"
+                          checked={item.sourceScoreRuleIds.includes(rule.id)}
+                          onChange={() =>
+                            updateItem(item.id, {
+                              sourceScoreRuleIds: toggle(
+                                item.sourceScoreRuleIds,
+                                rule.id,
+                              ),
+                            })
+                          }
+                        />
+                        {rule.id} · {rule.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {item.roles.includes("safety") && (
+                  <div className="mapping-reference-picker">
+                    <small>引用教师 Safety Rule</small>
+                    {stepSafetyRules.map((rule) => (
+                      <label key={rule.id}>
+                        <input
+                          disabled={!editable}
+                          type="checkbox"
+                          checked={item.sourceSafetyRuleIds.includes(rule.id)}
+                          onChange={() =>
+                            updateItem(item.id, {
+                              sourceSafetyRuleIds: toggle(
+                                item.sourceSafetyRuleIds,
+                                rule.id,
+                              ),
+                            })
+                          }
+                        />
+                        {rule.id} · {rule.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="mapping-reference-picker">
+                  <small>关联 Machine Event</small>
+                  {draft.machineEvents.map((event) => (
+                    <label key={event.id}>
+                      <input
+                        disabled={!editable}
+                        type="checkbox"
+                        checked={item.machineEventIds.includes(event.id)}
+                        onChange={() =>
+                          updateItem(item.id, {
+                            machineEventIds: toggle(
+                              item.machineEventIds,
+                              event.id,
+                            ),
+                          })
+                        }
+                      />
+                      {event.id} · {event.name || "未命名事实"}
+                    </label>
+                  ))}
+                </div>
+                {item.roles.includes("completion") &&
+                  step?.incompletePolicy === "rule_based" && (
+                    <div className="rule-fields-grid">
+                      <label className="field">
+                        未完成评分处置
+                        <select
+                          disabled={!editable}
+                          value={item.scoreTreatment?.type || ""}
+                          onChange={(event) =>
+                            updateItem(item.id, {
+                              scoreTreatment: {
+                                ...item.scoreTreatment,
+                                type: event.target.value,
+                              },
+                            })
+                          }
+                        >
+                          <option value="">请选择</option>
+                          <option value="score_rule">引用教师评分规则</option>
+                          <option value="no_deduction">明确不扣分</option>
+                        </select>
+                      </label>
+                      {item.scoreTreatment?.type === "score_rule" && (
+                        <label className="field">
+                          关联规则
+                          <select
+                            disabled={!editable}
+                            value={item.sourceScoreRuleIds[0] || ""}
+                            onChange={(event) =>
+                              updateItem(item.id, {
+                                sourceScoreRuleIds: event.target.value
+                                  ? [event.target.value]
+                                  : [],
+                              })
+                            }
+                          >
+                            <option value="">请选择</option>
+                            {stepScoreRules.map((rule) => (
+                              <option key={rule.id} value={rule.id}>
+                                {rule.id} · {rule.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {item.scoreTreatment?.type === "no_deduction" && (
+                        <label className="field">
+                          不扣分依据
+                          <input
+                            disabled={!editable}
+                            value={item.scoreTreatment?.note || ""}
+                            onChange={(event) =>
+                              updateItem(item.id, {
+                                scoreTreatment: {
+                                  ...item.scoreTreatment,
+                                  note: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
+                <p className="mapping-fallback">
+                  <SafetyCertificateOutlined />{" "}
+                  无法确认时不作负向自动判断，保持默认通过并进入教师抽查。
+                </p>
+              </article>
+            );
+          })}
+          {!draft.evaluationItems.length && (
+            <div className="empty-inline">
+              <FileTextOutlined />
+              <b>尚无评价项</b>
+              <p>从教师完成条件、评分规则或安全规则中建立业务判断项。</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="panel mapping-editor-section">
+        <PanelTitle
+          title="Machine Event"
+          action={
+            editable && (
+              <Button icon={<PlusOutlined />} onClick={addEvent}>
+                新增机器事实
+              </Button>
+            )
+          }
+        />
+        <p className="hint">
+          这里只记录机器能够确认的客观事实，不保存扣分、成绩或最终结果。
+        </p>
+        <div className="mapping-card-list machine-event-list">
+          {draft.machineEvents.map((event) => (
+            <article key={event.id}>
+              <header>
+                <code>{event.id}</code>
+                {editable && (
+                  <Button
+                    type="danger"
+                    onClick={() => {
+                      setField(
+                        "machineEvents",
+                        draft.machineEvents.filter(
+                          (entry) => entry.id !== event.id,
+                        ),
+                      );
+                      setDraft((current) => ({
+                        ...current,
+                        evaluationItems: current.evaluationItems.map(
+                          (item) => ({
+                            ...item,
+                            machineEventIds: item.machineEventIds.filter(
+                              (id) => id !== event.id,
+                            ),
+                          }),
+                        ),
+                      }));
+                    }}
+                  >
+                    删除
+                  </Button>
+                )}
+              </header>
+              <div className="form-row">
+                <label className="field">
+                  事实名称
+                  <input
+                    disabled={!editable}
+                    value={event.name}
+                    onChange={(e) =>
+                      updateEvent(event.id, { name: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  能力实现方式
+                  <select
+                    disabled={!editable}
+                    value={event.capabilityMode}
+                    onChange={(e) =>
+                      updateEvent(event.id, { capabilityMode: e.target.value })
+                    }
+                  >
+                    {Object.entries(MACHINE_EVENT_CAPABILITY_MODES).map(
+                      ([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+              </div>
+              <label className="field">
+                事实成立定义
+                <textarea
+                  disabled={!editable}
+                  value={event.factDefinition}
+                  onChange={(e) =>
+                    updateEvent(event.id, { factDefinition: e.target.value })
+                  }
+                />
+              </label>
+              <div className="form-row">
+                <label className="field">
+                  已有能力引用
+                  <input
+                    disabled={!editable}
+                    value={event.existingCapabilityRef}
+                    onChange={(e) =>
+                      updateEvent(event.id, {
+                        existingCapabilityRef: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  实施说明
+                  <input
+                    disabled={!editable}
+                    value={event.implementationNote}
+                    onChange={(e) =>
+                      updateEvent(event.id, {
+                        implementationNote: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 const MODEL_LIFECYCLE_ACTIONS = {
   待训练: "开始训练",
   训练中: "完成训练",
@@ -6088,13 +7747,16 @@ function AiEvaluationDetail({ setModal }) {
   const { id } = useParams();
   const store = usePrototypeData();
   const sop = store.data.sops.find((item) => item.id === id);
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("mapping");
   const [selectedWorkstationId, setSelectedWorkstationId] = useState("");
   const uploadRef = useRef(null);
   const implementationRef = useRef(null);
   const validationRef = useRef(null);
   const modelValidationRef = useRef(null);
-  if (!sop) return <MissingState title="AI 适配对象不存在" backTo="/admin/ai-evaluation" />;
+  if (!sop)
+    return (
+      <MissingState title="AI 适配对象不存在" backTo="/admin/ai-evaluation" />
+    );
 
   const datasets = store.data.datasets
     .filter((item) => item.sopId === sop.id)
@@ -6103,6 +7765,8 @@ function AiEvaluationDetail({ setModal }) {
     .filter((item) => item.sopId === sop.id)
     .sort((a, b) => versionNumber(b.version) - versionNumber(a.version));
   const aiStatus = store.getSopAiEvaluationStatus(sop.id);
+  const mappingStatus =
+    aiStatus.mappingStatus || store.getSopMappingStatus(sop.id);
   const dataset = datasets[0];
   const productionDataset = aiStatus.productionDataset;
   const researchDataset = aiStatus.researchDataset;
@@ -6113,7 +7777,8 @@ function AiEvaluationDetail({ setModal }) {
     (workstation) =>
       workstation.supportedProject === sop.name ||
       store.data.fieldValidations.some(
-        (record) => record.sopId === sop.id && record.workstationId === workstation.id,
+        (record) =>
+          record.sopId === sop.id && record.workstationId === workstation.id,
       ),
   );
   const selectableWorkstations = targetWorkstations.length
@@ -6122,7 +7787,9 @@ function AiEvaluationDetail({ setModal }) {
   const selectedWorkstation =
     selectableWorkstations.find((item) => item.id === selectedWorkstationId) ||
     selectableWorkstations[0];
-  const validations = store.data.fieldValidations.filter((record) => record.sopId === sop.id);
+  const validations = store.data.fieldValidations.filter(
+    (record) => record.sopId === sop.id,
+  );
   const selectedValidation = validations.find(
     (record) =>
       record.workstationId === selectedWorkstation?.id &&
@@ -6135,7 +7802,12 @@ function AiEvaluationDetail({ setModal }) {
   const beginAdaptation = () => {
     setModal({
       title: "开始首次 AI 适配",
-      content: <p>将为“{sop.name} {sop.version}”创建独立的 Dataset D1。SOP 内容和 Step ID 不会被修改。</p>,
+      content: (
+        <p>
+          将为“{sop.name} {sop.version}”创建独立的 Dataset D1。SOP 内容和 Step
+          ID 不会被修改。
+        </p>
+      ),
       confirmText: "创建 D1",
       onConfirm: () => {
         store.startAiAdaptation(sop.id);
@@ -6162,7 +7834,12 @@ function AiEvaluationDetail({ setModal }) {
     if (dataset.status === "已锁定") {
       setModal({
         title: "创建下一版 Dataset",
-        content: <p>将基于 {dataset.version} 和已复核候选样本创建 {dataset.nextVersion || "下一版本"}，原版本保持锁定。</p>,
+        content: (
+          <p>
+            将基于 {dataset.version} 和已复核候选样本创建{" "}
+            {dataset.nextVersion || "下一版本"}，原版本保持锁定。
+          </p>
+        ),
         confirmText: "创建新版本",
         onConfirm: () => {
           const created = store.createDatasetVersion(sop.id);
@@ -6174,7 +7851,9 @@ function AiEvaluationDetail({ setModal }) {
     const next = dataset.status === "采集中" ? "提交审核" : "锁定 Dataset";
     setModal({
       title: next,
-      content: <p>{next}后 Dataset 将进入下一生命周期状态，已发布 SOP 不受影响。</p>,
+      content: (
+        <p>{next}后 Dataset 将进入下一生命周期状态，已发布 SOP 不受影响。</p>
+      ),
       confirmText: next,
       onConfirm: () => {
         const updated = store.advanceDatasetLifecycle(dataset.id);
@@ -6185,7 +7864,12 @@ function AiEvaluationDetail({ setModal }) {
   const createModel = () => {
     setModal({
       title: "创建模型候选版本",
-      content: <p>模型将明确绑定 SOP {sop.version} 与 Dataset {dataset?.version || "—"}，不会覆盖当前已部署模型。</p>,
+      content: (
+        <p>
+          模型将明确绑定 SOP {sop.version} 与 Dataset {dataset?.version || "—"}
+          ，不会覆盖当前已部署模型。
+        </p>
+      ),
       confirmText: "创建候选版本",
       onConfirm: () => {
         const created = store.createModelCandidate(sop.id, dataset?.id);
@@ -6197,7 +7881,12 @@ function AiEvaluationDetail({ setModal }) {
     const nextLabel = MODEL_LIFECYCLE_ACTIONS[item.status];
     setModal({
       title: nextLabel || "推进模型生命周期",
-      content: <p>{item.version} 绑定 SOP {item.sopVersion} / Dataset {item.datasetVersion}。部署时同一 SOP 只保留一个生产模型。</p>,
+      content: (
+        <p>
+          {item.version} 绑定 SOP {item.sopVersion} / Dataset{" "}
+          {item.datasetVersion}。部署时同一 SOP 只保留一个生产模型。
+        </p>
+      ),
       confirmText: nextLabel || "确认",
       onConfirm: () => {
         const updated = store.advanceModelLifecycle(item.id);
@@ -6209,9 +7898,7 @@ function AiEvaluationDetail({ setModal }) {
     setModal({
       title: passed ? "确认模型验证通过" : "记录模型验证未通过",
       content: passed ? (
-        <p>
-          确认 {item.version} 已完成验证并进入可部署状态。
-        </p>
+        <p>确认 {item.version} 已完成验证并进入可部署状态。</p>
       ) : (
         <ModelValidationFailureForm ref={modelValidationRef} />
       ),
@@ -6228,10 +7915,18 @@ function AiEvaluationDetail({ setModal }) {
     setModal({
       title: `${selectedWorkstation.name} · 摄像头与 ROI 配置`,
       size: "large",
-      content: <ImplementationCheckForm ref={implementationRef} workstation={selectedWorkstation} />,
+      content: (
+        <ImplementationCheckForm
+          ref={implementationRef}
+          workstation={selectedWorkstation}
+        />
+      ),
       confirmText: "保存实施检查",
       onConfirm: () => {
-        store.saveWorkstationImplementation(selectedWorkstation.id, implementationRef.current.getValue());
+        store.saveWorkstationImplementation(
+          selectedWorkstation.id,
+          implementationRef.current.getValue(),
+        );
         return `${selectedWorkstation.name} 实施检查已保存`;
       },
     });
@@ -6241,10 +7936,18 @@ function AiEvaluationDetail({ setModal }) {
     setModal({
       title: `${selectedWorkstation.name} · 8 场景现场验证`,
       size: "large",
-      content: <FieldValidationForm ref={validationRef} workstation={selectedWorkstation} sops={[sop]} />,
+      content: (
+        <FieldValidationForm
+          ref={validationRef}
+          workstation={selectedWorkstation}
+          sops={[sop]}
+        />
+      ),
       confirmText: "提交验证结果",
       onConfirm: () => {
-        const record = store.saveFieldValidation(validationRef.current.getValue());
+        const record = store.saveFieldValidation(
+          validationRef.current.getValue(),
+        );
         return `现场验证结果：${record.status}`;
       },
     });
@@ -6256,54 +7959,147 @@ function AiEvaluationDetail({ setModal }) {
         back
         title={`${sop.name} · AI评价适配`}
         subtitle="管理员维护数据、模型与工位能力；教师发布的 SOP 标准保持冻结"
-        actions={<Button onClick={() => window.location.reload()} icon={<ReloadOutlined />}>刷新状态</Button>}
+        actions={
+          <Button
+            onClick={() => window.location.reload()}
+            icon={<ReloadOutlined />}
+          >
+            刷新状态
+          </Button>
+        }
       />
       <section className="sop-boundary-note">
         <LockOutlined />
-        <div><strong>{sop.version} 已发布冻结</strong><p>AI能力只能引用当前 Step ID；不确定、遮挡或不可视觉判断时，按既定规则默认通过。</p></div>
-        <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>{aiStatus.status}</Status>
+        <div>
+          <strong>{sop.version} 已发布冻结</strong>
+          <p>
+            AI能力只能引用当前 Step
+            ID；不确定、遮挡或不可视觉判断时，按既定规则默认通过。
+          </p>
+        </div>
+        <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>
+          {aiStatus.status}
+        </Status>
       </section>
       <div className="ai-adaptation-summary">
-        <span><small>SOP 版本</small><strong>{sop.version}</strong></span>
-        <span><small>当前生产 Dataset</small><strong>{productionDataset ? productionDataset.version : "—"}</strong></span>
-        <span><small>当前生产模型</small><strong>{productionModel ? `${productionModel.version} · 已部署` : "—"}</strong></span>
-        <span><small>在研 Dataset</small><strong>{researchDataset ? `${researchDataset.version} · ${researchDataset.status}` : "—"}</strong></span>
-        <span><small>AI 状态</small><strong>{aiStatus.status}</strong></span>
+        <span>
+          <small>SOP 版本</small>
+          <strong>{sop.version}</strong>
+        </span>
+        <span>
+          <small>Mapping 状态</small>
+          <strong>{mappingStatus.status}</strong>
+        </span>
+        <span>
+          <small>当前生产 Dataset</small>
+          <strong>{productionDataset ? productionDataset.version : "—"}</strong>
+        </span>
+        <span>
+          <small>当前生产模型</small>
+          <strong>
+            {productionModel ? `${productionModel.version} · 已部署` : "—"}
+          </strong>
+        </span>
+        <span>
+          <small>在研 Dataset</small>
+          <strong>
+            {researchDataset
+              ? `${researchDataset.version} · ${researchDataset.status}`
+              : "—"}
+          </strong>
+        </span>
+        <span>
+          <small>AI 状态</small>
+          <strong>{aiStatus.status}</strong>
+        </span>
       </div>
       {researchDataset && (
         <p className="hint ai-research-note">
-          {researchDataset.version} 用于下一轮模型训练，不影响当前生产AI评价能力。
+          {researchDataset.version}{" "}
+          用于下一轮模型训练，不影响当前生产AI评价能力。
         </p>
       )}
-      <div className="tabs sop-detail-tabs ai-adaptation-tabs" role="tablist" aria-label="AI适配详情">
+      <div
+        className="tabs sop-detail-tabs ai-adaptation-tabs"
+        role="tablist"
+        aria-label="AI适配详情"
+      >
         {[
+          ["mapping", "Evaluation Mapping"],
           ["overview", "适配概览"],
           ["dataset", "数据集"],
           ["model", "动作模型"],
           ["validation", "工位验证"],
           ["history", "版本与记录"],
         ].map(([value, label]) => (
-          <button key={value} role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
+          <button
+            key={value}
+            role="tab"
+            aria-selected={tab === value}
+            className={tab === value ? "active" : ""}
+            onClick={() => setTab(value)}
+          >
+            {label}
+          </button>
         ))}
       </div>
+
+      {tab === "mapping" && (
+        <AiMappingPanel sop={sop} mappingStatus={mappingStatus} store={store} />
+      )}
 
       {tab === "overview" && (
         <>
           <section className="panel panel--table">
-            <PanelTitle title="步骤适配矩阵" action={!dataset && <Button type="primary" onClick={beginAdaptation}>开始 AI 适配</Button>} />
-            <p className="hint">有效运行方式由教师设定、模型能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。</p>
+            <PanelTitle
+              title="步骤适配矩阵"
+              action={
+                !dataset && (
+                  <Button
+                    type="primary"
+                    disabled={!mappingStatus.confirmed}
+                    onClick={beginAdaptation}
+                  >
+                    开始 AI 适配
+                  </Button>
+                )
+              }
+            />
+            <p className="hint">
+              有效运行方式由教师设定、模型能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
+            </p>
             <DataTable
-              columns={["Step", "教师设定", "Dataset", "模型能力", "工位验证", "有效运行方式"]}
+              columns={[
+                "Step",
+                "教师设定",
+                "Dataset",
+                "模型能力",
+                "工位验证",
+                "有效运行方式",
+              ]}
               rows={sop.steps.map((step) => {
                 const labelCount = matrixDataset?.labels?.[step.id] || 0;
-                const modelCompatible = productionModel?.sopVersion === sop.version && productionModel?.datasetVersion === productionDataset?.version;
-                const fieldState = !targetWorkstations.length ? "未设置工位" : `${aiStatus.validatedWorkstationCount}/${targetWorkstations.length} 通过`;
-                const effectiveMode = step.judgementMode === "visual_auto" && aiStatus.status !== "可用" ? "visual_assist_default_pass" : step.judgementMode;
+                const modelCompatible =
+                  productionModel?.sopVersion === sop.version &&
+                  productionModel?.datasetVersion ===
+                    productionDataset?.version;
+                const fieldState = !targetWorkstations.length
+                  ? "未设置工位"
+                  : `${aiStatus.validatedWorkstationCount}/${targetWorkstations.length} 通过`;
+                const effectiveMode =
+                  step.judgementMode === "visual_auto" &&
+                  aiStatus.status !== "可用"
+                    ? "visual_assist_default_pass"
+                    : step.judgementMode;
                 return [
                   `${step.id} · ${step.name}`,
                   JUDGEMENT_MODES[step.judgementMode]?.shortLabel || "未设置",
-                  matrixDataset ? `${matrixDataset.version} · ${labelCount} 条 · ${matrixDataset.status}` : "未创建",
-                  modelCompatible ? `${productionModel.version} · ${productionModel.status}` : "未形成生产基线",
+                  matrixDataset
+                    ? `${matrixDataset.version} · ${labelCount} 条 · ${matrixDataset.status}`
+                    : "未创建",
+                  modelCompatible
+                    ? `${productionModel.version} · ${productionModel.status}`
+                    : "未形成生产基线",
                   fieldState,
                   JUDGEMENT_MODES[effectiveMode]?.shortLabel || "教师评价",
                 ];
@@ -6313,7 +8109,19 @@ function AiEvaluationDetail({ setModal }) {
           </section>
           <section className="panel ai-gate-reasons">
             <PanelTitle title="Automatic evaluation gate" />
-            {aiStatus.reasons.length ? aiStatus.reasons.slice(0, 8).map((reason) => <span key={reason}><AlertOutlined /><b>{reason}</b></span>) : <span className="success"><CheckCircleFilled /><b>Dataset、生产模型与全部目标工位验证均满足自动评价门禁</b></span>}
+            {aiStatus.reasons.length ? (
+              aiStatus.reasons.slice(0, 8).map((reason) => (
+                <span key={reason}>
+                  <AlertOutlined />
+                  <b>{reason}</b>
+                </span>
+              ))
+            ) : (
+              <span className="success">
+                <CheckCircleFilled />
+                <b>Dataset、生产模型与全部目标工位验证均满足自动评价门禁</b>
+              </span>
+            )}
           </section>
         </>
       )}
@@ -6321,18 +8129,91 @@ function AiEvaluationDetail({ setModal }) {
       {tab === "dataset" && (
         <>
           {!dataset ? (
-            <section className="panel empty-state"><DatabaseOutlined /><h2>尚未创建 Dataset</h2><p>首次 AI 适配从 D1 开始，标签范围只包含当前 Step ID 与 Other。</p><Button type="primary" onClick={beginAdaptation}>创建 D1</Button></section>
+            <section className="panel empty-state">
+              <DatabaseOutlined />
+              <h2>尚未创建 Dataset</h2>
+              <p>
+                {mappingStatus.confirmed
+                  ? "首次 AI 适配从 D1 开始，标签范围只包含当前 Step ID 与 Other。"
+                  : "先完成 Evaluation Mapping 并由教师确认业务口径，再进入数据建设。"}
+              </p>
+              <Button
+                type="primary"
+                disabled={!mappingStatus.confirmed}
+                onClick={beginAdaptation}
+              >
+                创建 D1
+              </Button>
+            </section>
           ) : (
             <>
               <section className="panel">
-                <PanelTitle title={`${dataset.name} · ${dataset.status}`} action={<div className="inline-actions"><Button onClick={uploadSample} icon={<UploadOutlined />}>上传样本</Button><Button type="primary" onClick={advanceDataset}>{dataset.status === "已锁定" ? `创建 ${dataset.nextVersion || "下一版"}` : dataset.status === "采集中" ? "提交审核" : "锁定 Dataset"}</Button></div>} />
-                <div className="ai-lifecycle"><Status>采集中</Status><i /><Status>待审核</Status><i /><Status>已锁定</Status></div>
-                <div className="ai-dataset-stats"><span><small>正式样本</small><strong>{dataset.sampleCount || 0}</strong></span><span><small>已纳入</small><strong>{dataset.acceptedCount || 0}</strong></span><span><small>待审核候选</small><strong>{dataset.candidateCount || 0}</strong></span><span><small>下一版本</small><strong>{dataset.nextVersion || "—"}</strong></span></div>
+                <PanelTitle
+                  title={`${dataset.name} · ${dataset.status}`}
+                  action={
+                    <div className="inline-actions">
+                      <Button onClick={uploadSample} icon={<UploadOutlined />}>
+                        上传样本
+                      </Button>
+                      <Button type="primary" onClick={advanceDataset}>
+                        {dataset.status === "已锁定"
+                          ? `创建 ${dataset.nextVersion || "下一版"}`
+                          : dataset.status === "采集中"
+                            ? "提交审核"
+                            : "锁定 Dataset"}
+                      </Button>
+                    </div>
+                  }
+                />
+                <div className="ai-lifecycle">
+                  <Status>采集中</Status>
+                  <i />
+                  <Status>待审核</Status>
+                  <i />
+                  <Status>已锁定</Status>
+                </div>
+                <div className="ai-dataset-stats">
+                  <span>
+                    <small>正式样本</small>
+                    <strong>{dataset.sampleCount || 0}</strong>
+                  </span>
+                  <span>
+                    <small>已纳入</small>
+                    <strong>{dataset.acceptedCount || 0}</strong>
+                  </span>
+                  <span>
+                    <small>待审核候选</small>
+                    <strong>{dataset.candidateCount || 0}</strong>
+                  </span>
+                  <span>
+                    <small>下一版本</small>
+                    <strong>{dataset.nextVersion || "—"}</strong>
+                  </span>
+                </div>
                 <div className="ai-label-grid">
-                  {[...sop.steps.map((step) => [step.id, step.name]), ["Other", "非 SOP / 遮挡 / 停顿"]].map(([stepId, name]) => {
+                  {[
+                    ...sop.steps.map((step) => [step.id, step.name]),
+                    ["Other", "非 SOP / 遮挡 / 停顿"],
+                  ].map(([stepId, name]) => {
                     const count = dataset.labels?.[stepId] || 0;
-                    const readiness = count === 0 ? "不足" : dataset.status === "已锁定" ? "已验证" : dataset.status === "待审核" ? "可训练" : "待补充";
-                    return <article key={stepId}><span><b>{stepId}</b><small>{name}</small></span><strong>{count} 条</strong><Status>{readiness}</Status></article>;
+                    const readiness =
+                      count === 0
+                        ? "不足"
+                        : dataset.status === "已锁定"
+                          ? "已验证"
+                          : dataset.status === "待审核"
+                            ? "可训练"
+                            : "待补充";
+                    return (
+                      <article key={stepId}>
+                        <span>
+                          <b>{stepId}</b>
+                          <small>{name}</small>
+                        </span>
+                        <strong>{count} 条</strong>
+                        <Status>{readiness}</Status>
+                      </article>
+                    );
                   })}
                 </div>
               </section>
@@ -6345,8 +8226,22 @@ function AiEvaluationDetail({ setModal }) {
       {tab === "model" && (
         <>
           <section className="panel">
-            <PanelTitle title="动作模型生命周期" action={<Button type="primary" disabled={!dataset || dataset.status !== "已锁定"} onClick={createModel}>创建候选版本</Button>} />
-            <p className="hint">每个模型版本都绑定一个 SOP 版本和一个已锁定 Dataset 版本；同一 SOP 同时只保留一个生产模型。</p>
+            <PanelTitle
+              title="动作模型生命周期"
+              action={
+                <Button
+                  type="primary"
+                  disabled={!dataset || dataset.status !== "已锁定"}
+                  onClick={createModel}
+                >
+                  创建候选版本
+                </Button>
+              }
+            />
+            <p className="hint">
+              每个模型版本都绑定一个 SOP 版本和一个已锁定 Dataset 版本；同一 SOP
+              同时只保留一个生产模型。
+            </p>
             <div className="ai-model-list">
               {models.map((item) => {
                 const rollbackTarget = models.find(
@@ -6355,15 +8250,40 @@ function AiEvaluationDetail({ setModal }) {
                     candidate.sopVersion === item.sopVersion &&
                     candidate.status === "已回滚",
                 );
-                const lastFailedValidation = [
-                  ...(item.validationHistory || []),
-                ]
+                const lastFailedValidation = [...(item.validationHistory || [])]
                   .reverse()
                   .find((record) => record.result === "未通过");
                 return (
                   <article key={item.id}>
-                    <header><span><strong>{item.name} {item.version}</strong><small>SOP {item.sopVersion} · Dataset {item.datasetVersion}</small></span><Status>{item.status}</Status></header>
-                    <div><span><small>F1</small><b>{item.f1}</b></span><span><small>序列准确率</small><b>{item.sequenceAccuracy}</b></span><span><small>Other 召回率</small><b>{item.otherRecall}</b></span><span><small>部署范围</small><b>{item.deploymentTarget}</b></span></div>
+                    <header>
+                      <span>
+                        <strong>
+                          {item.name} {item.version}
+                        </strong>
+                        <small>
+                          SOP {item.sopVersion} · Dataset {item.datasetVersion}
+                        </small>
+                      </span>
+                      <Status>{item.status}</Status>
+                    </header>
+                    <div>
+                      <span>
+                        <small>F1</small>
+                        <b>{item.f1}</b>
+                      </span>
+                      <span>
+                        <small>序列准确率</small>
+                        <b>{item.sequenceAccuracy}</b>
+                      </span>
+                      <span>
+                        <small>Other 召回率</small>
+                        <b>{item.otherRecall}</b>
+                      </span>
+                      <span>
+                        <small>部署范围</small>
+                        <b>{item.deploymentTarget}</b>
+                      </span>
+                    </div>
                     <footer>
                       <span>
                         <small>更新于 {item.updatedAt}</small>
@@ -6382,7 +8302,13 @@ function AiEvaluationDetail({ setModal }) {
                               onClick={() =>
                                 setModal({
                                   title: "回滚生产模型",
-                                  content: <p>将停用 {item.version} 并恢复 {rollbackTarget.version}。模型版本变化后，既有工位现场验证会失效并需要重新验证。</p>,
+                                  content: (
+                                    <p>
+                                      将停用 {item.version} 并恢复{" "}
+                                      {rollbackTarget.version}
+                                      。模型版本变化后，既有工位现场验证会失效并需要重新验证。
+                                    </p>
+                                  ),
                                   confirmText: `恢复 ${rollbackTarget.version}`,
                                   onConfirm: () => {
                                     const result = store.rollbackModel(item.id);
@@ -6398,12 +8324,23 @@ function AiEvaluationDetail({ setModal }) {
                           )
                         ) : item.status === "待验证" ? (
                           <>
-                            <Button onClick={() => validateModel(item, false)}>验证不通过</Button>
-                            <Button type="primary" onClick={() => validateModel(item, true)}>验证通过</Button>
+                            <Button onClick={() => validateModel(item, false)}>
+                              验证不通过
+                            </Button>
+                            <Button
+                              type="primary"
+                              onClick={() => validateModel(item, true)}
+                            >
+                              验证通过
+                            </Button>
                           </>
                         ) : (
-                          <Button type="primary" onClick={() => advanceModel(item)}>
-                            {MODEL_LIFECYCLE_ACTIONS[item.status] || "推进生命周期"}
+                          <Button
+                            type="primary"
+                            onClick={() => advanceModel(item)}
+                          >
+                            {MODEL_LIFECYCLE_ACTIONS[item.status] ||
+                              "推进生命周期"}
                           </Button>
                         )}
                       </div>
@@ -6411,7 +8348,17 @@ function AiEvaluationDetail({ setModal }) {
                   </article>
                 );
               })}
-              {!models.length && <div className="empty-inline"><ProductOutlined /><b>暂无模型版本</b><p>{dataset?.status === "已锁定" ? "可以从当前锁定 Dataset 创建首个候选模型。" : "先完成并锁定 Dataset，才能创建模型。"}</p></div>}
+              {!models.length && (
+                <div className="empty-inline">
+                  <ProductOutlined />
+                  <b>暂无模型版本</b>
+                  <p>
+                    {dataset?.status === "已锁定"
+                      ? "可以从当前锁定 Dataset 创建首个候选模型。"
+                      : "先完成并锁定 Dataset，才能创建模型。"}
+                  </p>
+                </div>
+              )}
             </div>
           </section>
           {model && (
@@ -6456,23 +8403,216 @@ function AiEvaluationDetail({ setModal }) {
         <>
           <section className="panel ai-workstation-picker">
             <PanelTitle title="工位现场验证" />
-            <label className="field">目标工位<select value={selectedWorkstation?.id || ""} onChange={(event) => setSelectedWorkstationId(event.target.value)}>{selectableWorkstations.map((workstation) => <option key={workstation.id} value={workstation.id}>{workstation.name} · {workstation.code} · {workstation.status}</option>)}</select></label>
+            <label className="field">
+              目标工位
+              <select
+                value={selectedWorkstation?.id || ""}
+                onChange={(event) =>
+                  setSelectedWorkstationId(event.target.value)
+                }
+              >
+                {selectableWorkstations.map((workstation) => (
+                  <option key={workstation.id} value={workstation.id}>
+                    {workstation.name} · {workstation.code} ·{" "}
+                    {workstation.status}
+                  </option>
+                ))}
+              </select>
+            </label>
           </section>
           {selectedWorkstation && (
             <div className="ai-validation-layout">
-              <section className="panel"><PanelTitle title="画面与 ROI" action={<Button onClick={editImplementation}>配置摄像头与 ROI</Button>} /><RoiPreview implementation={selectedWorkstation.implementation} /><div className="definition-list ai-implementation-facts"><span><small>机位</small><strong>{selectedWorkstation.implementation?.cameraPosition || "未确认"}</strong></span><span><small>光照</small><strong>{selectedWorkstation.implementation?.lighting || "未确认"}</strong></span><span><small>遮挡</small><strong>{selectedWorkstation.implementation?.occlusion || "未确认"}</strong></span><span><small>摄像头配置</small><strong>{selectedWorkstation.implementation?.cameraConfigVersion || "未配置"}</strong></span><span><small>ROI 版本</small><strong>{selectedWorkstation.implementation?.roiVersion || "未配置"}</strong></span></div></section>
-              <section className="panel"><PanelTitle title="Automatic evaluation gate" action={<Status tone={selectedGate?.enabled ? "success" : "warning"}>{selectedGate?.status || "未检查"}</Status>} /><div className="ai-gate-reasons">{selectedGate?.reasons.length ? selectedGate.reasons.map((reason) => <span key={reason}><AlertOutlined /><b>{reason}</b></span>) : <span className="success"><CheckCircleFilled /><b>当前工位允许启用自动评价</b></span>}</div><div className="version-binding"><span><small>SOP</small><b>{sop.version}</b></span><span><small>模型</small><b>{model?.version || "未部署"}</b></span><span><small>ROI</small><b>{selectedWorkstation.implementation?.roiVersion || "未配置"}</b></span><span><small>摄像头</small><b>{selectedWorkstation.implementation?.cameraConfigVersion || "未配置"}</b></span></div><Button type="primary" onClick={runFieldValidation}>执行 8 场景验证</Button></section>
+              <section className="panel">
+                <PanelTitle
+                  title="画面与 ROI"
+                  action={
+                    <Button onClick={editImplementation}>
+                      配置摄像头与 ROI
+                    </Button>
+                  }
+                />
+                <RoiPreview
+                  implementation={selectedWorkstation.implementation}
+                />
+                <div className="definition-list ai-implementation-facts">
+                  <span>
+                    <small>机位</small>
+                    <strong>
+                      {selectedWorkstation.implementation?.cameraPosition ||
+                        "未确认"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>光照</small>
+                    <strong>
+                      {selectedWorkstation.implementation?.lighting || "未确认"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>遮挡</small>
+                    <strong>
+                      {selectedWorkstation.implementation?.occlusion ||
+                        "未确认"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>摄像头配置</small>
+                    <strong>
+                      {selectedWorkstation.implementation
+                        ?.cameraConfigVersion || "未配置"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>ROI 版本</small>
+                    <strong>
+                      {selectedWorkstation.implementation?.roiVersion ||
+                        "未配置"}
+                    </strong>
+                  </span>
+                </div>
+              </section>
+              <section className="panel">
+                <PanelTitle
+                  title="Automatic evaluation gate"
+                  action={
+                    <Status
+                      tone={selectedGate?.enabled ? "success" : "warning"}
+                    >
+                      {selectedGate?.status || "未检查"}
+                    </Status>
+                  }
+                />
+                <div className="ai-gate-reasons">
+                  {selectedGate?.reasons.length ? (
+                    selectedGate.reasons.map((reason) => (
+                      <span key={reason}>
+                        <AlertOutlined />
+                        <b>{reason}</b>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="success">
+                      <CheckCircleFilled />
+                      <b>当前工位允许启用自动评价</b>
+                    </span>
+                  )}
+                </div>
+                <div className="version-binding">
+                  <span>
+                    <small>SOP</small>
+                    <b>{sop.version}</b>
+                  </span>
+                  <span>
+                    <small>模型</small>
+                    <b>{model?.version || "未部署"}</b>
+                  </span>
+                  <span>
+                    <small>ROI</small>
+                    <b>
+                      {selectedWorkstation.implementation?.roiVersion ||
+                        "未配置"}
+                    </b>
+                  </span>
+                  <span>
+                    <small>摄像头</small>
+                    <b>
+                      {selectedWorkstation.implementation
+                        ?.cameraConfigVersion || "未配置"}
+                    </b>
+                  </span>
+                </div>
+                <Button type="primary" onClick={runFieldValidation}>
+                  执行 8 场景验证
+                </Button>
+              </section>
             </div>
           )}
-          <section className="panel panel--table"><PanelTitle title="现场验证记录" /><DataTable columns={["工位", "结果", "SOP", "模型", "ROI", "摄像头", "验证人", "时间"]} rows={validations.map((record) => { const workstation = store.data.workstations.find((item) => item.id === record.workstationId); return [workstation?.name || record.workstationId, record.status, record.sopVersion, record.modelVersion, record.roiVersion, record.cameraConfigVersion, record.operator, record.createdAt]; })} statusColumns={[1]} emptyText="当前 SOP 暂无现场验证记录" /></section>
+          <section className="panel panel--table">
+            <PanelTitle title="现场验证记录" />
+            <DataTable
+              columns={[
+                "工位",
+                "结果",
+                "SOP",
+                "模型",
+                "ROI",
+                "摄像头",
+                "验证人",
+                "时间",
+              ]}
+              rows={validations.map((record) => {
+                const workstation = store.data.workstations.find(
+                  (item) => item.id === record.workstationId,
+                );
+                return [
+                  workstation?.name || record.workstationId,
+                  record.status,
+                  record.sopVersion,
+                  record.modelVersion,
+                  record.roiVersion,
+                  record.cameraConfigVersion,
+                  record.operator,
+                  record.createdAt,
+                ];
+              })}
+              statusColumns={[1]}
+              emptyText="当前 SOP 暂无现场验证记录"
+            />
+          </section>
         </>
       )}
 
       {tab === "history" && (
         <div className="ai-history-grid">
-          <section className="panel panel--table"><PanelTitle title="Dataset 版本" /><DataTable columns={["版本", "状态", "样本", "基于", "更新时间"]} rows={datasets.map((item) => [item.version, item.status, item.sampleCount || 0, item.basedOn || "首次创建", item.updatedAt])} statusColumns={[1]} /></section>
-          <section className="panel panel--table"><PanelTitle title="模型版本" /><DataTable columns={["版本", "状态", "SOP", "Dataset", "更新时间"]} rows={models.map((item) => [item.version, item.status, item.sopVersion, item.datasetVersion, item.updatedAt])} statusColumns={[1]} /></section>
-          <section className="panel panel--table ai-history-wide"><PanelTitle title="适配操作记录" /><DataTable columns={["时间", "操作人", "动作", "对象", "结果"]} rows={store.data.auditLogs.filter((log) => `${log.target}`.includes(sop.name) || `${log.target}`.includes(sop.id)).map((log) => [log.time, log.actor, log.action, log.target, log.result])} statusColumns={[4]} emptyText="暂无与当前 SOP 关联的适配记录" /></section>
+          <section className="panel panel--table">
+            <PanelTitle title="Dataset 版本" />
+            <DataTable
+              columns={["版本", "状态", "样本", "基于", "更新时间"]}
+              rows={datasets.map((item) => [
+                item.version,
+                item.status,
+                item.sampleCount || 0,
+                item.basedOn || "首次创建",
+                item.updatedAt,
+              ])}
+              statusColumns={[1]}
+            />
+          </section>
+          <section className="panel panel--table">
+            <PanelTitle title="模型版本" />
+            <DataTable
+              columns={["版本", "状态", "SOP", "Dataset", "更新时间"]}
+              rows={models.map((item) => [
+                item.version,
+                item.status,
+                item.sopVersion,
+                item.datasetVersion,
+                item.updatedAt,
+              ])}
+              statusColumns={[1]}
+            />
+          </section>
+          <section className="panel panel--table ai-history-wide">
+            <PanelTitle title="适配操作记录" />
+            <DataTable
+              columns={["时间", "操作人", "动作", "对象", "结果"]}
+              rows={store.data.auditLogs
+                .filter(
+                  (log) =>
+                    `${log.target}`.includes(sop.name) ||
+                    `${log.target}`.includes(sop.id),
+                )
+                .map((log) => [
+                  log.time,
+                  log.actor,
+                  log.action,
+                  log.target,
+                  log.result,
+                ])}
+              statusColumns={[4]}
+              emptyText="暂无与当前 SOP 关联的适配记录"
+            />
+          </section>
         </div>
       )}
     </>
@@ -9787,6 +11927,10 @@ function RoutedApp() {
                 element={<SopEditor setModal={setModal} />}
               />
               <Route
+                path="/teacher/sop/:id/ai-mapping/:mappingId"
+                element={<TeacherMappingReview setModal={setModal} />}
+              />
+              <Route
                 path="/teacher/sop/:id"
                 element={<SopDetail setModal={setModal} />}
               />
@@ -9907,9 +12051,7 @@ function RoutedApp() {
               />
               <Route
                 path="/admin/practices/:id"
-                element={
-                  <ResultsPage adminReadOnly setModal={setModal} />
-                }
+                element={<ResultsPage adminReadOnly setModal={setModal} />}
               />
               <Route
                 path="/admin/practices/:id/students/:studentId"
@@ -9921,9 +12063,7 @@ function RoutedApp() {
               />
               <Route
                 path="/admin/exams/:id"
-                element={
-                  <ResultsPage exam adminReadOnly setModal={setModal} />
-                }
+                element={<ResultsPage exam adminReadOnly setModal={setModal} />}
               />
               <Route
                 path="/admin/exams/:id/students/:studentId"
