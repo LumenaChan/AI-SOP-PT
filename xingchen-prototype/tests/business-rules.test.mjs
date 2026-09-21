@@ -4,25 +4,46 @@ import {
   applyDefaultPassPolicy,
   automaticEvaluationGate,
   arrangementDestination,
+  assessSopAiImpact,
+  assignSourceVideosToSplits,
+  buildValidationCoverage,
   canCloseIssue,
+  canProduceNegativeAutoEvaluation,
+  calculateScoreEngine,
+  createEvaluationClock,
   checkCompletionScoringCoverage,
   createSopStepDraft,
   createSessionStepsFromSop,
   diagnoseNoTrigger,
+  deriveDataRequirements,
+  deriveTechnicalIncidentDisposition,
+  advanceEvaluationClock,
   getEffectiveJudgementMode,
+  getAiPackageCreationReadiness,
   getPublishBlockers,
+  getExamPublishGate,
   getMappingStatusForSop,
   getSopAiEvaluationStatus,
+  getStepAiCapabilityDisplay,
   isMappingApplicableToSop,
+  isCompatibilityLayerAccepted,
   nextStableStepId,
+  normalizeEvaluationItem,
   normalizeSopStep,
   normalizeEvaluationMapping,
+  normalizeCompatibilityDecision,
+  normalizeRuntimeStep,
+  normalizeScoreRule,
+  normalizeWorkstationProfile,
   recordedDeductionOf,
   recordModelValidationResult,
   requiresMandatoryReview,
   scoreOf,
+  setEvaluationClockPaused,
   sessionPrimaryIssue,
   validateEvaluationMapping,
+  validateDatasetSplitIsolation,
+  validateScoreRule,
   validateSopDefinition,
   validateSystemSettings,
   workstationFeedbackPolicy,
@@ -562,6 +583,36 @@ test("mapping confirmation and actual AI capability remain separate states", () 
   assert.notEqual(unconfirmed.status, "可用");
 });
 
+test("AI-assisted expectations are not displayed as current capability before adaptation", () => {
+  assert.deepEqual(
+    getStepAiCapabilityDisplay({
+      expectedMode: "visual_assist_default_pass",
+      aiStatus: "未配置",
+      mappingConfirmed: false,
+    }),
+    {
+      actual: "待AI适配",
+      reason: "教师期望AI辅助，但业务映射尚未确认",
+    },
+  );
+  assert.equal(
+    getStepAiCapabilityDisplay({
+      expectedMode: "visual_assist_default_pass",
+      aiStatus: "配置中",
+      mappingConfirmed: true,
+    }).actual,
+    "AI辅助能力配置中",
+  );
+  assert.equal(
+    getStepAiCapabilityDisplay({
+      expectedMode: "default_pass_manual_deduction",
+      aiStatus: "未配置",
+      mappingConfirmed: false,
+    }).actual,
+    "教师评价",
+  );
+});
+
 test("new SOP versions do not inherit mapping by default but schema allows future compatible reuse", () => {
   const nextSop = {
     ...automaticSop,
@@ -666,6 +717,135 @@ test("rule-based incomplete policy requires completion scoring coverage", () => 
     validateEvaluationMapping({ sop, mapping: covered }).passed,
     true,
   );
+});
+
+test("score rules support a smaller corrected deduction without changing runtime behavior", () => {
+  const normalized = normalizeScoreRule({
+    id: "SR-01",
+    stepId: "Step 01",
+    name: "顺序错误",
+    type: "wrong_order",
+    deductionMode: "fixed_deduction",
+    deductionValue: 2,
+    correctionTreatment: "reduce_after_correction",
+    correctedDeductionValue: 1,
+  });
+  assert.equal(normalized.correctedDeductionValue, 1);
+  assert.deepEqual(validateScoreRule(normalized, { score: 20 }), []);
+  assert.match(
+    validateScoreRule(
+      { ...normalized, correctedDeductionValue: 2 },
+      { score: 20 },
+    ).join("；"),
+    /必须大于0且小于原扣分值/,
+  );
+  assert.equal(
+    normalizeScoreRule({ deductionValue: 2 }).correctedDeductionValue,
+    0,
+  );
+});
+
+test("teacher-evaluated rule-based steps are excluded from AI completion coverage", () => {
+  const sop = {
+    ...automaticSop,
+    steps: [
+      {
+        id: "Step 01",
+        name: "摄像头可见检查",
+        score: 50,
+        incompletePolicy: "teacher_review",
+        judgementMode: "visual_assist_default_pass",
+      },
+      {
+        id: "Step 02",
+        name: "确认实际扭矩达到40Nm",
+        score: 50,
+        incompletePolicy: "rule_based",
+        judgementMode: "default_pass_manual_deduction",
+      },
+    ],
+    scoreRules: [],
+    safetyRules: [],
+  };
+  const mapping = {
+    ...confirmedMapping,
+    status: "draft",
+    evaluationItems: [
+      {
+        id: "EI-01",
+        stepId: "Step 01",
+        name: "检查完成",
+        roles: ["completion"],
+        sourceCompletion: "完成可见检查",
+        sourceScoreRuleIds: [],
+        sourceSafetyRuleIds: [],
+        machineEventIds: ["ME-01"],
+        scoreTreatment: {},
+      },
+    ],
+    machineEvents: [
+      {
+        id: "ME-01",
+        name: "检查动作出现",
+        factDefinition: "操作区域内出现检查动作",
+        capabilityMode: "existing_capability",
+      },
+    ],
+  };
+  const coverage = checkCompletionScoringCoverage({ sop, mapping });
+  assert.equal(coverage.passed, true);
+  assert.equal(coverage.totalCount, 0);
+  assert.equal(validateEvaluationMapping({ sop, mapping }).passed, true);
+});
+
+test("teacher-evaluated steps cannot be added to AI Mapping to fabricate machine facts", () => {
+  const sop = {
+    ...automaticSop,
+    steps: [
+      {
+        id: "Step 02",
+        name: "确认实际扭矩达到40Nm",
+        score: 100,
+        incompletePolicy: "rule_based",
+        judgementMode: "default_pass_manual_deduction",
+      },
+    ],
+    scoreRules: [],
+    safetyRules: [],
+  };
+  const result = validateEvaluationMapping({
+    sop,
+    mapping: {
+      ...confirmedMapping,
+      status: "draft",
+      evaluationItems: [
+        {
+          id: "EI-02",
+          stepId: "Step 02",
+          name: "扭矩达标",
+          roles: ["completion"],
+          sourceCompletion: "达到40Nm",
+          machineEventIds: [],
+        },
+      ],
+      machineEvents: [],
+    },
+  });
+  assert.equal(result.passed, false);
+  assert.match(result.issues.join("；"), /教师评价步骤，不进入AI自动映射/);
+  assert.doesNotMatch(
+    result.issues.join("；"),
+    /至少需要关联一个 Machine Event/,
+  );
+});
+
+test("score-rule treatment automatically adds the scoring role for compatibility", () => {
+  const item = normalizeEvaluationItem({
+    id: "EI-01",
+    roles: ["completion"],
+    scoreTreatment: { type: "score_rule" },
+  });
+  assert.deepEqual(item.roles, ["completion", "scoring"]);
 });
 
 test("mapping roles must reference matching teacher business rules and machine facts", () => {
@@ -835,6 +1015,127 @@ test("a new SOP version does not inherit incompatible Dataset and Model readines
   assert.equal(status.modelReadyCount, 0);
 });
 
+test("data requirements include only Machine Events referenced by Evaluation Items", () => {
+  const requirements = deriveDataRequirements({
+    evaluationItems: [
+      { id: "EI-01", machineEventIds: ["ME-01", "ME-02", "ME-03"] },
+    ],
+    machineEvents: [
+      { id: "ME-01", capabilityMode: "existing_capability", name: "复用检测" },
+      { id: "ME-02", capabilityMode: "configuration_only", name: "配置ROI" },
+      { id: "ME-03", capabilityMode: "training_required", name: "训练动作" },
+      { id: "ME-04", capabilityMode: "training_required", name: "未引用事件" },
+    ],
+  });
+  assert.equal(requirements.existingCapability.length, 1);
+  assert.equal(requirements.configurationOnly.length, 1);
+  assert.deepEqual(
+    requirements.trainingRequired.map((item) => item.id),
+    ["ME-03"],
+  );
+  assert.equal(requirements.requiresTraining, true);
+});
+
+test("Dataset split assignment keeps each Source Video in exactly one split", () => {
+  const splits = assignSourceVideosToSplits([
+    "video-01",
+    "video-02",
+    "video-03",
+    "video-04",
+    "video-05",
+    "video-06",
+    "video-01",
+  ]);
+  const all = [...splits.train, ...splits.validation, ...splits.test];
+  assert.equal(all.length, 6);
+  assert.equal(new Set(all).size, 6);
+  assert.equal(validateDatasetSplitIsolation(splits).passed, true);
+});
+
+test("Dataset split isolation rejects Source Video leakage", () => {
+  const result = validateDatasetSplitIsolation({
+    train: ["video-01"],
+    validation: ["video-01"],
+    test: [],
+  });
+  assert.equal(result.passed, false);
+  assert.match(result.issues[0], /同时出现在/);
+});
+
+test("AI Package using only existing and configured capability needs no Dataset", () => {
+  const readiness = getAiPackageCreationReadiness({
+    sop: automaticSop,
+    mapping: {
+      ...confirmedMapping,
+      evaluationItems: [{ id: "EI-01", machineEventIds: ["ME-01"] }],
+      machineEvents: [
+        {
+          id: "ME-01",
+          name: "工具出现",
+          capabilityMode: "configuration_only",
+        },
+      ],
+    },
+  });
+  assert.equal(readiness.passed, true);
+  assert.equal(readiness.requirements.requiresTraining, false);
+});
+
+test("Training Required AI Package needs a locked isolated Source Video Dataset", () => {
+  const mapping = {
+    ...confirmedMapping,
+    evaluationItems: [{ id: "EI-01", machineEventIds: ["ME-01"] }],
+    machineEvents: [
+      {
+        id: "ME-01",
+        name: "验电动作",
+        capabilityMode: "training_required",
+      },
+    ],
+  };
+  assert.match(
+    getAiPackageCreationReadiness({ sop: automaticSop, mapping }).issues[0],
+    /已锁定 Dataset/,
+  );
+  assert.equal(
+    getAiPackageCreationReadiness({
+      sop: automaticSop,
+      mapping,
+      dataset: {
+        status: "已锁定",
+        splits: { train: ["video-01"], validation: [], test: [] },
+      },
+    }).passed,
+    true,
+  );
+});
+
+test("a deployed no-training AI Package does not require a production Dataset", () => {
+  const status = getSopAiEvaluationStatus({
+    sop: automaticSop,
+    models: [
+      {
+        ...deployedModel,
+        requiresTraining: false,
+        datasetVersion: "无需训练",
+      },
+    ],
+    workstations: [
+      {
+        id: "w1",
+        supportedProject: automaticSop.name,
+        implementation: validatedImplementation,
+      },
+    ],
+    fieldValidations: [
+      { ...passingValidation, workstationId: "w1", sopId: automaticSop.id },
+    ],
+    evaluationMappings: [confirmedMapping],
+  });
+  assert.equal(status.status, "可用");
+  assert.equal(status.productionDataset, null);
+});
+
 test("technical diagnosis returns one actionable no-trigger reason", () => {
   assert.equal(
     diagnoseNoTrigger({
@@ -929,4 +1230,358 @@ test("system settings normalize valid numeric input", () => {
   assert.equal(result.downloadDays, 14);
   assert.equal(result.backupRetentionDays, 60);
   assert.equal(result.cacheThreshold, 15);
+});
+
+test("runtime step keeps execution state, completion result and score disposition independent", () => {
+  const step = normalizeRuntimeStep({
+    state: "active",
+    result: "进行中",
+    score: 10,
+  });
+  assert.equal(step.executionState, "active");
+  assert.equal(step.completionResult, "uncertain");
+  assert.equal(step.scoreDisposition.status, "normal");
+  assert.equal(step.observationWindow.status, "open");
+});
+
+test("negative automatic evaluation requires confirmed actor and an open observation window", () => {
+  assert.equal(
+    canProduceNegativeAutoEvaluation({
+      actorBinding: { status: "confirmed" },
+      observationWindow: { status: "open" },
+      evidenceValid: true,
+      sessionPaused: false,
+    }).allowed,
+    true,
+  );
+  const blocked = canProduceNegativeAutoEvaluation({
+    actorBinding: { status: "uncertain" },
+    observationWindow: { status: "open" },
+  });
+  assert.equal(blocked.allowed, false);
+  assert.match(blocked.reasons[0], /Primary Actor/);
+});
+
+test("evaluation clock excludes approved pause time while wall time continues", () => {
+  let clock = createEvaluationClock({ status: "running" });
+  clock = advanceEvaluationClock(clock, 30);
+  clock = setEvaluationClockPaused(clock, true, {
+    reason: "安全候选",
+    at: "10:00",
+  });
+  clock = advanceEvaluationClock(clock, 20);
+  assert.equal(clock.wallSeconds, 50);
+  assert.equal(clock.elapsedSeconds, 30);
+  assert.equal(clock.pausedSeconds, 20);
+});
+
+test("technical incident defaults practice to protected scoring but blocks exam scoring", () => {
+  assert.deepEqual(
+    deriveTechnicalIncidentDisposition({
+      arrangementType: "practice",
+      incident: { type: "camera_offline" },
+    }).status,
+    "normal",
+  );
+  assert.equal(
+    deriveTechnicalIncidentDisposition({
+      arrangementType: "exam",
+      incident: { type: "camera_offline" },
+    }).status,
+    "pending",
+  );
+});
+
+test("score engine stays pending until score dispositions are resolved", () => {
+  const pending = calculateScoreEngine({
+    steps: [
+      {
+        maxScore: 20,
+        effectiveScore: null,
+        scoreDisposition: { status: "pending" },
+      },
+      {
+        maxScore: 80,
+        effectiveScore: 80,
+        scoreDisposition: { status: "normal" },
+      },
+    ],
+  });
+  assert.equal(pending.scoreStatus, "pending");
+  const final = calculateScoreEngine({
+    steps: [
+      {
+        maxScore: 20,
+        effectiveScore: 15,
+        scoreDisposition: { status: "teacher_resolved" },
+      },
+      {
+        maxScore: 80,
+        effectiveScore: 80,
+        scoreDisposition: { status: "normal" },
+      },
+    ],
+  });
+  assert.equal(final.scoreStatus, "final");
+  assert.equal(final.effectiveScore, 95);
+});
+
+test("exam publish gate blocks pending dispositions, safety candidates and empty scores", () => {
+  const session = {
+    id: "session-1",
+    resultStatus: "正式成绩",
+    steps: [
+      {
+        reviewStatus: "无需复核",
+        effectiveScore: null,
+        score: null,
+        scoreDisposition: { status: "pending" },
+      },
+    ],
+    runtime: { safetyCandidates: [{ status: "pending" }] },
+  };
+  const gate = getExamPublishGate([session]);
+  assert.equal(gate.passed, false);
+  assert.equal(gate.details[0].pendingDispositionCount, 1);
+  assert.equal(gate.details[0].pendingSafetyCount, 1);
+  assert.equal(gate.details[0].emptyScoreCount, 1);
+  assert.equal(getPublishBlockers([session]).length, 1);
+});
+
+test("exam publish gate passes after all runtime review states are closed", () => {
+  const session = {
+    id: "session-1",
+    resultStatus: "正式成绩",
+    steps: [
+      {
+        reviewStatus: "复核通过",
+        effectiveScore: 18,
+        scoreDisposition: { status: "teacher_resolved" },
+      },
+    ],
+    runtime: { safetyCandidates: [{ status: "false_positive" }] },
+  };
+  assert.equal(getExamPublishGate([session]).passed, true);
+  assert.equal(getPublishBlockers([session]).length, 0);
+});
+
+test("workstation profile normalizes primary and fallback cameras without sensor fusion", () => {
+  const profile = normalizeWorkstationProfile({
+    workstationId: "w1",
+    roiVersion: "ROI-1",
+    cameraConfigVersion: "CAM-1",
+  });
+  assert.equal(profile.version, "WP1");
+  assert.equal(profile.primaryCameraId, "camera-main");
+  assert.equal(profile.fallbackCameraId, "camera-assist");
+  assert.equal(profile.cameras.length, 2);
+});
+
+test("validation coverage allows one case to cover multiple evaluation items and exposes gaps", () => {
+  const evaluationItems = [{ id: "EI-1" }, { id: "EI-2" }, { id: "EI-3" }];
+  const incomplete = buildValidationCoverage({
+    evaluationItems,
+    testCases: [
+      {
+        id: "case-1",
+        result: "通过",
+        evaluationItemIds: ["EI-1", "EI-2"],
+      },
+      { id: "case-2", result: "失败", evaluationItemIds: ["EI-3"] },
+    ],
+  });
+  assert.equal(incomplete.passed, false);
+  assert.deepEqual(incomplete.uncoveredItemIds, ["EI-3"]);
+  const complete = buildValidationCoverage({
+    evaluationItems,
+    testCases: [
+      {
+        id: "case-1",
+        result: "通过",
+        evaluationItemIds: ["EI-1", "EI-2", "EI-3"],
+      },
+    ],
+  });
+  assert.equal(complete.passed, true);
+  assert.equal(complete.coveredItemCount, 3);
+});
+
+test("AI impact assessment distinguishes non-AI, scoring and semantic changes", () => {
+  const base = {
+    id: "s1",
+    version: "V1.0",
+    steps: [
+      {
+        id: "Step 01",
+        name: "断电",
+        score: 20,
+        completionCondition: "钥匙离车",
+        incompletePolicy: "rule_based",
+        judgementMode: "visual_auto",
+      },
+    ],
+    scoreRules: [{ id: "SR-1", deductionValue: 2 }],
+    safetyRules: [],
+  };
+  const copy = (changes) => JSON.parse(JSON.stringify({ ...base, ...changes }));
+  assert.equal(
+    assessSopAiImpact({
+      fromSop: base,
+      toSop: copy({ teachingGoal: "更新教学说明" }),
+    }).changeType,
+    "non_ai",
+  );
+  assert.equal(
+    assessSopAiImpact({
+      fromSop: base,
+      toSop: copy({ scoreRules: [{ id: "SR-1", deductionValue: 3 }] }),
+    }).changeType,
+    "scoring",
+  );
+  const semantic = copy({});
+  semantic.steps[0].completionCondition = "钥匙离车且警示牌就位";
+  assert.equal(
+    assessSopAiImpact({ fromSop: base, toSop: semantic }).changeType,
+    "ai_semantic",
+  );
+});
+
+test("compatibility decision only accepts explicitly compatible layers", () => {
+  const decision = normalizeCompatibilityDecision({
+    decision: "conditional",
+    layers: {
+      mapping: "compatible",
+      aiPackage: "compatible",
+      validation: "validation_required",
+      workstationProfile: "compatible",
+    },
+  });
+  assert.equal(isCompatibilityLayerAccepted(decision, "aiPackage"), true);
+  assert.equal(isCompatibilityLayerAccepted(decision, "validation"), false);
+});
+
+test("automatic evaluation gate reuses old versions only through an accepted compatibility decision", () => {
+  const newSop = { ...automaticSop, version: "V3.3" };
+  const profile = normalizeWorkstationProfile({
+    ...validatedImplementation,
+    version: "WP2",
+  });
+  const oldValidation = {
+    ...passingValidation,
+    workstationProfileVersion: "WP1",
+    coverage: { passed: true },
+  };
+  const withoutDecision = automaticEvaluationGate({
+    workstation: { implementation: validatedImplementation },
+    workstationProfile: profile,
+    sop: newSop,
+    model: deployedModel,
+    validation: oldValidation,
+  });
+  assert.equal(withoutDecision.enabled, false);
+  const decision = normalizeCompatibilityDecision({
+    decision: "conditional",
+    layers: {
+      aiPackage: "compatible",
+      validation: "compatible",
+      workstationProfile: "compatible",
+    },
+  });
+  const withDecision = automaticEvaluationGate({
+    workstation: { implementation: validatedImplementation },
+    workstationProfile: profile,
+    sop: newSop,
+    model: deployedModel,
+    validation: oldValidation,
+    compatibilityDecision: decision,
+  });
+  assert.equal(withDecision.enabled, true);
+});
+
+test("automatic evaluation gate blocks incomplete validation coverage", () => {
+  const gate = automaticEvaluationGate({
+    workstation: { implementation: validatedImplementation },
+    sop: automaticSop,
+    model: deployedModel,
+    validation: {
+      ...passingValidation,
+      coverage: { passed: false, uncoveredItemIds: ["EI-2"] },
+    },
+  });
+  assert.equal(gate.enabled, false);
+  assert.match(gate.reasons.join("；"), /尚未覆盖全部/);
+});
+
+test("SOP AI status can reuse a previous package and its Dataset only after compatibility approval", () => {
+  const sop = { ...automaticSop, id: "sop-new", version: "V3.3" };
+  const mapping = {
+    ...confirmedMapping,
+    id: "mapping-new",
+    authoredFor: { sopId: sop.id, sopVersion: sop.version },
+  };
+  const profile = normalizeWorkstationProfile({
+    ...validatedImplementation,
+    id: "wp-w1-2",
+    workstationId: "w1",
+    version: "WP2",
+  });
+  const decision = normalizeCompatibilityDecision({
+    id: "decision-1",
+    fromSopId: "sop-old",
+    fromVersion: "V3.2",
+    toSopId: sop.id,
+    toVersion: sop.version,
+    decision: "conditional",
+    layers: {
+      aiPackage: "compatible",
+      validation: "compatible",
+      workstationProfile: "compatible",
+    },
+  });
+  const result = getSopAiEvaluationStatus({
+    sop,
+    datasets: [
+      {
+        id: "dataset-old",
+        sopId: "sop-old",
+        version: "D5",
+        status: "已锁定",
+      },
+    ],
+    models: [
+      {
+        id: "package-old",
+        sopId: "sop-old",
+        sopVersion: "V3.2",
+        datasetVersion: "D5",
+        version: "P1",
+        status: "已部署",
+      },
+    ],
+    workstations: [
+      {
+        id: "w1",
+        supportedProject: sop.name,
+        implementation: validatedImplementation,
+      },
+    ],
+    workstationProfiles: [profile],
+    fieldValidations: [
+      {
+        ...passingValidation,
+        id: "validation-old",
+        sopId: "sop-old",
+        sopVersion: "V3.2",
+        modelVersion: "P1",
+        workstationId: "w1",
+        workstationProfileVersion: "WP1",
+        coverage: { passed: true },
+      },
+    ],
+    evaluationMappings: [mapping],
+    compatibilityDecisions: [decision],
+  });
+  assert.equal(result.status, "可用");
+  assert.equal(result.productionDataset?.id, "dataset-old");
+  assert.equal(result.compatibilityDecision?.id, "decision-1");
 });

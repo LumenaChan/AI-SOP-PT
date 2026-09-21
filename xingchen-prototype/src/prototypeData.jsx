@@ -1,29 +1,46 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   applyDefaultPassPolicy,
+  assessSopAiImpact,
+  advanceEvaluationClock,
   automaticEvaluationGate,
+  calculateScoreEngine,
   canCloseIssue,
   createSessionStepsFromSop,
+  createEvaluationClock,
   DIAGNOSTIC_ROOT_CAUSES,
   diagnoseNoTrigger,
+  deriveDataRequirements,
+  deriveTechnicalIncidentDisposition,
+  assignSourceVideosToSplits,
+  buildValidationCoverage,
   FIELD_VALIDATION_SCENARIOS,
   getSopAiEvaluationStatus as calculateSopAiEvaluationStatus,
   getMappingStatusForSop,
   getPublishBlockers,
+  getAiPackageCreationReadiness,
   normalizeEvaluationMapping,
+  normalizeCompatibilityDecision,
+  normalizeRuntimeStep,
+  normalizeWorkstationProfile,
   normalizeSafetyRule,
   normalizeScoreRule,
   normalizeSopStep,
   recordModelValidationResult,
   requiresMandatoryReview,
   scoreOf,
+  setEvaluationClockPaused,
   validateEvaluationMapping,
   validateSopDefinition,
+  validateDatasetSplitIsolation,
   validateSystemSettings,
 } from "./domainRules.js";
 
-const STORAGE_KEY = "xingchen-prototype-data-v14";
+const STORAGE_KEY = "xingchen-prototype-data-v17";
 const LEGACY_STORAGE_KEYS = [
+  "xingchen-prototype-data-v16",
+  "xingchen-prototype-data-v15",
+  "xingchen-prototype-data-v14",
   "xingchen-prototype-data-v13",
   "xingchen-prototype-data-v12",
   "xingchen-prototype-data-v11",
@@ -273,7 +290,23 @@ function enrichStepEvidence(
           ? ["主视角"]
           : ["主视角", "辅助视角"],
     sopVersion: arrangement.snapshot?.sopVersion || "未锁定",
+    mappingVersion:
+      lockedProfile?.mappingVersion ||
+      arrangement.snapshot?.mappingVersion ||
+      "未确认",
     modelVersion: arrangement.snapshot?.modelVersion || "未启用",
+    aiPackageVersion:
+      lockedProfile?.aiPackageVersion ||
+      arrangement.snapshot?.aiPackageVersion ||
+      arrangement.snapshot?.modelVersion ||
+      "未启用",
+    workstationProfileVersion:
+      lockedProfile?.workstationProfileVersion || "未配置",
+    validationId: lockedProfile?.validationId || "未验证",
+    compatibilityDecisionId:
+      lockedProfile?.compatibilityDecisionId ||
+      arrangement.snapshot?.compatibilityDecisionId ||
+      "未使用",
     roiVersion: lockedRoiVersion || "未配置",
     cameraConfigVersion: lockedCameraConfigVersion || "未配置",
     systemAnomaly: Boolean(incident),
@@ -325,7 +358,7 @@ function enrichStepEvidence(
 }
 
 const seedData = {
-  version: 14,
+  version: 17,
   classes: [
     {
       id: "class-nev-2401",
@@ -857,6 +890,9 @@ const seedData = {
       history: [],
     },
   ],
+  aiImpactAssessments: [],
+  compatibilityDecisions: [],
+  workstationProfiles: [],
   evaluationMappings: [
     {
       id: "mapping-s1-map1",
@@ -938,6 +974,49 @@ const seedData = {
       updatedAt: "2026-09-20 16:10",
     },
   ],
+  sourceVideos: [
+    {
+      id: "source-video-s1-01",
+      sopId: "s1",
+      mappingVersion: "MAP1",
+      fileName: "station-a02-standard-flow.mp4",
+      duration: "03:20",
+      source: "标准示教采集",
+      note: "覆盖作业前安全检查与车辆下电动作。",
+      status: "加工中",
+      createdAt: "2026-09-20 14:20",
+    },
+  ],
+  timeRangeAnnotations: [
+    {
+      id: "time-range-s1-01",
+      sopId: "s1",
+      sourceVideoId: "source-video-s1-01",
+      startTime: "00:12",
+      endTime: "00:28",
+      evaluationItemId: "EI-S1-001",
+      machineEventId: "ME-S1-001",
+      label: "绝缘手套出现",
+      annotationType: "detect",
+      status: "已通过",
+      createdAt: "2026-09-20 14:35",
+    },
+  ],
+  annotations: [
+    {
+      id: "annotation-s1-01",
+      sopId: "s1",
+      timeRangeId: "time-range-s1-01",
+      sourceVideoId: "source-video-s1-01",
+      type: "detect",
+      label: "绝缘手套出现",
+      bboxSummary: "抽取8帧，双手区域已完成框选。",
+      note: "画面清晰，可进入Dataset。",
+      status: "已通过",
+      reviewedBy: "刘工",
+      reviewedAt: "2026-09-20 15:10",
+    },
+  ],
   datasets: [
     {
       id: "ds-hv-d5",
@@ -948,6 +1027,12 @@ const seedData = {
       sampleCount: 612,
       acceptedCount: 612,
       candidateCount: 2,
+      sourceVideoIds: ["source-video-s1-01"],
+      splits: {
+        train: ["source-video-s1-01"],
+        validation: [],
+        test: [],
+      },
       labels: {
         "Step 01": 92,
         "Step 02": 110,
@@ -1785,6 +1870,55 @@ function normalizePrototypeData(input) {
         defaultWorkstationImplementation(workstation).rois,
     },
   }));
+  const sourceProfiles = Array.isArray(next.workstationProfiles)
+    ? next.workstationProfiles.map(normalizeWorkstationProfile)
+    : [];
+  next.workstationProfiles = next.workstations.flatMap((workstation) => {
+    const existing = sourceProfiles.filter(
+      (profile) => profile.workstationId === workstation.id,
+    );
+    if (existing.length) return existing;
+    const implementation = workstation.implementation || {};
+    return [
+      normalizeWorkstationProfile({
+        id: `wp-${workstation.id}-1`,
+        workstationId: workstation.id,
+        version: "WP1",
+        status: "已发布",
+        cameraConfigVersion: implementation.cameraConfigVersion,
+        roiVersion: implementation.roiVersion,
+        cameraPosition: implementation.cameraPosition,
+        lighting: implementation.lighting,
+        occlusion: implementation.occlusion,
+        rois: implementation.rois,
+        environmentSummary: implementation.note,
+        note: implementation.note,
+        updatedAt: implementation.updatedAt || workstation.updatedAt,
+        updatedBy: implementation.updatedBy || "迁移",
+      }),
+    ];
+  });
+  next.workstations = next.workstations.map((workstation) => {
+    const profiles = next.workstationProfiles.filter(
+      (profile) => profile.workstationId === workstation.id,
+    );
+    const current =
+      profiles.find((profile) => profile.id === workstation.currentProfileId) ||
+      profiles.at(-1);
+    return {
+      ...workstation,
+      currentProfileId: current?.id || "",
+      implementation: current
+        ? { ...workstation.implementation, ...current }
+        : workstation.implementation,
+    };
+  });
+  next.aiImpactAssessments = Array.isArray(next.aiImpactAssessments)
+    ? next.aiImpactAssessments
+    : [];
+  next.compatibilityDecisions = Array.isArray(next.compatibilityDecisions)
+    ? next.compatibilityDecisions.map(normalizeCompatibilityDecision)
+    : [];
   next.fieldValidations = Array.isArray(next.fieldValidations)
     ? next.fieldValidations
     : JSON.parse(JSON.stringify(seedData.fieldValidations || []));
@@ -1854,20 +1988,134 @@ function normalizePrototypeData(input) {
   next.evaluationMappings = Array.isArray(next.evaluationMappings)
     ? next.evaluationMappings.map(normalizeEvaluationMapping)
     : [];
+  next.fieldValidations = next.fieldValidations.map((record) => {
+    const mapping = next.evaluationMappings.find(
+      (item) =>
+        item.authoredFor?.sopId === record.sopId &&
+        item.authoredFor?.sopVersion === record.sopVersion,
+    );
+    const evaluationItemIds = (mapping?.evaluationItems || []).map(
+      (item) => item.id,
+    );
+    const workstationProfile = next.workstationProfiles.find(
+      (item) =>
+        item.workstationId === record.workstationId &&
+        (item.version === record.workstationProfileVersion ||
+          item.id ===
+            next.workstations.find(
+              (workstation) => workstation.id === record.workstationId,
+            )?.currentProfileId),
+    );
+    const testCases =
+      record.testCases ||
+      (record.tests || []).map((test, index) => ({
+        id: `${record.id || "validation"}-case-${index + 1}`,
+        name: test.label,
+        scenarioTypes: [test.key],
+        evaluationItemIds:
+          test.result === "通过" && index === 0 ? evaluationItemIds : [],
+        result: test.result,
+        note: test.note || "",
+      }));
+    return {
+      ...record,
+      workstationProfileVersion:
+        record.workstationProfileVersion ||
+        workstationProfile?.version ||
+        "WP1",
+      primaryCameraId:
+        record.primaryCameraId || workstationProfile?.primaryCameraId || "",
+      fallbackCameraId:
+        record.fallbackCameraId || workstationProfile?.fallbackCameraId || "",
+      testCases,
+      coverage:
+        record.coverage ||
+        buildValidationCoverage({
+          evaluationItems: mapping?.evaluationItems || [],
+          testCases,
+        }),
+    };
+  });
+  next.sourceVideos = Array.isArray(next.sourceVideos)
+    ? next.sourceVideos.map((item) => ({
+        status: "待加工",
+        mappingVersion: "",
+        duration: "00:00",
+        source: "人工上传",
+        note: "",
+        ...item,
+      }))
+    : [];
+  next.timeRangeAnnotations = Array.isArray(next.timeRangeAnnotations)
+    ? next.timeRangeAnnotations.map((item) => ({
+        annotationType: "action",
+        status: "待标注",
+        label: "",
+        ...item,
+      }))
+    : [];
+  next.annotations = Array.isArray(next.annotations)
+    ? next.annotations.map((item) => ({
+        status: "待审核",
+        bboxSummary: "",
+        note: "",
+        ...item,
+      }))
+    : [];
+  next.datasets = (next.datasets || []).map((item) => {
+    const sourceVideoIds = [...new Set(item.sourceVideoIds || [])];
+    return {
+      ...item,
+      sourceVideoIds,
+      splits: item.splits || assignSourceVideosToSplits(sourceVideoIds),
+    };
+  });
+  next.models = (next.models || []).map((item) => ({
+    ...item,
+    kind: "ai_package",
+    name: String(item.name || "AI能力包").replace("动作模型", "AI能力包"),
+    mappingVersion: item.mappingVersion || "历史Mapping",
+    requiresTraining:
+      item.requiresTraining === undefined
+        ? Boolean(item.datasetVersion && item.datasetVersion !== "无需训练")
+        : item.requiresTraining,
+    components: item.components || {
+      existingCapabilities: [],
+      configuredCapabilities: [],
+      trainedCapabilities: item.datasetVersion ? ["历史动作模型"] : [],
+    },
+  }));
   next.arrangements = (next.arrangements || []).map((arrangement) => {
     const sop = next.sops.find((item) => item.id === arrangement.sopId);
     const sessions = (arrangement.sessions || []).map((session) => {
       const workstation = next.workstations.find(
         (item) => item.id === session.workstationId,
       );
-      const model = next.models?.find(
-        (item) => item.sopId === sop?.id && item.status === "已部署",
+      const compatibilityDecision = (next.compatibilityDecisions || []).find(
+        (item) =>
+          item.toSopId === sop?.id &&
+          item.toVersion === sop?.version &&
+          ["compatible", "conditional"].includes(item.decision),
       );
+      const model =
+        next.models?.find(
+          (item) => item.sopId === sop?.id && item.status === "已部署",
+        ) ||
+        next.models?.find(
+          (item) =>
+            item.sopId === compatibilityDecision?.fromSopId &&
+            item.sopVersion === compatibilityDecision?.fromVersion &&
+            item.status === "已部署",
+        );
       const validation = (next.fieldValidations || []).find(
         (item) =>
           item.workstationId === session.workstationId &&
-          item.sopId === sop?.id &&
-          item.sopVersion === sop?.version,
+          ((item.sopId === sop?.id && item.sopVersion === sop?.version) ||
+            (item.sopId === compatibilityDecision?.fromSopId &&
+              item.sopVersion === compatibilityDecision?.fromVersion)),
+      );
+      const workstationProfile = (next.workstationProfiles || []).find(
+        (item) => item.id === workstation?.currentProfileId,
       );
       const mappingStatus = getMappingStatusForSop({
         sop,
@@ -1875,10 +2123,12 @@ function normalizePrototypeData(input) {
       });
       const gate = automaticEvaluationGate({
         workstation,
+        workstationProfile,
         sop,
         model,
         validation,
         mapping: mappingStatus.mapping,
+        compatibilityDecision,
         requireConfirmedMapping: true,
       });
       const recording = defaultSessionRecording(
@@ -1886,7 +2136,7 @@ function normalizePrototypeData(input) {
         arrangement,
         next.systemSettings.current,
       );
-      const evaluationProfile = session.evaluationProfile || {
+      const evaluationProfile = {
         automaticEvaluationEnabled: gate.enabled,
         enabledStepCount: gate.enabledStepCount,
         automaticStepCount: gate.automaticStepCount,
@@ -1895,7 +2145,13 @@ function normalizePrototypeData(input) {
           workstation?.implementation?.cameraConfigVersion || "未配置",
         validationId: validation?.id || "未验证",
         validationStatus: validation?.status || "未验证",
+        workstationProfileId: workstationProfile?.id || "",
+        workstationProfileVersion: workstationProfile?.version || "未配置",
+        mappingVersion: mappingStatus.mapping?.version || "未确认",
+        aiPackageVersion: model?.version || "未启用",
+        compatibilityDecisionId: compatibilityDecision?.id || "",
         fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
+        ...(session.evaluationProfile || {}),
       };
       const sessionWithProfile = { ...session, evaluationProfile };
       const normalizedSteps = (session.steps || []).map((step, index) => {
@@ -1903,17 +2159,20 @@ function normalizePrototypeData(input) {
         return applyDefaultPassPolicy({ ...sopStep, ...step }, index);
       });
       const stateNormalizedSteps = normalizedSteps.map((step) =>
-        session.status === "进行中" &&
-        step.id === session.currentStepId &&
-        step.state === "pending"
-          ? {
-              ...step,
-              state: "active",
-              result: "进行中",
-              duration: "00:00",
-              observation: "已进入当前步骤，等待连续动作判定",
-            }
-          : step,
+        normalizeRuntimeStep(
+          session.status === "进行中" &&
+            step.id === session.currentStepId &&
+            step.state === "pending"
+            ? {
+                ...step,
+                state: "active",
+                executionState: "active",
+                result: "进行中",
+                duration: "00:00",
+                observation: "已进入当前步骤，等待连续动作判定",
+              }
+            : step,
+        ),
       );
       const steps = stateNormalizedSteps.map((step) =>
         enrichStepEvidence(
@@ -1930,11 +2189,24 @@ function normalizePrototypeData(input) {
         session.resultStatus === "待复核" &&
         !mandatoryReview &&
         steps.some((step) => step.reviewStatus === "建议抽查");
+      const runtime = normalizeSessionRuntime(session);
+      const scoreEngine = calculateScoreEngine({
+        steps,
+        manualAdjustments: session.manualAdjustments || [],
+      });
       return {
         ...session,
         steps,
+        runtime,
+        scoreEngine,
         recording,
-        score: session.resultStatus === "未参加" ? 0 : scoreOf(steps),
+        score:
+          session.resultStatus === "未参加"
+            ? 0
+            : scoreEngine.scoreStatus === "pending"
+              ? session.score
+              : scoreEngine.effectiveScore,
+        elapsed: secondsToElapsed(runtime.evaluationClock.elapsedSeconds),
         resultStatus: wasDefaultPassOnly ? "正式成绩" : session.resultStatus,
         evaluationProfile,
         events: (session.events || []).map((event) =>
@@ -1972,6 +2244,64 @@ function uid(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function timeToSeconds(value = "") {
+  const parts = String(value).split(":").map(Number);
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part)))
+    return NaN;
+  return parts[0] * 60 + parts[1];
+}
+
+function elapsedToSeconds(value = "") {
+  const parts = String(value).split(":").map(Number);
+  if (!parts.length || parts.some((part) => !Number.isFinite(part))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
+}
+
+function secondsToElapsed(value = 0) {
+  const total = Math.max(0, Math.floor(Number(value || 0)));
+  const hours = String(Math.floor(total / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function normalizeSessionRuntime(session = {}) {
+  const elapsedSeconds = elapsedToSeconds(session.elapsed);
+  const running = session.status === "进行中";
+  const paused = session.status === "已暂停";
+  const runtime = session.runtime || {};
+  return {
+    actorBinding: {
+      status: running ? "confirmed" : "uncertain",
+      primaryActorId: session.studentId || "",
+      trackId: running ? `track-${session.id}` : "",
+      history: [],
+      ...(runtime.actorBinding || {}),
+    },
+    evaluationClock: createEvaluationClock({
+      status: running ? "running" : paused ? "paused" : "idle",
+      elapsedSeconds,
+      wallSeconds: elapsedSeconds,
+      ...(runtime.evaluationClock || {}),
+    }),
+    machineEvents: runtime.machineEvents || [],
+    evaluationItemResults: runtime.evaluationItemResults || [],
+    technicalIncidents: runtime.technicalIncidents || [],
+    safetyCandidates: runtime.safetyCandidates || [],
+    assistanceWarnings: runtime.assistanceWarnings || [],
+    correctionContext: {
+      status: "inactive",
+      relatedRuleId: "",
+      relatedStepId: "",
+      startedAt: "",
+      completedAt: "",
+      ...(runtime.correctionContext || {}),
+    },
+  };
+}
+
 function collectUsedStepIds(...sources) {
   const ids = new Set();
   for (const source of sources) {
@@ -1987,7 +2317,9 @@ function mergeLegacy(legacy) {
   const next = cloneSeed();
   if (
     !legacy ||
-    ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version)
+    ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(
+      legacy.version,
+    )
   )
     return next;
   const identityKeys = {
@@ -2007,7 +2339,7 @@ function mergeLegacy(legacy) {
     ];
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version) &&
     Array.isArray(legacy.arrangements)
   ) {
     const legacyIds = new Set(legacy.arrangements.map((item) => item.id));
@@ -2086,13 +2418,23 @@ function mergeLegacy(legacy) {
         workstationIdMap[session.workstationId] || session.workstationId,
     })),
   }));
-  if ([4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version)) {
+  if ([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version)) {
     for (const key of ["sops", "datasets", "models", "learningSamples"]) {
       if (legacy[key]?.length) next[key] = legacy[key];
     }
   }
   if (Array.isArray(legacy.evaluationMappings))
     next.evaluationMappings = legacy.evaluationMappings;
+  for (const key of [
+    "workstationProfiles",
+    "aiImpactAssessments",
+    "compatibilityDecisions",
+  ]) {
+    if (Array.isArray(legacy[key])) next[key] = legacy[key];
+  }
+  for (const key of ["sourceVideos", "timeRangeAnnotations", "annotations"]) {
+    next[key] = Array.isArray(legacy[key]) ? legacy[key] : [];
+  }
   if (legacy.version === 12) {
     next.datasets = next.datasets.map((item) =>
       item.basedOn && item.status === "待审核"
@@ -2101,7 +2443,7 @@ function mergeLegacy(legacy) {
     );
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12, 13].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version) &&
     Array.isArray(legacy.exportJobs)
   )
     next.exportJobs = legacy.exportJobs;
@@ -2607,34 +2949,76 @@ export function PrototypeDataProvider({ children }) {
         for (const key of ["cameraPosition", "lighting", "occlusion"]) {
           if (!input[key]) throw new Error("请逐项确认机位、光照和遮挡条件。");
         }
+        const cameras = (input.cameras || []).filter((item) => item.id);
+        if (!cameras.length)
+          throw new Error("Workstation Profile 至少需要一个摄像头。");
+        if (!input.primaryCameraId) throw new Error("请选择 Primary Camera。");
+        if (!cameras.some((item) => item.id === input.primaryCameraId))
+          throw new Error("Primary Camera 不属于当前工位配置。");
+        if (
+          input.fallbackCameraId &&
+          input.fallbackCameraId === input.primaryCameraId
+        )
+          throw new Error("Fallback Camera 不能与 Primary Camera 相同。");
         const when = timestamp();
-        const implementation = {
+        const profileVersions = (data.workstationProfiles || []).filter(
+          (item) => item.workstationId === id,
+        );
+        const nextVersion =
+          profileVersions.reduce(
+            (max, item) =>
+              Math.max(
+                max,
+                Number(String(item.version).match(/\d+/)?.[0] || 0),
+              ),
+            0,
+          ) + 1;
+        const profile = normalizeWorkstationProfile({
           ...existing.implementation,
           ...input,
+          id: uid("workstation-profile"),
+          workstationId: id,
+          version: `WP${nextVersion}`,
+          status: "已发布",
           cameraConfigVersion: input.cameraConfigVersion.trim(),
           roiVersion: input.roiVersion.trim(),
+          cameras,
+          primaryCameraId: input.primaryCameraId,
+          fallbackCameraId: input.fallbackCameraId || "",
+          evidenceBindings: input.evidenceBindings || [],
+          environmentSummary:
+            input.environmentSummary?.trim() || input.note?.trim() || "",
           note: input.note?.trim() || "",
           updatedAt: when,
           updatedBy: "admin",
-        };
+        });
         setData((current) => {
           const next = {
             ...current,
+            workstationProfiles: [
+              profile,
+              ...(current.workstationProfiles || []),
+            ],
             workstations: current.workstations.map((item) =>
               item.id === id
-                ? { ...item, implementation, updatedAt: when }
+                ? {
+                    ...item,
+                    currentProfileId: profile.id,
+                    implementation: { ...item.implementation, ...profile },
+                    updatedAt: when,
+                  }
                 : item,
             ),
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
             next,
-            "保存工位实施检查",
-            `${existing.name} / ${implementation.roiVersion} / ${implementation.cameraConfigVersion}`,
+            "发布 Workstation Profile",
+            `${existing.name} / ${profile.version} / ${profile.roiVersion} / ${profile.cameraConfigVersion}`,
           );
           return next;
         });
-        return implementation;
+        return profile;
       },
       saveFieldValidation(input) {
         const workstation = data.workstations.find(
@@ -2643,24 +3027,76 @@ export function PrototypeDataProvider({ children }) {
         const sop = data.sops.find((item) => item.id === input.sopId);
         if (!workstation || !sop)
           throw new Error("工位或 SOP 版本不存在，请刷新后重试。");
-        const tests = FIELD_VALIDATION_SCENARIOS.map(([key, label]) => {
-          const item = input.tests?.find((test) => test.key === key);
-          if (!item?.result) throw new Error(`请选择“${label}”的测试结果。`);
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
+        const evaluationItems = mappingStatus.mapping?.evaluationItems || [];
+        const sourceCases =
+          input.testCases ||
+          FIELD_VALIDATION_SCENARIOS.map(([key, label]) => {
+            const legacy = input.tests?.find((test) => test.key === key);
+            return {
+              id: uid("validation-case"),
+              name: label,
+              scenarioTypes: [key],
+              evaluationItemIds: legacy?.evaluationItemIds || [],
+              result: legacy?.result || "",
+              note: legacy?.note || "",
+            };
+          });
+        if (!sourceCases.length)
+          throw new Error("至少需要一个 Validation Test Case。");
+        const testCases = sourceCases.map((item, index) => {
+          if (!item.result)
+            throw new Error(
+              `请选择“${item.name || `Case ${index + 1}`}”的测试结果。`,
+            );
           if (item.result === "失败" && !item.note?.trim())
-            throw new Error(`“${label}”失败时必须填写说明。`);
+            throw new Error(
+              `“${item.name || `Case ${index + 1}`}”失败时必须填写说明。`,
+            );
+          return {
+            id: item.id || uid("validation-case"),
+            name: item.name?.trim() || `Validation Case ${index + 1}`,
+            scenarioTypes: item.scenarioTypes || [],
+            evaluationItemIds: [...new Set(item.evaluationItemIds || [])],
+            result: item.result,
+            note: item.note?.trim() || "",
+          };
+        });
+        const coverage = buildValidationCoverage({
+          evaluationItems,
+          testCases,
+        });
+        const tests = FIELD_VALIDATION_SCENARIOS.map(([key, label]) => {
+          const related = testCases.filter((item) =>
+            item.scenarioTypes.includes(key),
+          );
           return {
             key,
             label,
-            result: item.result,
-            note: item.note?.trim() || "",
+            result: related.some((item) => item.result === "失败")
+              ? "失败"
+              : related.some((item) => item.result === "通过")
+                ? "通过"
+                : "不适用",
+            note: related
+              .map((item) => item.note)
+              .filter(Boolean)
+              .join("；"),
           };
         });
         const model = data.models.find(
           (item) => item.sopId === sop.id && item.status === "已部署",
         );
-        const status = tests.some((item) => item.result === "失败")
-          ? "失败"
-          : "通过";
+        const workstationProfile = (data.workstationProfiles || []).find(
+          (item) => item.id === workstation.currentProfileId,
+        );
+        const status =
+          testCases.some((item) => item.result === "失败") || !coverage.passed
+            ? "失败"
+            : "通过";
         const when = timestamp();
         const record = {
           id: uid("validation"),
@@ -2671,11 +3107,25 @@ export function PrototypeDataProvider({ children }) {
           roiVersion: workstation.implementation?.roiVersion || "未配置",
           cameraConfigVersion:
             workstation.implementation?.cameraConfigVersion || "未配置",
+          workstationProfileVersion:
+            workstationProfile?.version ||
+            workstation.implementation?.version ||
+            "WP1",
+          primaryCameraId:
+            workstationProfile?.primaryCameraId ||
+            workstation.implementation?.primaryCameraId ||
+            "",
+          fallbackCameraId:
+            workstationProfile?.fallbackCameraId ||
+            workstation.implementation?.fallbackCameraId ||
+            "",
           status,
           operator: input.operator?.trim() || "admin",
           createdAt: when,
           note: input.note?.trim() || "",
           tests,
+          testCases,
+          coverage,
         };
         setData((current) => {
           const next = {
@@ -2714,14 +3164,31 @@ export function PrototypeDataProvider({ children }) {
           (item) => item.id === workstationId,
         );
         const sop = data.sops.find((item) => item.id === sopId);
-        const model = data.models.find(
-          (item) => item.sopId === sopId && item.status === "已部署",
+        const compatibilityDecision = (data.compatibilityDecisions || []).find(
+          (item) =>
+            item.toSopId === sopId &&
+            item.toVersion === sop?.version &&
+            ["compatible", "conditional"].includes(item.decision),
         );
+        const model =
+          data.models.find(
+            (item) => item.sopId === sopId && item.status === "已部署",
+          ) ||
+          data.models.find(
+            (item) =>
+              item.sopId === compatibilityDecision?.fromSopId &&
+              item.sopVersion === compatibilityDecision?.fromVersion &&
+              item.status === "已部署",
+          );
         const validation = (data.fieldValidations || []).find(
           (item) =>
             item.workstationId === workstationId &&
-            item.sopId === sopId &&
-            item.sopVersion === sop?.version,
+            ((item.sopId === sopId && item.sopVersion === sop?.version) ||
+              (item.sopId === compatibilityDecision?.fromSopId &&
+                item.sopVersion === compatibilityDecision?.fromVersion)),
+        );
+        const workstationProfile = (data.workstationProfiles || []).find(
+          (item) => item.id === workstation?.currentProfileId,
         );
         const mappingStatus = getMappingStatusForSop({
           sop,
@@ -2729,10 +3196,12 @@ export function PrototypeDataProvider({ children }) {
         });
         return automaticEvaluationGate({
           workstation,
+          workstationProfile,
           sop,
           model,
           validation,
           mapping: mappingStatus.mapping,
+          compatibilityDecision,
           requireConfirmedMapping: true,
         });
       },
@@ -2752,6 +3221,8 @@ export function PrototypeDataProvider({ children }) {
           workstations: data.workstations,
           fieldValidations: data.fieldValidations,
           evaluationMappings: data.evaluationMappings || [],
+          workstationProfiles: data.workstationProfiles || [],
+          compatibilityDecisions: data.compatibilityDecisions || [],
           targetWorkstationIds: options.targetWorkstationIds,
         });
       },
@@ -2986,12 +3457,31 @@ export function PrototypeDataProvider({ children }) {
             ...(existing.history || []),
           ],
         };
+        const sourceId = String(existing.basedOn || "").split(" / ")[0];
+        const fromSop = data.sops.find((item) => item.id === sourceId);
+        const impact = fromSop
+          ? {
+              id: uid("impact"),
+              sopFamilyId: published.familyId || published.id,
+              fromSopId: fromSop.id,
+              fromVersion: fromSop.version,
+              toSopId: published.id,
+              toVersion: published.version,
+              status: "待确认",
+              ...assessSopAiImpact({ fromSop, toSop: published }),
+              createdAt: timestamp(),
+              createdBy: "系统影响分析",
+            }
+          : null;
         setData((current) => {
           const next = {
             ...current,
             sops: current.sops.map((item) =>
               item.id === id ? published : item,
             ),
+            aiImpactAssessments: impact
+              ? [impact, ...(current.aiImpactAssessments || [])]
+              : current.aiImpactAssessments || [],
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -2999,6 +3489,12 @@ export function PrototypeDataProvider({ children }) {
             "发布并冻结 SOP",
             `${published.name} / ${published.version}`,
           );
+          if (impact)
+            addAuditLog(
+              next,
+              "生成 AI Impact Assessment",
+              `${impact.fromVersion} → ${impact.toVersion} / ${impact.changeType}`,
+            );
           return next;
         });
         return published;
@@ -3035,6 +3531,92 @@ export function PrototypeDataProvider({ children }) {
           return next;
         });
         return created;
+      },
+      confirmCompatibilityDecision(assessmentId, input) {
+        const assessment = (data.aiImpactAssessments || []).find(
+          (item) => item.id === assessmentId,
+        );
+        if (!assessment) throw new Error("AI Impact Assessment 不存在。");
+        if (!String(input.reason || "").trim())
+          throw new Error("请填写 Compatibility Decision 依据。");
+        if (!input.decision || input.decision === "pending")
+          throw new Error("请选择明确的兼容性结论。");
+        const when = timestamp();
+        const decision = normalizeCompatibilityDecision({
+          id: uid("compatibility"),
+          assessmentId,
+          sopFamilyId: assessment.sopFamilyId,
+          fromSopId: assessment.fromSopId,
+          fromVersion: assessment.fromVersion,
+          toSopId: assessment.toSopId,
+          toVersion: assessment.toVersion,
+          decision: input.decision,
+          affectedLayers: {
+            ...assessment.layers,
+            ...(input.affectedLayers || {}),
+          },
+          reason: input.reason.trim(),
+          operator: input.operator?.trim() || "admin",
+          time: when,
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            aiImpactAssessments: (current.aiImpactAssessments || []).map(
+              (item) =>
+                item.id === assessmentId
+                  ? {
+                      ...item,
+                      status: "已确认",
+                      decisionId: decision.id,
+                      confirmedAt: when,
+                    }
+                  : item,
+            ),
+            compatibilityDecisions: [
+              decision,
+              ...(current.compatibilityDecisions || []),
+            ],
+            evaluationMappings: (current.evaluationMappings || []).map(
+              (mapping) => {
+                if (
+                  mapping.authoredFor?.sopId !== assessment.fromSopId ||
+                  mapping.authoredFor?.sopVersion !== assessment.fromVersion ||
+                  !["compatible", "conditional"].includes(decision.decision) ||
+                  decision.affectedLayers.mapping !== "compatible"
+                )
+                  return mapping;
+                return {
+                  ...mapping,
+                  compatibleSopVersions: [
+                    ...(mapping.compatibleSopVersions || []).filter(
+                      (item) =>
+                        !(
+                          item.sopId === assessment.toSopId &&
+                          item.sopVersion === assessment.toVersion
+                        ),
+                    ),
+                    {
+                      sopId: assessment.toSopId,
+                      sopFamilyId: assessment.sopFamilyId,
+                      sopVersion: assessment.toVersion,
+                      decision: decision.decision,
+                      decisionId: decision.id,
+                    },
+                  ],
+                };
+              },
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "确认 Compatibility Decision",
+            `${assessment.fromVersion} → ${assessment.toVersion} / ${decision.decision}`,
+          );
+          return next;
+        });
+        return decision;
       },
       copySop(id, name) {
         const existing = data.sops.find((item) => item.id === id);
@@ -3294,6 +3876,8 @@ export function PrototypeDataProvider({ children }) {
             ...(sop.steps || []).map((step) => [step.id, 0]),
             ["Other", 0],
           ]),
+          sourceVideoIds: [],
+          splits: { train: [], validation: [], test: [] },
           basedOn: "首次 AI 适配",
           updatedAt: when,
         };
@@ -3307,6 +3891,238 @@ export function PrototypeDataProvider({ children }) {
           return next;
         });
         return created;
+      },
+      addSourceVideo(input) {
+        const sop = data.sops.find((item) => item.id === input.sopId);
+        const mappingStatus = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        });
+        if (!sop || !mappingStatus.confirmed)
+          throw new Error("请先完成教师业务口径确认。");
+        if (!input.fileName?.trim())
+          throw new Error("请填写 Source Video 文件名。");
+        if (!/^\d{2}:\d{2}$/.test(input.duration || ""))
+          throw new Error("视频时长格式应为 mm:ss。");
+        const created = {
+          id: uid("source-video"),
+          sopId: sop.id,
+          mappingVersion: mappingStatus.mapping.version,
+          fileName: input.fileName.trim(),
+          duration: input.duration,
+          source: input.source || "人工上传",
+          note: input.note?.trim() || "",
+          status: "待加工",
+          createdAt: timestamp(),
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            sourceVideos: [created, ...(current.sourceVideos || [])],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "上传 Source Video",
+            `${sop.name} / ${created.fileName}`,
+          );
+          return next;
+        });
+        return created;
+      },
+      addTimeRangeAnnotation(input) {
+        const sourceVideo = (data.sourceVideos || []).find(
+          (item) => item.id === input.sourceVideoId,
+        );
+        if (!sourceVideo) throw new Error("Source Video 不存在或已失效。");
+        if (
+          !Number.isFinite(timeToSeconds(input.startTime)) ||
+          !Number.isFinite(timeToSeconds(input.endTime)) ||
+          timeToSeconds(input.startTime) >= timeToSeconds(input.endTime)
+        )
+          throw new Error("动作片段开始时间必须早于结束时间，格式为 mm:ss。");
+        const sop = data.sops.find((item) => item.id === sourceVideo.sopId);
+        const mapping = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        }).mapping;
+        const evaluationItem = mapping?.evaluationItems.find(
+          (item) => item.id === input.evaluationItemId,
+        );
+        const machineEvent = mapping?.machineEvents.find(
+          (item) => item.id === input.machineEventId,
+        );
+        if (!evaluationItem || !machineEvent)
+          throw new Error(
+            "动作片段必须关联当前 Mapping 的评价项与 Machine Event。",
+          );
+        if (!evaluationItem.machineEventIds.includes(machineEvent.id))
+          throw new Error("所选 Machine Event 未关联到该评价项。");
+        const created = {
+          id: uid("time-range"),
+          sopId: sourceVideo.sopId,
+          sourceVideoId: sourceVideo.id,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          evaluationItemId: evaluationItem.id,
+          machineEventId: machineEvent.id,
+          label: machineEvent.name,
+          annotationType: input.annotationType || "action",
+          status: "待标注",
+          createdAt: timestamp(),
+        };
+        setData((current) => ({
+          ...current,
+          sourceVideos: (current.sourceVideos || []).map((item) =>
+            item.id === sourceVideo.id ? { ...item, status: "加工中" } : item,
+          ),
+          timeRangeAnnotations: [
+            created,
+            ...(current.timeRangeAnnotations || []),
+          ],
+        }));
+        return created;
+      },
+      saveAnnotation(input) {
+        const range = (data.timeRangeAnnotations || []).find(
+          (item) => item.id === input.timeRangeId,
+        );
+        if (!range) throw new Error("动作片段不存在或已失效。");
+        if (!input.label?.trim()) throw new Error("请填写标注标签。");
+        const existing = (data.annotations || []).find(
+          (item) => item.timeRangeId === range.id,
+        );
+        const annotation = {
+          ...existing,
+          id: existing?.id || uid("annotation"),
+          sopId: range.sopId,
+          timeRangeId: range.id,
+          sourceVideoId: range.sourceVideoId,
+          type: input.type || range.annotationType,
+          label: input.label.trim(),
+          bboxSummary: input.bboxSummary?.trim() || "",
+          note: input.note?.trim() || "",
+          status: "待审核",
+          updatedAt: timestamp(),
+        };
+        setData((current) => ({
+          ...current,
+          annotations: existing
+            ? (current.annotations || []).map((item) =>
+                item.id === existing.id ? annotation : item,
+              )
+            : [annotation, ...(current.annotations || [])],
+          timeRangeAnnotations: (current.timeRangeAnnotations || []).map(
+            (item) =>
+              item.id === range.id ? { ...item, status: "待审核" } : item,
+          ),
+        }));
+        return annotation;
+      },
+      reviewAnnotation(id, passed, note = "") {
+        const existing = (data.annotations || []).find(
+          (item) => item.id === id,
+        );
+        if (!existing) throw new Error("Annotation 不存在或已失效。");
+        const status = passed ? "已通过" : "已退回";
+        const updated = {
+          ...existing,
+          status,
+          reviewNote: note.trim(),
+          reviewedBy: "刘工",
+          reviewedAt: timestamp(),
+        };
+        setData((current) => ({
+          ...current,
+          annotations: (current.annotations || []).map((item) =>
+            item.id === id ? updated : item,
+          ),
+          timeRangeAnnotations: (current.timeRangeAnnotations || []).map(
+            (item) =>
+              item.id === existing.timeRangeId ? { ...item, status } : item,
+          ),
+        }));
+        return updated;
+      },
+      addApprovedAnnotationsToDataset(sopId, datasetId) {
+        const dataset = data.datasets.find((item) => item.id === datasetId);
+        if (!dataset || dataset.sopId !== sopId)
+          throw new Error("Dataset 不存在或不属于当前 SOP。");
+        if (dataset.status !== "采集中")
+          throw new Error("只有采集中的 Dataset 可以纳入新数据。");
+        const candidates = (data.annotations || []).filter(
+          (item) =>
+            item.sopId === sopId && item.status === "已通过" && !item.datasetId,
+        );
+        if (!candidates.length)
+          throw new Error("当前没有待纳入的已审核 Annotation。");
+        const sourceVideoIds = [
+          ...new Set([
+            ...(dataset.sourceVideoIds || []),
+            ...candidates.map((item) => item.sourceVideoId),
+          ]),
+        ];
+        const splits = assignSourceVideosToSplits(sourceVideoIds);
+        const isolation = validateDatasetSplitIsolation(splits);
+        if (!isolation.passed) throw new Error(isolation.issues[0]);
+        const mapping = getMappingStatusForSop({
+          sop: data.sops.find((item) => item.id === sopId),
+          mappings: data.evaluationMappings || [],
+        }).mapping;
+        const labels = { ...(dataset.labels || {}) };
+        for (const annotation of candidates) {
+          const range = (data.timeRangeAnnotations || []).find(
+            (item) => item.id === annotation.timeRangeId,
+          );
+          const evaluationItem = mapping?.evaluationItems.find(
+            (item) => item.id === range?.evaluationItemId,
+          );
+          const label = evaluationItem?.stepId || "Other";
+          labels[label] = (labels[label] || 0) + 1;
+        }
+        const updated = {
+          ...dataset,
+          sourceVideoIds,
+          splits,
+          sampleCount: (dataset.sampleCount || 0) + candidates.length,
+          acceptedCount: (dataset.acceptedCount || 0) + candidates.length,
+          candidateCount: Math.max(
+            0,
+            (dataset.candidateCount || 0) - candidates.length,
+          ),
+          labels,
+          updatedAt: timestamp(),
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            datasets: current.datasets.map((item) =>
+              item.id === dataset.id ? updated : item,
+            ),
+            annotations: (current.annotations || []).map((item) =>
+              candidates.some((candidate) => candidate.id === item.id)
+                ? {
+                    ...item,
+                    datasetId: dataset.id,
+                    datasetVersion: dataset.version,
+                  }
+                : item,
+            ),
+            sourceVideos: (current.sourceVideos || []).map((item) =>
+              sourceVideoIds.includes(item.id)
+                ? { ...item, status: "已入库" }
+                : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "纳入 Dataset",
+            `${dataset.version} / ${candidates.length} 条 Annotation / ${sourceVideoIds.length} 个 Source Video`,
+          );
+          return next;
+        });
+        return updated;
       },
       addDatasetSample(input) {
         const sop = data.sops.find((item) => item.id === input.sopId);
@@ -3356,9 +4172,56 @@ export function PrototypeDataProvider({ children }) {
         });
         return sample;
       },
+      promoteDifficultSample(id) {
+        const sample = data.learningSamples.find((item) => item.id === id);
+        if (!sample) throw new Error("困难样本候选不存在。");
+        if (sample.status !== "待加工")
+          throw new Error("只有待加工候选可以进入数据生产链。");
+        const when = timestamp();
+        const sourceVideo = {
+          id: uid("source-video"),
+          sopId: sample.sopId,
+          fileName: sample.fileName,
+          source: "Difficult Sample Feedback",
+          sourceSampleId: sample.id,
+          duration: sample.duration || "00:30",
+          status: "待加工",
+          mappingVersion: "",
+          note: sample.reason || "运行评价困难样本回流",
+          createdAt: when,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            sourceVideos: [sourceVideo, ...(current.sourceVideos || [])],
+            learningSamples: current.learningSamples.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    status: "已转数据生产",
+                    sourceVideoId: sourceVideo.id,
+                    transferredAt: when,
+                  }
+                : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "困难样本转入数据生产",
+            `${sample.fileName} / ${sourceVideo.id}`,
+          );
+          return next;
+        });
+        return sourceVideo;
+      },
       reviewLearningSample(id, decision, label, note = "") {
         const sample = data.learningSamples.find((item) => item.id === id);
         if (!sample) throw new Error("样本不存在或已失效。");
+        if (sample.status === "待加工")
+          throw new Error(
+            "困难样本必须先进入数据生产链，不能直接纳入 Dataset。",
+          );
         const sop = data.sops.find((item) => item.id === sample.sopId);
         if (
           ![...(sop?.steps || []).map((step) => step.id), "Other"].includes(
@@ -3433,6 +4296,13 @@ export function PrototypeDataProvider({ children }) {
         const sop = data.sops.find((item) => item.id === sopId);
         if (!currentDataset || !sop)
           throw new Error("请先保存 SOP 并建立首个 Dataset。");
+        if (
+          !getMappingStatusForSop({
+            sop,
+            mappings: data.evaluationMappings || [],
+          }).confirmed
+        )
+          throw new Error("请先完成教师业务口径确认。");
         if (currentDataset.status !== "已锁定")
           throw new Error("当前 Dataset 尚未锁定，请先完成审核或锁定。");
         const version =
@@ -3459,6 +4329,12 @@ export function PrototypeDataProvider({ children }) {
           acceptedCount: (currentDataset.sampleCount || 0) + accepted.length,
           candidateCount: 0,
           labels,
+          sourceVideoIds: [...(currentDataset.sourceVideoIds || [])],
+          splits: {
+            train: [...(currentDataset.splits?.train || [])],
+            validation: [...(currentDataset.splits?.validation || [])],
+            test: [...(currentDataset.splits?.test || [])],
+          },
           basedOn: currentDataset.version,
           updatedAt: timestamp(),
         };
@@ -3487,6 +4363,31 @@ export function PrototypeDataProvider({ children }) {
       advanceDatasetLifecycle(id) {
         const existing = data.datasets.find((item) => item.id === id);
         if (!existing) throw new Error("Dataset 不存在或已失效。");
+        const sop = data.sops.find((item) => item.id === existing.sopId);
+        if (
+          !getMappingStatusForSop({
+            sop,
+            mappings: data.evaluationMappings || [],
+          }).confirmed
+        )
+          throw new Error("请先完成教师业务口径确认。");
+        if (existing.status === "采集中") {
+          const mapping = getMappingStatusForSop({
+            sop,
+            mappings: data.evaluationMappings || [],
+          }).mapping;
+          const requirements = deriveDataRequirements(mapping);
+          if (requirements.requiresTraining) {
+            const isolation = validateDatasetSplitIsolation(
+              existing.splits || {},
+            );
+            if (!isolation.passed) throw new Error(isolation.issues[0]);
+            if (!isolation.sourceVideoCount)
+              throw new Error(
+                "Training Required 能力必须先纳入已审核的 Source Video。",
+              );
+          }
+        }
         const transitions = { 采集中: "待审核", 待审核: "已锁定" };
         const status = transitions[existing.status];
         if (!status)
@@ -3512,18 +4413,29 @@ export function PrototypeDataProvider({ children }) {
       createModelCandidate(sopId, datasetId) {
         const sop = data.sops.find((item) => item.id === sopId);
         if (!sop || sop.status !== "已发布")
-          throw new Error("只有已发布的 SOP 才能创建模型候选版本。");
+          throw new Error("只有已发布的 SOP 才能创建 AI Package。");
+        const mapping = getMappingStatusForSop({
+          sop,
+          mappings: data.evaluationMappings || [],
+        }).mapping;
         const dataset = data.datasets.find(
           (item) =>
             item.sopId === sopId && (!datasetId || item.id === datasetId),
         );
-        if (!dataset) throw new Error("请先创建 Dataset。");
-        if (dataset.status !== "已锁定")
-          throw new Error("Dataset 锁定后才能创建模型候选版本。");
+        const readiness = getAiPackageCreationReadiness({
+          sop,
+          mapping,
+          dataset,
+        });
+        if (!readiness.passed) throw new Error(readiness.issues[0]);
+        const datasetVersion = readiness.requirements.requiresTraining
+          ? dataset.version
+          : "无需训练";
         const existingCandidate = data.models.find(
           (item) =>
             item.sopId === sopId &&
-            item.datasetVersion === dataset.version &&
+            item.mappingVersion === mapping.version &&
+            item.datasetVersion === datasetVersion &&
             !["已部署", "已回滚"].includes(item.status),
         );
         if (existingCandidate) return existingCandidate;
@@ -3538,16 +4450,31 @@ export function PrototypeDataProvider({ children }) {
         const created = {
           id: uid("model"),
           sopId,
-          name: `${sop.name}动作模型`,
+          kind: "ai_package",
+          name: `${sop.name} AI能力包`,
           version,
-          status: "待训练",
-          datasetVersion: dataset.version,
+          status: readiness.requirements.requiresTraining ? "待训练" : "待验证",
+          datasetVersion,
           sopVersion: sop.version,
+          mappingVersion: mapping.version,
+          requiresTraining: readiness.requirements.requiresTraining,
+          components: {
+            existingCapabilities: readiness.requirements.existingCapability.map(
+              (item) => item.name,
+            ),
+            configuredCapabilities:
+              readiness.requirements.configurationOnly.map((item) => item.name),
+            trainedCapabilities: readiness.requirements.trainingRequired.map(
+              (item) => item.name,
+            ),
+          },
           progress: 0,
           f1: "待评测",
           sequenceAccuracy: "待评测",
           otherRecall: "待评测",
-          evaluatedAt: "待训练",
+          evaluatedAt: readiness.requirements.requiresTraining
+            ? "待训练"
+            : "待验证",
           deploymentTarget: "尚未部署",
           updatedAt: when,
         };
@@ -3559,8 +4486,8 @@ export function PrototypeDataProvider({ children }) {
           };
           addAuditLog(
             next,
-            "创建模型候选版本",
-            `${sop.name} ${sop.version} / ${dataset.version} / ${version}`,
+            "创建 AI Package",
+            `${sop.name} ${sop.version} / ${mapping.version} / ${datasetVersion} / ${version}`,
           );
           return next;
         });
@@ -3814,28 +4741,9 @@ export function PrototypeDataProvider({ children }) {
           workstation.currentArrangement !== arrangement?.name
         )
           errors.push(`当前被“${workstation.currentArrangement}”占用`);
-        const sop = data.sops.find((item) => item.id === arrangement?.sopId);
-        const model = data.models.find(
-          (item) => item.sopId === sop?.id && item.status === "已部署",
-        );
-        const validation = (data.fieldValidations || []).find(
-          (item) =>
-            item.workstationId === workstationId &&
-            item.sopId === sop?.id &&
-            item.sopVersion === sop?.version,
-        );
-        const mappingStatus = getMappingStatusForSop({
-          sop,
-          mappings: data.evaluationMappings || [],
-        });
-        const gate = automaticEvaluationGate({
-          workstation,
-          sop,
-          model,
-          validation,
-          mapping: mappingStatus.mapping,
-          requireConfirmedMapping: true,
-        });
+        const gate = arrangement
+          ? this.getWorkstationEvaluationGate(workstationId, arrangement.sopId)
+          : { enabled: false, reasons: ["安排不存在"] };
         warnings.push(...gate.reasons);
         return {
           ok: errors.length === 0,
@@ -3876,24 +4784,43 @@ export function PrototypeDataProvider({ children }) {
         const dataset = data.datasets.find(
           (item) => item.sopId === sop.id && item.status === "已锁定",
         );
-        const model = data.models.find(
-          (item) => item.sopId === sop.id && item.status === "已部署",
+        const compatibilityDecision = (data.compatibilityDecisions || []).find(
+          (item) =>
+            item.toSopId === sop.id &&
+            item.toVersion === sop.version &&
+            ["compatible", "conditional"].includes(item.decision),
         );
+        const model =
+          data.models.find(
+            (item) => item.sopId === sop.id && item.status === "已部署",
+          ) ||
+          data.models.find(
+            (item) =>
+              item.sopId === compatibilityDecision?.fromSopId &&
+              item.sopVersion === compatibilityDecision?.fromVersion &&
+              item.status === "已部署",
+          );
         const snapshot = arrangement.snapshot || {
           lockedAt: timestamp(),
           sopVersion: sop.version,
           mappingVersion: mappingStatus.mapping?.version || "未确认",
           datasetVersion: dataset?.version || "未绑定",
           modelVersion: model?.version || "未启用",
+          aiPackageVersion: model?.version || "未启用",
+          compatibilityDecisionId: compatibilityDecision?.id || "",
         };
         const workstation = data.workstations.find(
           (item) => item.id === workstationId,
         );
+        const workstationProfile = (data.workstationProfiles || []).find(
+          (item) => item.id === workstation?.currentProfileId,
+        );
         const validation = (data.fieldValidations || []).find(
           (item) =>
             item.workstationId === workstationId &&
-            item.sopId === sop.id &&
-            item.sopVersion === sop.version,
+            ((item.sopId === sop.id && item.sopVersion === sop.version) ||
+              (item.sopId === compatibilityDecision?.fromSopId &&
+                item.sopVersion === compatibilityDecision?.fromVersion)),
         );
         const evaluationProfile = {
           automaticEvaluationEnabled: readiness.gate.enabled,
@@ -3904,6 +4831,11 @@ export function PrototypeDataProvider({ children }) {
             workstation?.implementation?.cameraConfigVersion || "未配置",
           validationId: validation?.id || "未验证",
           validationStatus: validation?.status || "未验证",
+          workstationProfileId: workstationProfile?.id || "",
+          workstationProfileVersion: workstationProfile?.version || "未配置",
+          mappingVersion: mappingStatus.mapping?.version || "未确认",
+          aiPackageVersion: model?.version || "未启用",
+          compatibilityDecisionId: compatibilityDecision?.id || "",
           fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
         };
         const assigned = new Set(
@@ -3921,12 +4853,28 @@ export function PrototypeDataProvider({ children }) {
           currentStepId: "",
           score: 0,
           evaluationProfile,
+          evaluationSnapshot: {
+            sopVersion: sop.version,
+            mappingVersion: evaluationProfile.mappingVersion,
+            aiPackageVersion: evaluationProfile.aiPackageVersion,
+            workstationProfileVersion:
+              evaluationProfile.workstationProfileVersion,
+            validationId: evaluationProfile.validationId,
+            compatibilityDecisionId: evaluationProfile.compatibilityDecisionId,
+            lockedAt: timestamp(),
+          },
           recording: defaultSessionRecording(
             { id: "new-session", status: "可入场" },
             arrangement,
             data.systemSettings.current,
           ),
           steps: createSessionStepsFromSop(sop.steps),
+          runtime: normalizeSessionRuntime({
+            id: "new-session",
+            studentId,
+            status: "可入场",
+            elapsed: "00:00:00",
+          }),
           events: [
             {
               time: timestamp().slice(-5),
@@ -4004,12 +4952,28 @@ export function PrototypeDataProvider({ children }) {
                     ? {
                         ...step,
                         state: "active",
+                        executionState: "active",
+                        observationWindow: {
+                          status: "open",
+                          openedAt: timestamp(),
+                          closedAt: "",
+                          closeReason: "",
+                        },
                         result: "进行中",
                         duration: "00:00",
                         observation: "已进入当前步骤，等待连续动作判定",
                       }
                     : step,
                 ),
+                runtime: {
+                  ...normalizeSessionRuntime(session),
+                  actorBinding: {
+                    ...normalizeSessionRuntime(session).actorBinding,
+                    status: "confirmed",
+                    trackId: `track-${session.id}`,
+                  },
+                  evaluationClock: createEvaluationClock({ status: "running" }),
+                },
                 events: [
                   {
                     time: timestamp().slice(-5),
@@ -4063,13 +5027,45 @@ export function PrototypeDataProvider({ children }) {
           ...arrangement,
           status: paused ? "已暂停" : "进行中",
           paused,
-          sessions: arrangement.sessions.map((session) =>
-            paused && session.status === "进行中"
-              ? { ...session, status: "已暂停" }
-              : !paused && session.status === "已暂停"
-                ? { ...session, status: "进行中" }
-                : session,
-          ),
+          sessions: arrangement.sessions.map((session) => {
+            if (paused && session.status === "进行中")
+              return {
+                ...session,
+                status: "已暂停",
+                runtime: {
+                  ...normalizeSessionRuntime(session),
+                  evaluationClock: setEvaluationClockPaused(
+                    normalizeSessionRuntime(session).evaluationClock,
+                    true,
+                    { reason: "教师暂停整场安排", at: timestamp() },
+                  ),
+                },
+                steps: session.steps.map((step) =>
+                  step.executionState === "active"
+                    ? { ...step, executionState: "paused" }
+                    : step,
+                ),
+              };
+            if (!paused && session.status === "已暂停")
+              return {
+                ...session,
+                status: "进行中",
+                runtime: {
+                  ...normalizeSessionRuntime(session),
+                  evaluationClock: setEvaluationClockPaused(
+                    normalizeSessionRuntime(session).evaluationClock,
+                    false,
+                    { reason: "教师恢复整场安排", at: timestamp() },
+                  ),
+                },
+                steps: session.steps.map((step) =>
+                  step.executionState === "paused"
+                    ? { ...step, executionState: "active" }
+                    : step,
+                ),
+              };
+            return session;
+          }),
           updatedAt: timestamp(),
         };
         setData((current) => {
@@ -4095,6 +5091,27 @@ export function PrototypeDataProvider({ children }) {
         if (!session || !["进行中", "已暂停"].includes(session.status))
           throw new Error("当前学生会话不能暂停或恢复。");
         const status = paused ? "已暂停" : "进行中";
+        const runtime = normalizeSessionRuntime(session);
+        const updatedSession = {
+          ...session,
+          status,
+          runtime: {
+            ...runtime,
+            evaluationClock: setEvaluationClockPaused(
+              runtime.evaluationClock,
+              paused,
+              {
+                reason: paused ? "教师暂停当前会话" : "教师恢复当前会话",
+                at: timestamp(),
+              },
+            ),
+          },
+          steps: session.steps.map((step) =>
+            step.executionState === (paused ? "active" : "paused")
+              ? { ...step, executionState: paused ? "paused" : "active" }
+              : step,
+          ),
+        };
         setData((current) => {
           const next = {
             ...current,
@@ -4104,7 +5121,7 @@ export function PrototypeDataProvider({ children }) {
                     ...item,
                     sessions: item.sessions.map((entry) =>
                       entry.workstationId === workstationId
-                        ? { ...entry, status }
+                        ? updatedSession
                         : entry,
                     ),
                     updatedAt: timestamp(),
@@ -4148,12 +5165,34 @@ export function PrototypeDataProvider({ children }) {
               ? {
                   ...step,
                   state: "active",
+                  executionState: "active",
+                  observationWindow: {
+                    status: "open",
+                    openedAt: startedAt,
+                    closedAt: "",
+                    closeReason: "",
+                  },
                   result: "进行中",
                   duration: "00:00",
                   observation: "已进入当前步骤，等待连续动作判定",
                 }
               : step,
           ),
+          runtime: {
+            ...normalizeSessionRuntime(session),
+            actorBinding: {
+              ...normalizeSessionRuntime(session).actorBinding,
+              status: "confirmed",
+              primaryActorId: session.studentId,
+              trackId: `track-${session.id}`,
+              history: [
+                ...(normalizeSessionRuntime(session).actorBinding.history ||
+                  []),
+                { status: "confirmed", at: startedAt, note: "学生确认并开始" },
+              ],
+            },
+            evaluationClock: createEvaluationClock({ status: "running" }),
+          },
           startedAt: session.startedAt || startedAt,
           lastActiveAt: startedAt,
           recording: {
@@ -4205,6 +5244,1027 @@ export function PrototypeDataProvider({ children }) {
           );
           return next;
         });
+        return updatedSession;
+      },
+      advanceRuntimeClock(arrangementId, workstationId, seconds = 30) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        if (!session) throw new Error("工位会话不存在。");
+        const runtime = normalizeSessionRuntime(session);
+        const evaluationClock = advanceEvaluationClock(
+          runtime.evaluationClock,
+          seconds,
+        );
+        const updatedSession = {
+          ...session,
+          elapsed: secondsToElapsed(evaluationClock.elapsedSeconds),
+          runtime: { ...runtime, evaluationClock },
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                }
+              : item,
+          ),
+        }));
+        return evaluationClock;
+      },
+      setActorBindingStatus(arrangementId, workstationId, status, note = "") {
+        if (
+          !["confirmed", "uncertain", "lost", "rebind_required"].includes(
+            status,
+          )
+        )
+          throw new Error("无效的人员绑定状态。");
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        if (!session) throw new Error("工位会话不存在。");
+        const when = timestamp();
+        const runtime = normalizeSessionRuntime(session);
+        const actorBinding = {
+          ...runtime.actorBinding,
+          status,
+          primaryActorId: session.studentId,
+          trackId: status === "confirmed" ? `track-${session.id}` : "",
+          history: [
+            ...(runtime.actorBinding.history || []),
+            { status, at: when, note },
+          ],
+        };
+        const mustPause = ["lost", "rebind_required"].includes(status);
+        const technicalIncidents =
+          status === "lost"
+            ? [
+                ...runtime.technicalIncidents,
+                {
+                  id: uid("incident"),
+                  type: "tracking_lost",
+                  stepId: session.currentStepId,
+                  note: note || "Primary Actor跟踪丢失",
+                  occurredAt: when,
+                  affectsContinuation: true,
+                },
+              ]
+            : runtime.technicalIncidents;
+        const actorSteps = session.steps.map((step) => {
+          if (step.id !== session.currentStepId) return step;
+          if (arrangement.type === "exam" && status === "lost")
+            return {
+              ...step,
+              executionState: "paused",
+              completionResult: "not_evaluable",
+              result: "人员跟踪丢失·待处置",
+              rawScore: null,
+              effectiveScore: null,
+              score: null,
+              reviewStatus: "待复核",
+              scoreDisposition: deriveTechnicalIncidentDisposition({
+                arrangementType: "exam",
+                incident: { type: "tracking_lost" },
+              }),
+            };
+          return {
+            ...step,
+            executionState: mustPause
+              ? "paused"
+              : status === "confirmed"
+                ? "active"
+                : step.executionState,
+          };
+        });
+        const updatedSession = {
+          ...session,
+          status: mustPause
+            ? "已暂停"
+            : status === "confirmed" && session.status === "已暂停"
+              ? "进行中"
+              : session.status,
+          runtime: {
+            ...runtime,
+            actorBinding,
+            technicalIncidents,
+            evaluationClock: mustPause
+              ? setEvaluationClockPaused(runtime.evaluationClock, true, {
+                  reason: "等待Primary Actor重新绑定",
+                  at: when,
+                })
+              : status === "confirmed"
+                ? setEvaluationClockPaused(runtime.evaluationClock, false, {
+                    reason: "Primary Actor已重新确认",
+                    at: when,
+                  })
+                : runtime.evaluationClock,
+          },
+          steps: actorSteps,
+          resultStatus:
+            arrangement.type === "exam" && status === "lost"
+              ? "待复核"
+              : session.resultStatus,
+          events: [
+            {
+              time: when.slice(-5),
+              level: mustPause
+                ? "danger"
+                : status === "confirmed"
+                  ? "green"
+                  : "warning",
+              title: `人员绑定：${status}`,
+              detail: note || "运行身份状态已更新",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            arrangements: current.arrangements.map((item) =>
+              item.id === arrangementId
+                ? {
+                    ...item,
+                    sessions: item.sessions.map((entry) =>
+                      entry.workstationId === workstationId
+                        ? updatedSession
+                        : entry,
+                    ),
+                    updatedAt: when,
+                  }
+                : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "更新人员绑定",
+            `${arrangement.name} / ${workstationId} / ${status}`,
+          );
+          return next;
+        });
+        return updatedSession;
+      },
+      simulateMachineEvent(arrangementId, workstationId, machineEventId) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const sop = data.sops.find((item) => item.id === arrangement?.sopId);
+        const mapping = (data.evaluationMappings || []).find(
+          (item) =>
+            item.status === "confirmed" &&
+            item.authoredFor?.sopId === sop?.id &&
+            item.authoredFor?.sopVersion === sop?.version,
+        );
+        const machineEvent = mapping?.machineEvents.find(
+          (item) => item.id === machineEventId,
+        );
+        const currentStep = session?.steps.find(
+          (item) => item.id === session.currentStepId,
+        );
+        if (!session || !currentStep || !machineEvent)
+          throw new Error("当前步骤没有可模拟的机器事实。");
+        if (session.status !== "进行中")
+          throw new Error("会话未运行，不能产生机器事实。");
+        const runtime = normalizeSessionRuntime(session);
+        if (runtime.actorBinding.status !== "confirmed")
+          throw new Error("Primary Actor未确认，机器事实不能用于自动评价。");
+        if (currentStep.observationWindow?.status !== "open")
+          throw new Error("当前Observation Window未开启。");
+        const items = mapping.evaluationItems.filter(
+          (item) =>
+            item.stepId === currentStep.id &&
+            item.machineEventIds.includes(machineEventId),
+        );
+        if (!items.length)
+          throw new Error("该机器事实未映射到当前步骤的Evaluation Item。");
+        const when = timestamp();
+        const machineRecord = {
+          id: uid("machine-event"),
+          machineEventId,
+          stepId: currentStep.id,
+          actorId: session.studentId,
+          occurredAt: when,
+          fact: machineEvent.factDefinition,
+        };
+        const nextResults = [...runtime.evaluationItemResults];
+        for (const item of items) {
+          const existing = nextResults.find(
+            (entry) =>
+              entry.evaluationItemId === item.id &&
+              entry.stepId === currentStep.id,
+          );
+          if (!existing)
+            nextResults.push({
+              id: uid("evaluation-result"),
+              evaluationItemId: item.id,
+              stepId: currentStep.id,
+              result: "confirmed",
+              machineEventIds: [machineEventId],
+              observedAt: when,
+            });
+          else
+            existing.machineEventIds = [
+              ...new Set([...(existing.machineEventIds || []), machineEventId]),
+            ];
+        }
+        const completionItems = mapping.evaluationItems.filter(
+          (item) =>
+            item.stepId === currentStep.id && item.roles.includes("completion"),
+        );
+        const completed =
+          completionItems.length > 0 &&
+          completionItems.every((item) =>
+            nextResults.some(
+              (result) =>
+                result.evaluationItemId === item.id &&
+                result.result === "confirmed",
+            ),
+          );
+        let steps = session.steps;
+        let currentStepId = session.currentStepId;
+        if (completed) {
+          const currentIndex = session.steps.findIndex(
+            (item) => item.id === currentStep.id,
+          );
+          const nextStep = session.steps[currentIndex + 1];
+          steps = session.steps.map((step) =>
+            step.id === currentStep.id
+              ? {
+                  ...step,
+                  state: "pass",
+                  executionState: "closed",
+                  completionResult: "complete",
+                  result: "通过",
+                  rawScore: Number(step.maxScore || 0),
+                  effectiveScore: Number(step.maxScore || 0),
+                  score: Number(step.maxScore || 0),
+                  observationWindow: {
+                    ...step.observationWindow,
+                    status: "closed",
+                    closedAt: when,
+                    closeReason: "完成条件已满足",
+                  },
+                }
+              : step.id === nextStep?.id
+                ? {
+                    ...step,
+                    state: "active",
+                    executionState: "active",
+                    result: "进行中",
+                    observationWindow: {
+                      status: "open",
+                      openedAt: when,
+                      closedAt: "",
+                      closeReason: "",
+                    },
+                  }
+                : step,
+          );
+          currentStepId = nextStep?.id || "";
+        }
+        const scoreEngine = calculateScoreEngine({ steps });
+        const updatedSession = {
+          ...session,
+          steps,
+          currentStepId,
+          score: scoreEngine.effectiveScore,
+          scoreEngine,
+          runtime: {
+            ...runtime,
+            machineEvents: [...runtime.machineEvents, machineRecord],
+            evaluationItemResults: nextResults,
+            correctionContext:
+              completed && runtime.correctionContext.status === "active"
+                ? {
+                    ...runtime.correctionContext,
+                    status: "closed",
+                    completedAt: when,
+                    closeReason: "Step关闭",
+                  }
+                : runtime.correctionContext,
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: "blue",
+              title: machineEvent.name,
+              detail: `机器事实已映射到 ${items.map((item) => item.name).join("、")}`,
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return { completed, updatedSession };
+      },
+      setCorrectionContext(arrangementId, workstationId, action, ruleId = "") {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const sop = data.sops.find((item) => item.id === arrangement?.sopId);
+        const step = session?.steps.find(
+          (item) => item.id === session.currentStepId,
+        );
+        if (!session || !step) throw new Error("当前没有可处理的步骤。");
+        const runtime = normalizeSessionRuntime(session);
+        const when = timestamp();
+        let steps = session.steps;
+        if (action === "open") {
+          const rule = (sop?.scoreRules || []).find(
+            (item) => item.id === ruleId && item.stepId === step.id,
+          );
+          if (!rule) throw new Error("请选择当前步骤的教师评分规则。");
+          if (runtime.correctionContext.status === "active")
+            throw new Error("已有纠正上下文正在进行，不能重复扣分。");
+          runtime.correctionContext = {
+            status: "active",
+            relatedRuleId: rule.id,
+            relatedStepId: step.id,
+            startedAt: when,
+            completedAt: "",
+          };
+        } else {
+          if (runtime.correctionContext.status !== "active")
+            throw new Error("当前没有进行中的纠正上下文。");
+          runtime.correctionContext = {
+            ...runtime.correctionContext,
+            status: "completed",
+            completedAt: when,
+          };
+          const rule = (sop?.scoreRules || []).find(
+            (item) => item.id === runtime.correctionContext.relatedRuleId,
+          );
+          const deduction =
+            rule?.correctionTreatment === "cancel_after_correction"
+              ? 0
+              : rule?.correctionTreatment === "reduce_after_correction"
+                ? Number(rule.correctedDeductionValue || 0)
+                : Number(rule?.deductionValue || 0);
+          steps = session.steps.map((item) =>
+            item.id === step.id
+              ? {
+                  ...item,
+                  effectiveScore: Math.max(
+                    0,
+                    Number(item.maxScore || 0) - deduction,
+                  ),
+                  score: Math.max(0, Number(item.maxScore || 0) - deduction),
+                  result: deduction ? "纠正后扣分" : "纠正完成",
+                  scoreDisposition:
+                    rule?.correctionTreatment === "teacher_review"
+                      ? {
+                          status: "pending",
+                          reason: "纠正结果需要教师确认",
+                          resolvedBy: "",
+                          resolvedAt: "",
+                        }
+                      : item.scoreDisposition,
+                }
+              : item,
+          );
+        }
+        const scoreEngine = calculateScoreEngine({ steps });
+        const updatedSession = {
+          ...session,
+          steps,
+          score: scoreEngine.effectiveScore,
+          scoreEngine,
+          runtime,
+          events: [
+            {
+              time: when.slice(-5),
+              level: "warning",
+              title: action === "open" ? "进入纠正上下文" : "纠正动作完成",
+              detail: "纠正动作与普通重复操作分开记录",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return updatedSession;
+      },
+      createAssistanceWarning(arrangementId, workstationId, note = "") {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        if (!session) throw new Error("工位会话不存在。");
+        const when = timestamp();
+        const runtime = normalizeSessionRuntime(session);
+        const warning = {
+          id: uid("assistance"),
+          stepId: session.currentStepId,
+          type: "sustained_secondary_actor_interaction",
+          note: note || "第二人员持续进入关键ROI或操作工具",
+          occurredAt: when,
+          scoreImpact: "none",
+        };
+        const updatedSession = {
+          ...session,
+          runtime: {
+            ...runtime,
+            assistanceWarnings: [...runtime.assistanceWarnings, warning],
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: "warning",
+              title: "协助行为提醒",
+              detail: "第二人员持续介入，仅提醒教师，不参与学生自动计分",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return warning;
+      },
+      reportTechnicalIncident(arrangementId, workstationId, input) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const step = session?.steps.find(
+          (item) => item.id === session.currentStepId,
+        );
+        if (!session || !step) throw new Error("当前没有可记录异常的步骤。");
+        const when = timestamp();
+        const runtime = normalizeSessionRuntime(session);
+        const incident = {
+          id: uid("incident"),
+          type: input.type,
+          stepId: step.id,
+          note: input.note || "",
+          affectsContinuation: Boolean(input.affectsContinuation),
+          occurredAt: when,
+          status: "active",
+          resolvedAt: "",
+          resolvedBy: "",
+        };
+        const disposition = deriveTechnicalIncidentDisposition({
+          arrangementType: arrangement.type,
+          incident,
+        });
+        const currentIndex = session.steps.findIndex(
+          (item) => item.id === step.id,
+        );
+        const nextStep = session.steps[currentIndex + 1];
+        const canAdvance = !input.affectsContinuation && Boolean(nextStep);
+        const steps = session.steps.map((item) =>
+          item.id === step.id
+            ? arrangement.type === "practice"
+              ? {
+                  ...item,
+                  state: "pass",
+                  executionState: input.affectsContinuation
+                    ? "paused"
+                    : "closed",
+                  completionResult: "uncertain",
+                  result: "技术异常·默认通过",
+                  rawScore: Number(item.maxScore || 0),
+                  effectiveScore: Number(item.maxScore || 0),
+                  score: Number(item.maxScore || 0),
+                  scoreDisposition: disposition,
+                  observationWindow: input.affectsContinuation
+                    ? item.observationWindow
+                    : {
+                        ...item.observationWindow,
+                        status: "closed",
+                        closedAt: when,
+                        closeReason: "技术异常，按练习策略默认通过",
+                      },
+                }
+              : {
+                  ...item,
+                  executionState: input.affectsContinuation
+                    ? "paused"
+                    : item.executionState,
+                  completionResult: "not_evaluable",
+                  result: "技术异常待处置",
+                  rawScore: null,
+                  effectiveScore: null,
+                  score: null,
+                  reviewStatus: "待复核",
+                  scoreDisposition: disposition,
+                }
+            : canAdvance && item.id === nextStep.id
+              ? {
+                  ...item,
+                  state: "active",
+                  executionState: "active",
+                  result: "进行中",
+                  observationWindow: {
+                    status: "open",
+                    openedAt: when,
+                    closedAt: "",
+                    closeReason: "",
+                  },
+                }
+              : item,
+        );
+        const scoreEngine = calculateScoreEngine({ steps });
+        const updatedSession = {
+          ...session,
+          status: input.affectsContinuation ? "已暂停" : session.status,
+          currentStepId: canAdvance ? nextStep.id : session.currentStepId,
+          steps,
+          score:
+            scoreEngine.scoreStatus === "pending"
+              ? session.score
+              : scoreEngine.effectiveScore,
+          scoreEngine,
+          resultStatus:
+            arrangement.type === "exam" ? "待复核" : session.resultStatus,
+          runtime: {
+            ...runtime,
+            technicalIncidents: [...runtime.technicalIncidents, incident],
+            correctionContext:
+              runtime.correctionContext.status === "active"
+                ? {
+                    ...runtime.correctionContext,
+                    status: "closed",
+                    completedAt: when,
+                    closeReason: "Technical Incident",
+                  }
+                : runtime.correctionContext,
+            evaluationClock: input.affectsContinuation
+              ? setEvaluationClockPaused(runtime.evaluationClock, true, {
+                  reason: "技术异常阻断继续操作",
+                  at: when,
+                })
+              : runtime.evaluationClock,
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: "danger",
+              title: "技术异常",
+              detail: input.note || input.type,
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return updatedSession;
+      },
+      resolveTechnicalIncident(arrangementId, workstationId, incidentId) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const runtime = normalizeSessionRuntime(session || {});
+        const incident = runtime.technicalIncidents.find(
+          (item) => item.id === incidentId && item.status !== "resolved",
+        );
+        if (!session || !incident) throw new Error("待恢复技术异常不存在。");
+        const when = timestamp();
+        const incidentIndex = session.steps.findIndex(
+          (item) => item.id === incident.stepId,
+        );
+        const nextStep = session.steps[incidentIndex + 1];
+        const steps = session.steps.map((step) =>
+          step.id === incident.stepId
+            ? {
+                ...step,
+                executionState: "closed",
+                observationWindow: {
+                  ...step.observationWindow,
+                  status: "closed",
+                  closedAt: when,
+                  closeReason: "Technical Incident已恢复",
+                },
+              }
+            : step.id === nextStep?.id
+              ? {
+                  ...step,
+                  state: "active",
+                  executionState: "active",
+                  result: "进行中",
+                  observationWindow: {
+                    status: "open",
+                    openedAt: when,
+                    closedAt: "",
+                    closeReason: "",
+                  },
+                }
+              : step,
+        );
+        const updatedSession = {
+          ...session,
+          status: "进行中",
+          currentStepId: nextStep?.id || "",
+          steps,
+          runtime: {
+            ...runtime,
+            technicalIncidents: runtime.technicalIncidents.map((item) =>
+              item.id === incidentId
+                ? {
+                    ...item,
+                    status: "resolved",
+                    resolvedAt: when,
+                    resolvedBy: "王老师",
+                  }
+                : item,
+            ),
+            evaluationClock: setEvaluationClockPaused(
+              runtime.evaluationClock,
+              false,
+              { reason: "Technical Incident已恢复", at: when },
+            ),
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: "green",
+              title: "技术异常已恢复",
+              detail: "运行继续；考试中的待处置成绩仍需教师闭环",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return updatedSession;
+      },
+      createSafetyCandidate(arrangementId, workstationId, safetyRuleId = "") {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const step = session?.steps.find(
+          (item) => item.id === session.currentStepId,
+        );
+        if (!session || !step)
+          throw new Error("当前没有可记录安全候选的步骤。");
+        const when = timestamp();
+        const runtime = normalizeSessionRuntime(session);
+        const candidate = {
+          id: uid("safety"),
+          safetyRuleId,
+          stepId: step.id,
+          status: "pending",
+          occurredAt: when,
+          resolvedAt: "",
+          resolvedBy: "",
+        };
+        const updatedSession = {
+          ...session,
+          status: "已暂停",
+          steps: session.steps.map((item) =>
+            item.id === step.id
+              ? { ...item, executionState: "safety_blocked" }
+              : item,
+          ),
+          runtime: {
+            ...runtime,
+            safetyCandidates: [...runtime.safetyCandidates, candidate],
+            correctionContext:
+              runtime.correctionContext.status === "active"
+                ? {
+                    ...runtime.correctionContext,
+                    status: "closed",
+                    completedAt: when,
+                    closeReason: "Safety Candidate",
+                  }
+                : runtime.correctionContext,
+            evaluationClock: setEvaluationClockPaused(
+              runtime.evaluationClock,
+              true,
+              { reason: "安全候选等待教师确认", at: when },
+            ),
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: "danger",
+              title: "安全候选待确认",
+              detail: "已暂停Session与Evaluation Clock，尚未形成处罚结论",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return candidate;
+      },
+      resolveSafetyCandidate(
+        arrangementId,
+        workstationId,
+        candidateId,
+        resolution,
+      ) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const sop = data.sops.find((item) => item.id === arrangement?.sopId);
+        const runtime = normalizeSessionRuntime(session || {});
+        const candidate = runtime.safetyCandidates.find(
+          (item) => item.id === candidateId && item.status === "pending",
+        );
+        if (!session || !candidate) throw new Error("待处理安全候选不存在。");
+        const when = timestamp();
+        const confirmed = resolution === "confirmed";
+        const safetyRule = (sop?.safetyRules || []).find(
+          (item) => item.id === candidate.safetyRuleId,
+        );
+        const steps = session.steps.map((step) => {
+          if (step.id !== candidate.stepId) return step;
+          if (!confirmed) return { ...step, executionState: "active" };
+          const score =
+            safetyRule?.scoreTreatment === "zero_step"
+              ? 0
+              : safetyRule?.scoreTreatment === "fixed_deduction"
+                ? Math.max(
+                    0,
+                    Number(step.maxScore || 0) -
+                      Number(safetyRule.deductionValue || 0),
+                  )
+                : step.effectiveScore;
+          return {
+            ...step,
+            executionState:
+              safetyRule?.sessionTreatment === "terminate_after_confirmation"
+                ? "terminated"
+                : "active",
+            result: "安全违规已确认",
+            effectiveScore: score,
+            score,
+            scoreDisposition:
+              safetyRule?.scoreTreatment === "teacher_review"
+                ? {
+                    status: "pending",
+                    reason: "安全规则要求教师处置成绩",
+                    resolvedBy: "",
+                    resolvedAt: "",
+                  }
+                : step.scoreDisposition,
+          };
+        });
+        const terminated =
+          confirmed &&
+          safetyRule?.sessionTreatment === "terminate_after_confirmation";
+        const updatedSession = {
+          ...session,
+          status: terminated ? "待复位" : "进行中",
+          currentStepId: terminated ? "" : session.currentStepId,
+          steps,
+          runtime: {
+            ...runtime,
+            safetyCandidates: runtime.safetyCandidates.map((item) =>
+              item.id === candidateId
+                ? {
+                    ...item,
+                    status: confirmed ? "confirmed" : "false_positive",
+                    resolvedAt: when,
+                    resolvedBy: "王老师",
+                  }
+                : item,
+            ),
+            evaluationClock: terminated
+              ? runtime.evaluationClock
+              : setEvaluationClockPaused(runtime.evaluationClock, false, {
+                  reason: confirmed ? "安全违规已处置" : "安全候选误报排除",
+                  at: when,
+                }),
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: confirmed ? "danger" : "green",
+              title: confirmed ? "安全违规已确认" : "安全候选误报已排除",
+              detail: confirmed
+                ? "按教师预先定义的Safety Rule处理"
+                : "恢复操作且暂停时间不计入Evaluation Clock",
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.workstationId === workstationId
+                      ? updatedSession
+                      : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
+        return updatedSession;
+      },
+      resolveScoreDisposition(arrangementId, sessionId, stepId, input) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.id === sessionId,
+        );
+        const step = session?.steps.find((item) => item.id === stepId);
+        if (!session || !step) throw new Error("待处置步骤不存在。");
+        const when = timestamp();
+        const status = input.status;
+        if (
+          ![
+            "teacher_resolved",
+            "retest_required",
+            "retest_resolved",
+            "policy_protected",
+          ].includes(status)
+        )
+          throw new Error("请选择有效的成绩处置结果。");
+        if (!String(input.reason || "").trim())
+          throw new Error("处置说明不能为空。");
+        const needsScore = [
+          "teacher_resolved",
+          "retest_resolved",
+          "policy_protected",
+        ].includes(status);
+        const score = Number(input.score);
+        if (
+          needsScore &&
+          (!Number.isFinite(score) ||
+            score < 0 ||
+            score > Number(step.maxScore || 0))
+        )
+          throw new Error(`步骤得分必须在0–${step.maxScore}分之间。`);
+        const steps = session.steps.map((item) =>
+          item.id === stepId
+            ? {
+                ...item,
+                effectiveScore: needsScore ? score : item.effectiveScore,
+                score: needsScore ? score : item.score,
+                result:
+                  status === "retest_required" ? "需要补测" : "教师已处置",
+                reviewStatus:
+                  status === "retest_required" ? "待复核" : "复核通过",
+                scoreDisposition: {
+                  status,
+                  reason: input.reason.trim(),
+                  resolvedBy: "王老师",
+                  resolvedAt: when,
+                },
+              }
+            : item,
+        );
+        const scoreEngine = calculateScoreEngine({ steps });
+        const pending =
+          scoreEngine.scoreStatus === "pending" ||
+          steps.some(requiresMandatoryReview);
+        const updatedSession = {
+          ...session,
+          steps,
+          score: scoreEngine.effectiveScore,
+          scoreEngine,
+          resultStatus: pending ? "待复核" : "正式成绩",
+          reviewHistory: [
+            ...(session.reviewHistory || []),
+            {
+              time: when,
+              operator: "王老师",
+              action: `成绩处置：${status}`,
+              stepId,
+              before: step.effectiveScore,
+              after: needsScore ? score : step.effectiveScore,
+              reason: input.reason.trim(),
+              evidence: step.evidenceSources || [],
+            },
+          ],
+        };
+        setData((current) => ({
+          ...current,
+          arrangements: current.arrangements.map((item) =>
+            item.id === arrangementId
+              ? {
+                  ...item,
+                  sessions: item.sessions.map((entry) =>
+                    entry.id === sessionId ? updatedSession : entry,
+                  ),
+                  updatedAt: when,
+                }
+              : item,
+          ),
+        }));
         return updatedSession;
       },
       requestTeacherHelp(arrangementId, workstationId, reason = "") {
@@ -4286,12 +6346,56 @@ export function PrototypeDataProvider({ children }) {
         const unfinishedCount = session.steps.filter(
           (step) => step.state === "pending" || step.state === "active",
         ).length;
+        const finishedSteps = session.steps.map((step) =>
+          ["waiting", "active", "paused"].includes(step.executionState)
+            ? {
+                ...step,
+                executionState: "closed",
+                completionResult:
+                  step.completionResult === "complete"
+                    ? "complete"
+                    : step.incompletePolicy === "teacher_review"
+                      ? "uncertain"
+                      : "not_completed",
+                observationWindow: {
+                  ...step.observationWindow,
+                  status: "closed",
+                  closedAt: endedAt,
+                  closeReason: "Session结束",
+                },
+              }
+            : step,
+        );
+        const runtime = normalizeSessionRuntime(session);
+        const scoreEngine = calculateScoreEngine({ steps: finishedSteps });
         const updatedSession = {
           ...session,
           status: "已完成",
           currentStepId: "",
           endedAt,
-          score: scoreOf(session.steps),
+          steps: finishedSteps,
+          score:
+            scoreEngine.scoreStatus === "pending"
+              ? session.score
+              : scoreEngine.effectiveScore,
+          scoreEngine,
+          runtime: {
+            ...runtime,
+            correctionContext:
+              runtime.correctionContext.status === "active"
+                ? {
+                    ...runtime.correctionContext,
+                    status: "closed",
+                    completedAt: endedAt,
+                    closeReason: "Session结束",
+                  }
+                : runtime.correctionContext,
+            evaluationClock: {
+              ...runtime.evaluationClock,
+              status: "stopped",
+              pauseReason: "",
+            },
+          },
           scoreVersion: Number(session.scoreVersion || 0) + 1,
           resultStatus: arrangement.type === "exam" ? "待发布" : "正式成绩",
           reviewHistory: session.reviewHistory || [],
@@ -4350,7 +6454,18 @@ export function PrototypeDataProvider({ children }) {
                 ...session,
                 resultStatus: ["待开始", "可入场"].includes(session.status)
                   ? "未参加"
-                  : session.steps.some((step) => step.reviewStatus === "待复核")
+                  : session.steps.some(
+                        (step) =>
+                          ["待复核", "待补充证据"].includes(
+                            step.reviewStatus,
+                          ) ||
+                          ["pending", "retest_required"].includes(
+                            step.scoreDisposition?.status || "normal",
+                          ),
+                      ) ||
+                      (session.runtime?.safetyCandidates || []).some(
+                        (candidate) => candidate.status === "pending",
+                      )
                     ? "待复核"
                     : "正式成绩",
                 score: scoreOf(session.steps),
@@ -4545,16 +6660,34 @@ export function PrototypeDataProvider({ children }) {
                 reviewedAt: timestamp(),
                 reviewer: "王老师",
                 evidenceArchived: true,
+                scoreDisposition:
+                  item.scoreDisposition?.status === "pending" &&
+                  input.conclusion !== "insufficient"
+                    ? {
+                        status: "teacher_resolved",
+                        reason: note,
+                        resolvedBy: "王老师",
+                        resolvedAt: timestamp(),
+                      }
+                    : item.scoreDisposition,
               }
             : item,
         );
-        const pending = updatedSteps.some((item) =>
-          ["待复核", "待补充证据"].includes(item.reviewStatus),
-        );
+        const pending =
+          updatedSteps.some((item) =>
+            ["待复核", "待补充证据"].includes(item.reviewStatus),
+          ) ||
+          updatedSteps.some((item) =>
+            ["pending", "retest_required"].includes(
+              item.scoreDisposition?.status || "normal",
+            ),
+          );
+        const scoreEngine = calculateScoreEngine({ steps: updatedSteps });
         const updatedSession = {
           ...session,
           steps: updatedSteps,
-          score: scoreOf(updatedSteps),
+          score: scoreEngine.effectiveScore,
+          scoreEngine,
           scoreVersion: Number(session.scoreVersion || 0) + 1,
           resultStatus: pending ? "待复核" : "正式成绩",
           reviewHistory: [
@@ -4601,8 +6734,11 @@ export function PrototypeDataProvider({ children }) {
                       aiPrediction: `${stepId} · 待重新推理`,
                       reason: `教师复核：${note}`,
                       label: stepId,
-                      status: "待审核",
-                      note: "由正式评价复核回流，等待进入下一版 Dataset",
+                      status: "待加工",
+                      sourceType: "difficult_sample_candidate",
+                      sourceSessionId: session.id,
+                      sourceStepId: stepId,
+                      note: "由正式评价复核形成困难样本候选，需先进入数据生产链",
                       createdAt: timestamp(),
                     },
                     ...current.learningSamples,
@@ -4718,7 +6854,12 @@ export function PrototypeDataProvider({ children }) {
           sessions: arrangement.sessions.map((session) =>
             session.resultStatus === "未参加"
               ? session
-              : { ...session, resultStatus: "已发布" },
+              : {
+                  ...session,
+                  resultStatus: "已发布",
+                  scoreFrozen: true,
+                  frozenAt: timestamp(),
+                },
           ),
           updatedAt: timestamp(),
         };

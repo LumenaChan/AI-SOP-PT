@@ -64,16 +64,24 @@ import {
 } from "./prototypeData.jsx";
 import {
   automaticEvaluationGate,
+  ACTOR_BINDING_STATUSES,
   arrangementDestination,
   canCloseIssue,
   checkCompletionScoringCoverage,
+  COMPATIBILITY_DECISIONS,
+  COMPATIBILITY_LAYER_STATUSES,
   CORRECTION_TREATMENTS,
   createSafetyRuleDraft,
   createScoreRuleDraft,
   createSopStepDraft,
   DIAGNOSTIC_ROOT_CAUSES,
+  deriveDataRequirements,
   EVALUATION_ITEM_ROLES,
+  COMPLETION_RESULTS,
   FIELD_VALIDATION_SCENARIOS,
+  getAiPackageCreationReadiness,
+  getExamPublishGate,
+  getStepAiCapabilityDisplay,
   INCOMPLETE_POLICIES,
   JUDGEMENT_MODES,
   MACHINE_EVENT_CAPABILITY_MODES,
@@ -81,9 +89,13 @@ import {
   nextBusinessRuleId,
   recordedDeductionOf,
   SAFETY_SCORE_TREATMENTS,
+  SAFETY_CANDIDATE_STATUSES,
   SAFETY_SESSION_TREATMENTS,
   SCORE_DEDUCTION_MODES,
   SCORE_RULE_TYPES,
+  SCORE_DISPOSITIONS,
+  STEP_EXECUTION_STATES,
+  TECHNICAL_INCIDENT_TYPES,
   sessionPrimaryIssue,
   validateEvaluationMapping,
   validateSopDefinition,
@@ -2044,6 +2056,357 @@ function WorkstationPage() {
   );
 }
 
+const RuntimeIncidentForm = forwardRef(function RuntimeIncidentForm(_, ref) {
+  const [type, setType] = useState("camera_offline");
+  const [affectsContinuation, setAffectsContinuation] = useState(true);
+  const [note, setNote] = useState("");
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ type, affectsContinuation, note }),
+  }));
+  return (
+    <div className="form-stack">
+      <label className="field">
+        技术异常类型
+        <select value={type} onChange={(event) => setType(event.target.value)}>
+          {Object.entries(TECHNICAL_INCIDENT_TYPES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={affectsContinuation}
+          onChange={(event) => setAffectsContinuation(event.target.checked)}
+        />
+        异常阻碍学生继续操作，需要暂停Session与Evaluation Clock
+      </label>
+      <label className="field">
+        现场说明
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="例如：主视角摄像头离线，当前步骤无法继续取证"
+        />
+      </label>
+      <p className="hint">
+        技术异常本身不会自动形成学生负向结论；练习默认通过，考试进入成绩处置。
+      </p>
+    </div>
+  );
+});
+
+function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
+  const incidentRef = useRef(null);
+  const runtime = session.runtime || {};
+  const actor = runtime.actorBinding || {};
+  const clock = runtime.evaluationClock || {};
+  const currentStep = session.steps.find(
+    (step) => step.id === session.currentStepId,
+  );
+  const mapping = (store.data.evaluationMappings || []).find(
+    (item) =>
+      item.status === "confirmed" &&
+      item.authoredFor?.sopId === sop?.id &&
+      item.authoredFor?.sopVersion === sop?.version,
+  );
+  const evaluationItems = (mapping?.evaluationItems || []).filter(
+    (item) => item.stepId === currentStep?.id,
+  );
+  const eventIds = new Set(
+    evaluationItems.flatMap((item) => item.machineEventIds || []),
+  );
+  const machineEvents = (mapping?.machineEvents || []).filter((item) =>
+    eventIds.has(item.id),
+  );
+  const scoreRules = (sop?.scoreRules || []).filter(
+    (item) => item.stepId === currentStep?.id,
+  );
+  const safetyRules = (sop?.safetyRules || []).filter(
+    (item) => item.stepId === currentStep?.id && item.enabled !== false,
+  );
+  const pendingSafety = (runtime.safetyCandidates || []).find(
+    (item) => item.status === "pending",
+  );
+  const pendingIncident = (runtime.technicalIncidents || []).find(
+    (item) => item.status !== "resolved" && item.affectsContinuation,
+  );
+  const correctionActive = runtime.correctionContext?.status === "active";
+  const confirmAction = (title, content, confirmText, onConfirm) =>
+    setModal({ title, content: <p>{content}</p>, confirmText, onConfirm });
+  const setActor = (status) =>
+    confirmAction(
+      "更新Primary Actor绑定",
+      status === "confirmed"
+        ? "确认当前学生重新成为唯一Primary Actor，并恢复因重新绑定导致的暂停。"
+        : "该状态会阻止新的负向自动评价；丢失时同时暂停会话并生成技术异常。",
+      "确认更新",
+      () => {
+        store.setActorBindingStatus(
+          arrangement.id,
+          session.workstationId,
+          status,
+          "Runtime Simulator操作",
+        );
+        return `人员绑定已更新为${ACTOR_BINDING_STATUSES[status]}`;
+      },
+    );
+  const openIncident = () =>
+    setModal({
+      title: "记录Technical Incident",
+      content: <RuntimeIncidentForm ref={incidentRef} />,
+      confirmText: "记录异常",
+      onConfirm: () => {
+        store.reportTechnicalIncident(
+          arrangement.id,
+          session.workstationId,
+          incidentRef.current.getValue(),
+        );
+        return "技术异常已记录，并按练习/考试策略处理";
+      },
+    });
+  return (
+    <section className="panel runtime-simulator">
+      <PanelTitle
+        title="Runtime Simulator（原型）"
+        action={<span>第三批运行闭环验证</span>}
+      />
+      <p className="hint">
+        用于演示真实业务状态变化。Machine Event只形成机器事实，必须经Evaluation
+        Item映射后才影响步骤；安全候选与技术异常均不直接自动处罚。
+      </p>
+      <div className="runtime-status-grid">
+        <article>
+          <small>Primary Actor</small>
+          <strong>
+            {ACTOR_BINDING_STATUSES[actor.status] || actor.status || "未建立"}
+          </strong>
+          <span>{actor.trackId || "无有效Track"}</span>
+        </article>
+        <article>
+          <small>Evaluation Clock</small>
+          <strong>{session.elapsed}</strong>
+          <span>
+            墙钟 {Math.floor(Number(clock.wallSeconds || 0) / 60)}分 · 暂停{" "}
+            {Number(clock.pausedSeconds || 0)}秒
+          </span>
+        </article>
+        <article>
+          <small>Step Execution</small>
+          <strong>
+            {STEP_EXECUTION_STATES[currentStep?.executionState] || "无活动步骤"}
+          </strong>
+          <span>窗口 {currentStep?.observationWindow?.status || "—"}</span>
+        </article>
+        <article>
+          <small>Completion Result</small>
+          <strong>
+            {COMPLETION_RESULTS[currentStep?.completionResult] || "尚未形成"}
+          </strong>
+          <span>独立于当前得分</span>
+        </article>
+      </div>
+      <div className="runtime-action-groups">
+        <div>
+          <b>计时与人员</b>
+          <Button
+            onClick={() => {
+              store.advanceRuntimeClock(
+                arrangement.id,
+                session.workstationId,
+                30,
+              );
+            }}
+          >
+            推进30秒
+          </Button>
+          <Button onClick={() => setActor("uncertain")}>身份不确定</Button>
+          <Button onClick={() => setActor("lost")}>跟踪丢失</Button>
+          <Button onClick={() => setActor("confirmed")}>重新绑定</Button>
+          <Button
+            onClick={() => {
+              store.createAssistanceWarning(
+                arrangement.id,
+                session.workstationId,
+              );
+            }}
+          >
+            第二人员持续介入
+          </Button>
+        </div>
+        <div>
+          <b>机器事实</b>
+          {machineEvents.length ? (
+            machineEvents.map((event) => (
+              <Button
+                key={event.id}
+                disabled={session.status !== "进行中"}
+                onClick={() =>
+                  confirmAction(
+                    "模拟Machine Event",
+                    `${event.name}：${event.factDefinition}`,
+                    "确认产生事实",
+                    () => {
+                      const result = store.simulateMachineEvent(
+                        arrangement.id,
+                        session.workstationId,
+                        event.id,
+                      );
+                      return result.completed
+                        ? "完成条件已满足，步骤已关闭"
+                        : "机器事实已记录并映射";
+                    },
+                  )
+                }
+              >
+                {event.name}
+              </Button>
+            ))
+          ) : (
+            <span className="hint">当前步骤无已确认Mapping事件</span>
+          )}
+        </div>
+        <div>
+          <b>纠正与异常</b>
+          <Button
+            disabled={!scoreRules.length || correctionActive}
+            onClick={() =>
+              confirmAction(
+                "模拟规则违规",
+                "开启Correction Context；后续纠正动作不会被当作普通重复操作再次处罚。",
+                "进入纠正",
+                () => {
+                  store.setCorrectionContext(
+                    arrangement.id,
+                    session.workstationId,
+                    "open",
+                    scoreRules[0]?.id,
+                  );
+                  return "已进入纠正上下文";
+                },
+              )
+            }
+          >
+            触发可纠正规则
+          </Button>
+          <Button
+            disabled={!correctionActive}
+            onClick={() =>
+              confirmAction(
+                "完成纠正",
+                "按教师预先定义的纠正后处理计算，不在Runtime中自创扣分。",
+                "确认纠正",
+                () => {
+                  store.setCorrectionContext(
+                    arrangement.id,
+                    session.workstationId,
+                    "complete",
+                  );
+                  return "纠正结果已按Score Rule处理";
+                },
+              )
+            }
+          >
+            完成纠正
+          </Button>
+          <Button onClick={openIncident}>记录技术异常</Button>
+          <Button
+            disabled={!pendingIncident}
+            onClick={() => {
+              store.resolveTechnicalIncident(
+                arrangement.id,
+                session.workstationId,
+                pendingIncident?.id,
+              );
+            }}
+          >
+            恢复技术异常
+          </Button>
+        </div>
+        <div>
+          <b>安全候选</b>
+          {pendingSafety ? (
+            <>
+              <Button
+                onClick={() => {
+                  store.resolveSafetyCandidate(
+                    arrangement.id,
+                    session.workstationId,
+                    pendingSafety.id,
+                    "false_positive",
+                  );
+                }}
+              >
+                误报并恢复
+              </Button>
+              <Button
+                danger
+                onClick={() =>
+                  confirmAction(
+                    "确认安全违规",
+                    "确认后仅按教师已定义的Safety Rule处理成绩与Session，不因暂停本身处罚。",
+                    "确认违规",
+                    () => {
+                      store.resolveSafetyCandidate(
+                        arrangement.id,
+                        session.workstationId,
+                        pendingSafety.id,
+                        "confirmed",
+                      );
+                      return "安全违规已按教师规则处理";
+                    },
+                  )
+                }
+              >
+                确认违规
+              </Button>
+            </>
+          ) : (
+            <Button
+              danger
+              disabled={!currentStep || !safetyRules.length}
+              onClick={() => {
+                store.createSafetyCandidate(
+                  arrangement.id,
+                  session.workstationId,
+                  safetyRules[0]?.id,
+                );
+              }}
+            >
+              触发安全候选
+            </Button>
+          )}
+          <span className="hint">
+            {pendingSafety
+              ? SAFETY_CANDIDATE_STATUSES[pendingSafety.status]
+              : "当前无待确认候选"}
+          </span>
+        </div>
+      </div>
+      <div className="runtime-ledger">
+        <span>
+          Machine Events <b>{runtime.machineEvents?.length || 0}</b>
+        </span>
+        <span>
+          Evaluation Item Results{" "}
+          <b>{runtime.evaluationItemResults?.length || 0}</b>
+        </span>
+        <span>
+          Technical Incidents <b>{runtime.technicalIncidents?.length || 0}</b>
+        </span>
+        <span>
+          Safety Candidates <b>{runtime.safetyCandidates?.length || 0}</b>
+        </span>
+        <span>
+          Assistance Warnings <b>{runtime.assistanceWarnings?.length || 0}</b>
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function StudentMonitorPage({ exam = false, setModal }) {
   const nav = useNavigate();
   const { id, stationId } = useParams();
@@ -2435,6 +2798,13 @@ function StudentMonitorPage({ exam = false, setModal }) {
           </section>
         </aside>
       </div>
+      <RuntimeSimulatorPanel
+        arrangement={arrangement}
+        session={session}
+        sop={sop}
+        store={store}
+        setModal={setModal}
+      />
     </>
   );
 }
@@ -2660,6 +3030,272 @@ const UploadSampleForm = forwardRef(function UploadSampleForm({ sop }, ref) {
         <textarea
           value={form.note}
           onChange={(event) => update("note", event.target.value)}
+        />
+      </label>
+    </div>
+  );
+});
+
+const SourceVideoForm = forwardRef(function SourceVideoForm(_, ref) {
+  const [form, setForm] = useState({
+    fileName: "",
+    duration: "03:00",
+    source: "标准示教采集",
+    note: "",
+  });
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="form-stack">
+      <p className="hint">
+        Source Video 是数据生产的源文件。系统按源视频分配 Train / Validation /
+        Test，避免同一视频拆帧后跨集合泄漏。
+      </p>
+      <label className="field">
+        选择源视频
+        <input
+          type="file"
+          accept="video/*"
+          onChange={(event) =>
+            update("fileName", event.target.files?.[0]?.name || form.fileName)
+          }
+        />
+      </label>
+      <div className="form-row">
+        <label className="field">
+          文件名
+          <input
+            placeholder="例如 station-a02-round2.mp4"
+            value={form.fileName}
+            onChange={(event) => update("fileName", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          时长（mm:ss）
+          <input
+            value={form.duration}
+            onChange={(event) => update("duration", event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        数据来源
+        <select
+          value={form.source}
+          onChange={(event) => update("source", event.target.value)}
+        >
+          <option>标准示教采集</option>
+          <option>专项补采</option>
+          <option>历史录像</option>
+        </select>
+      </label>
+      <label className="field">
+        采集说明
+        <textarea
+          value={form.note}
+          onChange={(event) => update("note", event.target.value)}
+        />
+      </label>
+    </div>
+  );
+});
+
+const TimeRangeAnnotationForm = forwardRef(function TimeRangeAnnotationForm(
+  { sourceVideo, mapping },
+  ref,
+) {
+  const firstItem = mapping?.evaluationItems?.[0];
+  const [form, setForm] = useState({
+    sourceVideoId: sourceVideo.id,
+    startTime: "00:00",
+    endTime: "00:10",
+    evaluationItemId: firstItem?.id || "",
+    machineEventId: firstItem?.machineEventIds?.[0] || "",
+    annotationType: "action",
+  });
+  const selectedItem = mapping?.evaluationItems?.find(
+    (item) => item.id === form.evaluationItemId,
+  );
+  const events = (mapping?.machineEvents || []).filter((event) =>
+    selectedItem?.machineEventIds?.includes(event.id),
+  );
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const selectItem = (value) => {
+    const item = mapping.evaluationItems.find((entry) => entry.id === value);
+    setForm((current) => ({
+      ...current,
+      evaluationItemId: value,
+      machineEventId: item?.machineEventIds?.[0] || "",
+    }));
+  };
+  return (
+    <div className="form-stack">
+      <div className="definition-list">
+        <span>
+          <small>Source Video</small>
+          <strong>{sourceVideo.fileName}</strong>
+        </span>
+        <span>
+          <small>视频时长</small>
+          <strong>{sourceVideo.duration}</strong>
+        </span>
+      </div>
+      <div className="form-row">
+        <label className="field">
+          开始时间（mm:ss）
+          <input
+            value={form.startTime}
+            onChange={(event) => update("startTime", event.target.value)}
+          />
+        </label>
+        <label className="field">
+          结束时间（mm:ss）
+          <input
+            value={form.endTime}
+            onChange={(event) => update("endTime", event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        Evaluation Item
+        <select
+          value={form.evaluationItemId}
+          onChange={(event) => selectItem(event.target.value)}
+        >
+          {(mapping?.evaluationItems || []).map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.stepId} · {item.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="form-row">
+        <label className="field">
+          Machine Event
+          <select
+            value={form.machineEventId}
+            onChange={(event) => update("machineEventId", event.target.value)}
+          >
+            {events.map((event) => (
+              <option key={event.id} value={event.id}>
+                {event.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          标注方式
+          <select
+            value={form.annotationType}
+            onChange={(event) => update("annotationType", event.target.value)}
+          >
+            <option value="action">动作区间标注</option>
+            <option value="detect">目标框选标注</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+});
+
+const AnnotationForm = forwardRef(function AnnotationForm({ range }, ref) {
+  const [form, setForm] = useState({
+    timeRangeId: range.id,
+    type: range.annotationType || "action",
+    label: range.label || "",
+    bboxSummary: "",
+    note: "",
+  });
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="form-stack">
+      <div className="definition-list">
+        <span>
+          <small>动作片段</small>
+          <strong>
+            {range.startTime}–{range.endTime}
+          </strong>
+        </span>
+        <span>
+          <small>Machine Event</small>
+          <strong>{range.label}</strong>
+        </span>
+      </div>
+      <label className="field">
+        标注标签
+        <input
+          value={form.label}
+          onChange={(event) => update("label", event.target.value)}
+        />
+      </label>
+      {form.type === "detect" && (
+        <label className="field">
+          框选摘要
+          <input
+            placeholder="例如：抽取 8 帧，完成双手区域框选"
+            value={form.bboxSummary}
+            onChange={(event) => update("bboxSummary", event.target.value)}
+          />
+        </label>
+      )}
+      <label className="field">
+        标注说明
+        <textarea
+          value={form.note}
+          onChange={(event) => update("note", event.target.value)}
+        />
+      </label>
+    </div>
+  );
+});
+
+const AnnotationReviewForm = forwardRef(function AnnotationReviewForm(
+  { annotation },
+  ref,
+) {
+  const [form, setForm] = useState({ decision: "pass", note: "" });
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  return (
+    <div className="form-stack">
+      <div className="definition-list">
+        <span>
+          <small>标注标签</small>
+          <strong>{annotation.label}</strong>
+        </span>
+        <span>
+          <small>标注类型</small>
+          <strong>
+            {annotation.type === "detect" ? "目标框选" : "动作区间"}
+          </strong>
+        </span>
+      </div>
+      <label className="field">
+        审核结论
+        <select
+          value={form.decision}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              decision: event.target.value,
+            }))
+          }
+        >
+          <option value="pass">通过，可纳入 Dataset</option>
+          <option value="reject">退回修改</option>
+        </select>
+      </label>
+      <label className="field">
+        审核说明
+        <textarea
+          value={form.note}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, note: event.target.value }))
+          }
         />
       </label>
     </div>
@@ -2951,6 +3587,9 @@ function ReadonlyBusinessRules({ sop, step }) {
             <p>
               {CORRECTION_TREATMENTS[rule.correctionTreatment] ||
                 rule.correctionTreatment}
+              {rule.correctionTreatment === "reduce_after_correction"
+                ? `，纠正后扣 ${rule.correctedDeductionValue} 分`
+                : ""}
               {rule.description ? `；${rule.description}` : ""}
             </p>
           </article>
@@ -3335,9 +3974,6 @@ function SopDetail({ setModal }) {
                   确认AI业务口径
                 </Button>
               )}
-              <Button onClick={() => nav(`/admin/ai-evaluation/${sop.id}`)}>
-                查看AI适配详情
-              </Button>
             </div>
           </div>
           <div className="definition-list ai-capability-summary">
@@ -3385,22 +4021,11 @@ function SopDetail({ setModal }) {
                 step.expectedJudgementMode || step.judgementMode;
               const configured =
                 JUDGEMENT_MODES[expectedMode]?.label || "未配置";
-              const actual =
-                expectedMode !== "visual_auto"
-                  ? configured
-                  : aiStatus.status === "可用"
-                    ? "自动评价"
-                    : aiStatus.status === "部分可用"
-                      ? "部分工位自动评价"
-                      : "AI辅助评价";
-              const reason =
-                expectedMode !== "visual_auto"
-                  ? "按教师设定执行"
-                  : mappingStatus.status !== "已确认"
-                    ? "业务判断口径尚未确认，不能启用自动评价"
-                    : aiStatus.status === "可用"
-                      ? "当前能力与现场条件均已就绪"
-                      : "自动能力未完全就绪，运行时安全降级";
+              const { actual, reason } = getStepAiCapabilityDisplay({
+                expectedMode,
+                aiStatus: aiStatus.status,
+                mappingConfirmed: mappingStatus.status === "已确认",
+              });
               return [`${step.id} · ${step.name}`, configured, actual, reason];
             })}
           />
@@ -4355,6 +4980,33 @@ function SopEditor({ setModal }) {
                               )}
                             </select>
                           </label>
+                          {rule.correctionTreatment ===
+                            "reduce_after_correction" && (
+                            <label className="field">
+                              纠正后扣分值
+                              <input
+                                type="number"
+                                min="1"
+                                max={
+                                  rule.deductionMode === "zero_step"
+                                    ? Math.max(1, Number(active.score) - 1)
+                                    : Math.max(
+                                        1,
+                                        Number(rule.deductionValue) - 1,
+                                      )
+                                }
+                                value={rule.correctedDeductionValue || ""}
+                                onChange={(event) =>
+                                  updateScoreRule(
+                                    rule.id,
+                                    "correctedDeductionValue",
+                                    Number(event.target.value),
+                                  )
+                                }
+                                placeholder="必须小于原扣分值"
+                              />
+                            </label>
+                          )}
                         </div>
                         <label className="field">
                           规则说明（选填）
@@ -4757,6 +5409,22 @@ function Learning({ setModal }) {
       },
     });
   };
+  const promote = (sample) => {
+    setModal({
+      title: "转入正式数据生产链",
+      content: (
+        <p>
+          将 <strong>{sample.fileName}</strong> 作为 Difficult Sample Feedback
+          转为 Source Video。后续仍需标注与审核，不会直接纳入 Dataset。
+        </p>
+      ),
+      confirmText: "转入数据生产",
+      onConfirm: () => {
+        store.promoteDifficultSample(sample.id);
+        return `${sample.fileName} 已进入 Source Video 待加工队列`;
+      },
+    });
+  };
   const batchAccept = () => {
     const pending = store.data.learningSamples.filter(
       (item) => selectedIds.includes(item.id) && item.status === "待审核",
@@ -4791,15 +5459,16 @@ function Learning({ setModal }) {
       <PageHeader
         back
         title="动作训练样本复核"
-        subtitle="教师只纠正标签和是否纳入下一版 Dataset；SOP 步骤不可由样本反向生成"
+        subtitle="困难样本先进入正式数据生产链；教师只审核已完成标注的候选，SOP 步骤不可由样本反向生成"
       />
       <section className="sop-boundary-note">
         <DatabaseOutlined />
         <div>
           <strong>纳入边界</strong>
           <p>
-            待审核 → 教师选择既有 Step ID / Other → 进入下一版 Dataset
-            候选。当前锁定 Dataset、已发布 SOP 和已部署模型均不被原地改写。
+            待加工 → Source Video → 标注与审核 → Dataset
+            候选。运行反馈不会直接进入训练集；当前锁定 Dataset、已发布 SOP
+            和已部署模型均不被原地改写。
           </p>
         </div>
         <Status tone="warning">
@@ -4814,7 +5483,14 @@ function Learning({ setModal }) {
       <section className="panel panel--table">
         <Toolbar
           placeholder="搜索文件、来源或标签"
-          filters={["全部状态", "待审核", "已纳入", "已拒绝"]}
+          filters={[
+            "全部状态",
+            "待加工",
+            "已转数据生产",
+            "待审核",
+            "已纳入",
+            "已拒绝",
+          ]}
           value={query}
           filterValue={statusFilter}
           onChange={setQuery}
@@ -4895,9 +5571,13 @@ function Learning({ setModal }) {
                   <td>
                     <button
                       className="table-action"
-                      onClick={() => review(sample)}
+                      onClick={() =>
+                        sample.status === "待加工"
+                          ? promote(sample)
+                          : review(sample)
+                      }
                     >
-                      查看
+                      {sample.status === "待加工" ? "转入数据生产" : "查看"}
                     </button>
                   </td>
                 </tr>
@@ -5473,6 +6153,37 @@ function PrepPage({ exam = false, setModal }) {
           {arrangement.snapshot ? "版本已锁定" : "尚未锁定"}
         </Status>
       </div>
+      {arrangement.snapshot && (
+        <section className="panel evaluation-snapshot-panel">
+          <PanelTitle title="Evaluation Snapshot" action={<LockOutlined />} />
+          <div className="version-binding">
+            <span>
+              <small>SOP</small>
+              <b>{arrangement.snapshot.sopVersion}</b>
+            </span>
+            <span>
+              <small>Mapping</small>
+              <b>{arrangement.snapshot.mappingVersion || "未确认"}</b>
+            </span>
+            <span>
+              <small>AI Package</small>
+              <b>
+                {arrangement.snapshot.aiPackageVersion ||
+                  arrangement.snapshot.modelVersion ||
+                  "未启用"}
+              </b>
+            </span>
+            <span>
+              <small>Compatibility Decision</small>
+              <b>{arrangement.snapshot.compatibilityDecisionId || "未使用"}</b>
+            </span>
+          </div>
+          <p className="hint">
+            每个已开放工位还会独立锁定 Workstation Profile
+            与现场验证记录；后续版本升级不追溯改写本次运行证据。
+          </p>
+        </section>
+      )}
       <section className="panel">
         <PanelTitle
           title="工位准备状态"
@@ -5699,6 +6410,67 @@ const ScoreAdjustForm = forwardRef(function ScoreAdjustForm({ step }, ref) {
   );
 });
 
+const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
+  { step },
+  ref,
+) {
+  const [status, setStatus] = useState("teacher_resolved");
+  const [score, setScore] = useState(
+    step.effectiveScore ?? step.rawScore ?? step.maxScore ?? 0,
+  );
+  const [reason, setReason] = useState("");
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ status, score, reason }),
+  }));
+  const needsScore = status !== "retest_required";
+  return (
+    <div className="form-stack">
+      <div className="alert-block">
+        <strong>
+          当前处置：
+          {SCORE_DISPOSITIONS[step.scoreDisposition?.status] || "待教师处置"}
+        </strong>
+        <p>
+          {step.scoreDisposition?.reason ||
+            "需要教师基于证据决定后续处理，系统不会自行补分或扣分。"}
+        </p>
+      </div>
+      <label className="field">
+        处置结果
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
+        >
+          <option value="teacher_resolved">教师直接处置</option>
+          <option value="retest_required">需要补测</option>
+          <option value="retest_resolved">补测完成</option>
+          <option value="policy_protected">政策保护</option>
+        </select>
+      </label>
+      {needsScore && (
+        <label className="field">
+          最终步骤分
+          <input
+            type="number"
+            min="0"
+            max={step.maxScore}
+            value={score}
+            onChange={(event) => setScore(event.target.value)}
+          />
+        </label>
+      )}
+      <label className="field">
+        处置依据 <b className="required">必填</b>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="说明证据、补测或政策依据"
+        />
+      </label>
+    </div>
+  );
+});
+
 function getArrangementResultStats(arrangement) {
   const sessions = arrangement.sessions || [];
   const resultSessions = sessions.filter(
@@ -5710,11 +6482,10 @@ function getArrangementResultStats(arrangement) {
         resultSessions.length
       ).toFixed(1)
     : "--";
-  const blockers = sessions.filter(
-    (session) =>
-      !["正式成绩", "已发布", "未参加"].includes(session.resultStatus),
-  );
-  return { sessions, average, blockers };
+  const publishGate = getExamPublishGate(sessions);
+  const blockerIds = new Set(publishGate.details.map((item) => item.sessionId));
+  const blockers = sessions.filter((session) => blockerIds.has(session.id));
+  return { sessions, average, blockers, publishGate };
 }
 
 function ArrangementResultMetrics({ arrangement, exam = false }) {
@@ -5848,7 +6619,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         backTo={`/${adminReadOnly ? "admin" : "teacher"}/${base}`}
       />
     );
-  const { sessions, blockers } = getArrangementResultStats(arrangement);
+  const { sessions, blockers, publishGate } =
+    getArrangementResultStats(arrangement);
   const rows = sessions.map((session) => {
     const student = store.data.students.find(
       (item) => item.id === session.studentId,
@@ -6033,6 +6805,47 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         </p>
       )}
       <ArrangementResultMetrics arrangement={arrangement} exam={exam} />
+      {exam && (
+        <section
+          className={`panel publish-gate ${publishGate.passed ? "is-ready" : "is-blocked"}`}
+        >
+          <PanelTitle
+            title="Exam Publish Gate"
+            action={
+              <Status tone={publishGate.passed ? "success" : "warning"}>
+                {publishGate.passed
+                  ? "可发布"
+                  : `${publishGate.details.length} 人被阻断`}
+              </Status>
+            }
+          />
+          <p className="hint">
+            统一检查待复核、Score
+            Disposition、安全候选、空成绩与成绩冻结状态；任何未闭环项都不能发布。
+          </p>
+          {!publishGate.passed && (
+            <div className="publish-gate-list">
+              {publishGate.details.map((detail) => {
+                const blockedSession = sessions.find(
+                  (item) => item.id === detail.sessionId,
+                );
+                const blockedStudent = store.data.students.find(
+                  (item) => item.id === blockedSession?.studentId,
+                );
+                return (
+                  <span key={detail.sessionId}>
+                    <b>{blockedStudent?.name || detail.sessionId}</b> 复核{" "}
+                    {detail.pendingReviewCount} · 处置{" "}
+                    {detail.pendingDispositionCount} · 安全{" "}
+                    {detail.pendingSafetyCount} · 空成绩{" "}
+                    {detail.emptyScoreCount}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
       <WorkstationReleasePanel
         arrangement={arrangement}
         store={store}
@@ -6138,13 +6951,16 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
   const sop = store.data.sops.find((item) => item.id === arrangement?.sopId);
   const initialStep = Math.max(
     0,
-    session?.steps.findIndex((item) =>
-      ["待复核", "待补充证据"].includes(item.reviewStatus),
+    session?.steps.findIndex(
+      (item) =>
+        ["待复核", "待补充证据"].includes(item.reviewStatus) ||
+        ["pending", "retest_required"].includes(item.scoreDisposition?.status),
     ) ?? 0,
   );
   const [sel, setSel] = useState(initialStep);
   const reviewRef = useRef(null);
   const adjustRef = useRef(null);
+  const dispositionRef = useRef(null);
   if (!arrangement || !session || !student)
     return (
       <MissingState
@@ -6163,9 +6979,17 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
     0,
   );
   const recordedDeduction = recordedDeductionOf(steps);
-  const pendingCount = steps.filter((item) =>
-    ["待复核", "待补充证据"].includes(item.reviewStatus),
-  ).length;
+  const pendingCount =
+    steps.filter(
+      (item) =>
+        ["待复核", "待补充证据"].includes(item.reviewStatus) ||
+        ["pending", "retest_required"].includes(
+          item.scoreDisposition?.status || "normal",
+        ),
+    ).length +
+    (session.runtime?.safetyCandidates || []).filter(
+      (item) => item.status === "pending",
+    ).length;
   const completedCount = steps.filter(
     (item) => item.state !== "pending",
   ).length;
@@ -6235,6 +7059,21 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           adjustRef.current.getValue(),
         );
         return `${activeStep.id} 有效得分已更新`;
+      },
+    });
+  const resolveDisposition = () =>
+    setModal({
+      title: `处理 ${activeStep.id} Score Disposition`,
+      content: <ScoreDispositionForm ref={dispositionRef} step={activeStep} />,
+      confirmText: "保存处置",
+      onConfirm: () => {
+        store.resolveScoreDisposition(
+          arrangement.id,
+          session.id,
+          activeStep.id,
+          dispositionRef.current.getValue(),
+        );
+        return `${activeStep.id} 成绩处置已保存`;
       },
     });
   return (
@@ -6333,9 +7172,13 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               <span>
                 <strong>{step.name}</strong>
                 <small>
-                  {step.reviewStatus === "无需复核"
-                    ? step.result
-                    : step.reviewStatus}
+                  {["pending", "retest_required"].includes(
+                    step.scoreDisposition?.status,
+                  )
+                    ? SCORE_DISPOSITIONS[step.scoreDisposition.status]
+                    : step.reviewStatus === "无需复核"
+                      ? step.result
+                      : step.reviewStatus}
                 </small>
               </span>
               <em>
@@ -6409,6 +7252,20 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
             </figure>
           </div>
           <div className="evidence-explain">
+            <span>
+              <small>运行状态</small>
+              <strong>
+                {STEP_EXECUTION_STATES[activeStep.executionState] || "—"} ·{" "}
+                {COMPLETION_RESULTS[activeStep.completionResult] || "—"}
+              </strong>
+            </span>
+            <span>
+              <small>Score Disposition</small>
+              <strong>
+                {SCORE_DISPOSITIONS[activeStep.scoreDisposition?.status] ||
+                  "正常计分"}
+              </strong>
+            </span>
             <span>
               <small>标准要求</small>
               <strong>
@@ -6487,6 +7344,17 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
             </Button>
             <Button disabled={!canReview} type="primary" onClick={adjust}>
               调整有效得分
+            </Button>
+            <Button
+              disabled={
+                !canReview ||
+                !["pending", "retest_required"].includes(
+                  activeStep.scoreDisposition?.status,
+                )
+              }
+              onClick={resolveDisposition}
+            >
+              处理成绩处置
             </Button>
           </div>
           {(session.reviewHistory || []).length > 0 && (
@@ -6786,6 +7654,29 @@ function AiDatasetSamples({ sop, setModal }) {
       },
     });
   };
+  const promote = (sample) => {
+    setModal({
+      title: "转入正式数据生产链",
+      content: (
+        <div className="form-stack">
+          <p>
+            将困难样本候选 <strong>{sample.fileName}</strong> 转为 Source
+            Video，之后仍需时间片段标注、Annotation 审核和 Dataset
+            纳入，不会直接污染训练集。
+          </p>
+          <p className="hint">
+            来源 Session：{sample.sourceSessionId || "未记录"} · Step：
+            {sample.sourceStepId || sample.label || "未记录"}
+          </p>
+        </div>
+      ),
+      confirmText: "转入数据生产",
+      onConfirm: () => {
+        store.promoteDifficultSample(sample.id);
+        return `${sample.fileName} 已转入 Source Video 待加工队列`;
+      },
+    });
+  };
   return (
     <section className="panel panel--table ai-sample-panel">
       <PanelTitle
@@ -6798,7 +7689,14 @@ function AiDatasetSamples({ sop, setModal }) {
       />
       <Toolbar
         placeholder="搜索视频文件、来源或标签"
-        filters={["全部状态", "待审核", "已纳入", "已拒绝"]}
+        filters={[
+          "全部状态",
+          "待加工",
+          "已转数据生产",
+          "待审核",
+          "已纳入",
+          "已拒绝",
+        ]}
         value={query}
         filterValue={status}
         onChange={setQuery}
@@ -6819,8 +7717,14 @@ function AiDatasetSamples({ sop, setModal }) {
           sample.reviewedAt || sample.createdAt || "—",
         ])}
         statusColumns={[4]}
-        onView={(_, index) => review(samples[index])}
-        viewLabel="复核"
+        onView={(_, index) =>
+          samples[index].status === "待加工"
+            ? promote(samples[index])
+            : review(samples[index])
+        }
+        viewLabel={(_, index) =>
+          samples[index].status === "待加工" ? "转入数据生产" : "复核"
+        }
         emptyText="当前 SOP 暂无样本"
       />
     </section>
@@ -7054,7 +7958,7 @@ function AiEvaluationList() {
     <>
       <PageHeader
         title="AI评价管理"
-        subtitle="以已发布 SOP 为入口，管理 Dataset、动作模型和工位现场验证"
+        subtitle="以已发布 SOP 为入口，管理数据生产、Dataset、AI Package 和工位现场验证"
       />
       <section className="sop-boundary-note">
         <SafetyCertificateOutlined />
@@ -7065,7 +7969,9 @@ function AiEvaluationList() {
             MVP：视频不能可靠判断时保持默认通过，由教师按需抽查和扣分。
           </p>
         </div>
-        <Status tone="success">SOP / Dataset / Model 独立版本</Status>
+        <Status tone="success">
+          SOP / Mapping / Dataset / AI Package 独立版本
+        </Status>
       </section>
       <div className="metric-grid ai-evaluation-metrics">
         <Metric
@@ -7087,14 +7993,14 @@ function AiEvaluationList() {
           value={count((item) =>
             ["配置中", "部分可用"].includes(item.status.status),
           )}
-          hint="数据、模型或验证未完成"
+          hint="数据、AI Package 或验证未完成"
           icon={<ReloadOutlined />}
           tone="amber"
         />
         <Metric
           label="未配置"
           value={count((item) => item.status.status === "未配置")}
-          hint="尚未创建首个 Dataset"
+          hint="尚未形成可用 AI Package"
           icon={<DatabaseOutlined />}
           tone="purple"
         />
@@ -7119,7 +8025,7 @@ function AiEvaluationList() {
             "Mapping",
             "自动目标",
             "Dataset",
-            "当前模型",
+            "AI Package",
             "工位验证",
             "AI能力",
             "更新时间",
@@ -7207,6 +8113,16 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
   );
   const validation = validateEvaluationMapping({ sop, mapping: draft });
   const coverage = checkCompletionScoringCoverage({ sop, mapping: draft });
+  const aiEligibleSteps = sop.steps.filter(
+    (step) =>
+      (step.expectedJudgementMode || step.judgementMode) !==
+      "default_pass_manual_deduction",
+  );
+  const teacherOnlySteps = sop.steps.filter(
+    (step) =>
+      (step.expectedJudgementMode || step.judgementMode) ===
+      "default_pass_manual_deduction",
+  );
   const setField = (key, value) => {
     setDraft((current) => ({ ...current, [key]: value }));
     setDirty(true);
@@ -7240,7 +8156,8 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
     ]);
   };
   const addItem = () => {
-    const step = sop.steps[0];
+    const step = aiEligibleSteps[0];
+    if (!step) return;
     const id = `EI-${draft.version}-${String(draft.evaluationItems.length + 1).padStart(3, "0")}`;
     setField("evaluationItems", [
       ...draft.evaluationItems,
@@ -7349,7 +8266,11 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
           title="Evaluation Item"
           action={
             editable && (
-              <Button icon={<PlusOutlined />} onClick={addItem}>
+              <Button
+                icon={<PlusOutlined />}
+                onClick={addItem}
+                disabled={!aiEligibleSteps.length}
+              >
                 新增评价项
               </Button>
             )
@@ -7359,11 +8280,22 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
           评价项承接教师业务标准；Machine Event
           只能提供事实，不能直接扣分或形成学生结果。
         </p>
+        {!!teacherOnlySteps.length && (
+          <div className="evaluation-notice">
+            <SafetyCertificateOutlined />
+            <span>
+              教师评价 / 不进入AI自动映射：
+              {teacherOnlySteps
+                .map((step) => `${step.id} · ${step.name}`)
+                .join("；")}
+            </span>
+          </div>
+        )}
         <div className="mapping-card-list">
           {draft.evaluationItems.map((item) => {
             const step =
-              sop.steps.find((entry) => entry.id === item.stepId) ||
-              sop.steps[0];
+              aiEligibleSteps.find((entry) => entry.id === item.stepId) ||
+              aiEligibleSteps[0];
             const stepScoreRules = (sop.scoreRules || []).filter(
               (rule) => rule.stepId === item.stepId,
             );
@@ -7412,7 +8344,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                         });
                       }}
                     >
-                      {sop.steps.map((entry) => (
+                      {aiEligibleSteps.map((entry) => (
                         <option key={entry.id} value={entry.id}>
                           {entry.id} · {entry.name}
                         </option>
@@ -7436,7 +8368,11 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                     ([role, label]) => (
                       <label key={role}>
                         <input
-                          disabled={!editable}
+                          disabled={
+                            !editable ||
+                            (role === "scoring" &&
+                              item.scoreTreatment?.type === "score_rule")
+                          }
                           type="checkbox"
                           checked={item.roles.includes(role)}
                           onChange={() =>
@@ -7541,14 +8477,20 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                         <select
                           disabled={!editable}
                           value={item.scoreTreatment?.type || ""}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const type = event.target.value;
                             updateItem(item.id, {
                               scoreTreatment: {
                                 ...item.scoreTreatment,
-                                type: event.target.value,
+                                type,
                               },
-                            })
-                          }
+                              roles:
+                                type === "score_rule" &&
+                                !item.roles.includes("scoring")
+                                  ? [...item.roles, "scoring"]
+                                  : item.roles,
+                            });
+                          }}
                         >
                           <option value="">请选择</option>
                           <option value="score_rule">引用教师评分规则</option>
@@ -7566,6 +8508,9 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                                 sourceScoreRuleIds: event.target.value
                                   ? [event.target.value]
                                   : [],
+                                roles: item.roles.includes("scoring")
+                                  ? item.roles
+                                  : [...item.roles, "scoring"],
                               })
                             }
                           >
@@ -7743,16 +8688,362 @@ const MODEL_LIFECYCLE_ACTIONS = {
   验证未通过: "重新训练",
 };
 
+function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
+  const sourceVideoRef = useRef(null);
+  const timeRangeRef = useRef(null);
+  const annotationRef = useRef(null);
+  const reviewRef = useRef(null);
+  const requirements = deriveDataRequirements(mapping);
+  const mappingConfirmed = mapping?.status === "confirmed";
+  const sourceVideos = (store.data.sourceVideos || []).filter(
+    (item) => item.sopId === sop.id,
+  );
+  const ranges = (store.data.timeRangeAnnotations || []).filter(
+    (item) => item.sopId === sop.id,
+  );
+  const annotations = (store.data.annotations || []).filter(
+    (item) => item.sopId === sop.id,
+  );
+  const approvedPending = annotations.filter(
+    (item) => item.status === "已通过" && !item.datasetId,
+  );
+  const eventName = (id) =>
+    mapping?.machineEvents?.find((item) => item.id === id)?.name || id;
+  const itemName = (id) =>
+    mapping?.evaluationItems?.find((item) => item.id === id)?.name || id;
+
+  const uploadSourceVideo = () => {
+    setModal({
+      title: "上传 Source Video",
+      size: "large",
+      content: <SourceVideoForm ref={sourceVideoRef} />,
+      confirmText: "保存源视频",
+      onConfirm: () => {
+        const created = store.addSourceVideo({
+          ...sourceVideoRef.current.getValue(),
+          sopId: sop.id,
+        });
+        return `${created.fileName} 已进入数据加工队列`;
+      },
+    });
+  };
+  const createTimeRange = (sourceVideo) => {
+    setModal({
+      title: "设置动作时间片段",
+      size: "large",
+      content: (
+        <TimeRangeAnnotationForm
+          ref={timeRangeRef}
+          sourceVideo={sourceVideo}
+          mapping={mapping}
+        />
+      ),
+      confirmText: "保存动作片段",
+      onConfirm: () => {
+        const created = store.addTimeRangeAnnotation(
+          timeRangeRef.current.getValue(),
+        );
+        return `${created.startTime}–${created.endTime} 已进入标注队列`;
+      },
+    });
+  };
+  const annotate = (range) => {
+    setModal({
+      title: "完成 Annotation",
+      size: "large",
+      content: <AnnotationForm ref={annotationRef} range={range} />,
+      confirmText: "提交审核",
+      onConfirm: () => {
+        store.saveAnnotation(annotationRef.current.getValue());
+        return `${range.label} 标注已提交审核`;
+      },
+    });
+  };
+  const review = (annotation) => {
+    setModal({
+      title: "审核 Annotation",
+      content: <AnnotationReviewForm ref={reviewRef} annotation={annotation} />,
+      confirmText: "提交审核结论",
+      onConfirm: () => {
+        const value = reviewRef.current.getValue();
+        const updated = store.reviewAnnotation(
+          annotation.id,
+          value.decision === "pass",
+          value.note,
+        );
+        return `Annotation 已${updated.status}`;
+      },
+    });
+  };
+  const includeInDataset = () => {
+    const updated = store.addApprovedAnnotationsToDataset(sop.id, dataset.id);
+    return `${approvedPending.length} 条 Annotation 已纳入 ${updated.version}`;
+  };
+
+  return (
+    <div className="ai-data-pipeline">
+      <section className="panel">
+        <PanelTitle title="数据需求与实现路径" />
+        <p className="hint">
+          数据需求来自已确认 Mapping。Existing Capability 与 Configuration Only
+          不启动训练；只有 Training Required 进入数据生产和训练链路。
+        </p>
+        {!mappingConfirmed && (
+          <p className="form-error">
+            当前 Mapping
+            尚未完成教师确认，数据需求仅供预览，暂不能新增或推进数据版本。
+          </p>
+        )}
+        <div className="ai-requirement-grid">
+          {[
+            ["Existing Capability", requirements.existingCapability],
+            ["Configuration Only", requirements.configurationOnly],
+            ["Training Required", requirements.trainingRequired],
+          ].map(([label, items]) => (
+            <article key={label}>
+              <small>{label}</small>
+              <strong>{items.length} 项</strong>
+              <p>
+                {items.length
+                  ? items.map((item) => item.name).join("、")
+                  : "当前无此类能力"}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel panel--table">
+        <PanelTitle
+          title="1. Source Video"
+          action={
+            <Button
+              type="primary"
+              icon={<UploadOutlined />}
+              disabled={!mappingConfirmed}
+              onClick={uploadSourceVideo}
+            >
+              上传源视频
+            </Button>
+          }
+        />
+        <p className="hint">
+          保存完整源视频及来源信息；时间片段和标注均追溯到 Source Video。
+        </p>
+        <DataTable
+          columns={["文件", "时长", "来源", "Mapping", "状态"]}
+          rows={sourceVideos.map((video) => [
+            video.fileName,
+            video.duration,
+            video.source,
+            video.mappingVersion,
+            video.status,
+          ])}
+          statusColumns={[4]}
+          emptyText="尚无 Source Video"
+        />
+        <div className="pipeline-actions-list">
+          {sourceVideos.map((video) => (
+            <span key={video.id}>
+              <b>{video.fileName}</b>
+              <Button
+                disabled={
+                  !mappingConfirmed || !mapping?.evaluationItems?.length
+                }
+                onClick={() => createTimeRange(video)}
+              >
+                设置动作片段
+              </Button>
+            </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel panel--table">
+        <PanelTitle title="2. Time Range Annotation 与 Annotation" />
+        <p className="hint">
+          先定位动作区间，再完成动作或目标框选标注并审核；Machine Event
+          仅描述机器可确认的事实，不直接产生扣分。
+        </p>
+        <DataTable
+          columns={[
+            "Source Video",
+            "时间片段",
+            "Evaluation Item",
+            "Machine Event",
+            "标注方式",
+            "状态",
+          ]}
+          rows={ranges.map((range) => {
+            const source = sourceVideos.find(
+              (item) => item.id === range.sourceVideoId,
+            );
+            return [
+              source?.fileName || range.sourceVideoId,
+              `${range.startTime}–${range.endTime}`,
+              itemName(range.evaluationItemId),
+              eventName(range.machineEventId),
+              range.annotationType === "detect" ? "目标框选" : "动作区间",
+              range.status,
+            ];
+          })}
+          statusColumns={[5]}
+          emptyText="尚未设置动作时间片段"
+        />
+        <div className="pipeline-actions-list">
+          {ranges.map((range) => {
+            const annotation = annotations.find(
+              (item) => item.timeRangeId === range.id,
+            );
+            return (
+              <span key={range.id}>
+                <b>
+                  {range.startTime}–{range.endTime} · {range.label}
+                </b>
+                {!annotation || annotation.status === "已退回" ? (
+                  <Button onClick={() => annotate(range)}>
+                    {annotation ? "修改标注" : "开始标注"}
+                  </Button>
+                ) : annotation.status === "待审核" ? (
+                  <Button onClick={() => review(annotation)}>审核标注</Button>
+                ) : (
+                  <Status tone="success">{annotation.status}</Status>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="panel">
+        <PanelTitle
+          title={`3. Dataset 组装 · ${dataset.version}`}
+          action={
+            <Button
+              type="primary"
+              disabled={
+                !mappingConfirmed ||
+                dataset.status !== "采集中" ||
+                !approvedPending.length
+              }
+              onClick={includeInDataset}
+            >
+              纳入已审核标注（{approvedPending.length}）
+            </Button>
+          }
+        />
+        <p className="hint">
+          集合划分以 Source Video
+          为最小单位；同一源视频产生的帧和动作片段不会跨集合。
+        </p>
+        <div className="dataset-split-grid">
+          {[
+            ["Train", "train"],
+            ["Validation", "validation"],
+            ["Test", "test"],
+          ].map(([label, key]) => (
+            <article key={key}>
+              <small>{label}</small>
+              <strong>{dataset.splits?.[key]?.length || 0} 个源视频</strong>
+              <p>
+                {(dataset.splits?.[key] || [])
+                  .map(
+                    (videoId) =>
+                      sourceVideos.find((video) => video.id === videoId)
+                        ?.fileName || videoId,
+                  )
+                  .join("、") || "尚未分配"}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {store.data.learningSamples.some((item) => item.sopId === sop.id) && (
+        <details className="panel legacy-data-details">
+          <summary>查看历史样本兼容记录</summary>
+          <AiDatasetSamples sop={sop} setModal={setModal} />
+        </details>
+      )}
+    </div>
+  );
+}
+
+const CompatibilityDecisionForm = forwardRef(function CompatibilityDecisionForm(
+  { assessment },
+  ref,
+) {
+  const suggested = Object.values(assessment.layers || {}).every((value) =>
+    ["compatible", "not_applicable"].includes(value),
+  )
+    ? "compatible"
+    : "conditional";
+  const [decision, setDecision] = useState(suggested);
+  const [operator, setOperator] = useState("刘工");
+  const [reason, setReason] = useState(assessment.summary || "");
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ decision, operator, reason }),
+  }));
+  return (
+    <div className="form-stack">
+      <div className="alert-block">
+        <strong>
+          {assessment.fromVersion} → {assessment.toVersion}
+        </strong>
+        <p>{assessment.summary}</p>
+      </div>
+      <div className="compatibility-layer-grid">
+        {Object.entries(assessment.layers || {}).map(([layer, status]) => (
+          <span key={layer}>
+            <small>{layer}</small>
+            <strong>{COMPATIBILITY_LAYER_STATUSES[status] || status}</strong>
+          </span>
+        ))}
+      </div>
+      <div className="form-row">
+        <label className="field">
+          兼容结论
+          <select
+            value={decision}
+            onChange={(event) => setDecision(event.target.value)}
+          >
+            <option value="compatible">兼容复用</option>
+            <option value="conditional">有条件兼容</option>
+            <option value="incompatible">不兼容</option>
+          </select>
+        </label>
+        <label className="field">
+          确认人
+          <input
+            value={operator}
+            onChange={(event) => setOperator(event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        判断依据 <b className="required">必填</b>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      <p className="hint">
+        确认兼容只允许复用被评估为兼容的层；需要更新或重新验证的层仍保持Gate阻断。
+      </p>
+    </div>
+  );
+});
+
 function AiEvaluationDetail({ setModal }) {
   const { id } = useParams();
   const store = usePrototypeData();
   const sop = store.data.sops.find((item) => item.id === id);
   const [tab, setTab] = useState("mapping");
   const [selectedWorkstationId, setSelectedWorkstationId] = useState("");
-  const uploadRef = useRef(null);
   const implementationRef = useRef(null);
   const validationRef = useRef(null);
   const modelValidationRef = useRef(null);
+  const compatibilityRef = useRef(null);
   if (!sop)
     return (
       <MissingState title="AI 适配对象不存在" backTo="/admin/ai-evaluation" />
@@ -7767,7 +9058,17 @@ function AiEvaluationDetail({ setModal }) {
   const aiStatus = store.getSopAiEvaluationStatus(sop.id);
   const mappingStatus =
     aiStatus.mappingStatus || store.getSopMappingStatus(sop.id);
+  const mapping = mappingStatus.mapping;
+  const dataRequirements = deriveDataRequirements(mapping);
   const dataset = datasets[0];
+  const packageDataset = dataRequirements.requiresTraining
+    ? datasets.find((item) => item.status === "已锁定")
+    : null;
+  const packageReadiness = getAiPackageCreationReadiness({
+    sop,
+    mapping,
+    dataset: packageDataset,
+  });
   const productionDataset = aiStatus.productionDataset;
   const researchDataset = aiStatus.researchDataset;
   const productionModel = aiStatus.model;
@@ -7787,6 +9088,9 @@ function AiEvaluationDetail({ setModal }) {
   const selectedWorkstation =
     selectableWorkstations.find((item) => item.id === selectedWorkstationId) ||
     selectableWorkstations[0];
+  const selectedProfile = (store.data.workstationProfiles || []).find(
+    (item) => item.id === selectedWorkstation?.currentProfileId,
+  );
   const validations = store.data.fieldValidations.filter(
     (record) => record.sopId === sop.id,
   );
@@ -7798,6 +9102,12 @@ function AiEvaluationDetail({ setModal }) {
   const selectedGate = selectedWorkstation
     ? store.getWorkstationEvaluationGate(selectedWorkstation.id, sop.id)
     : null;
+  const impactAssessments = (store.data.aiImpactAssessments || []).filter(
+    (item) => item.toSopId === sop.id,
+  );
+  const compatibilityDecisions = (
+    store.data.compatibilityDecisions || []
+  ).filter((item) => item.toSopId === sop.id);
 
   const beginAdaptation = () => {
     setModal({
@@ -7812,20 +9122,6 @@ function AiEvaluationDetail({ setModal }) {
       onConfirm: () => {
         store.startAiAdaptation(sop.id);
         return "已创建 Dataset D1，可开始上传和审核样本";
-      },
-    });
-  };
-  const uploadSample = () => {
-    if (!dataset) return beginAdaptation();
-    setModal({
-      title: "上传并标注视频样本",
-      size: "large",
-      content: <UploadSampleForm ref={uploadRef} sop={sop} />,
-      confirmText: "加入待审核样本",
-      onConfirm: () => {
-        const form = uploadRef.current.getValue();
-        store.addDatasetSample({ ...form, sopId: sop.id });
-        return `${form.fileName} 已进入样本审核`;
       },
     });
   };
@@ -7863,28 +9159,37 @@ function AiEvaluationDetail({ setModal }) {
   };
   const createModel = () => {
     setModal({
-      title: "创建模型候选版本",
+      title: "创建 AI Package 候选版本",
       content: (
-        <p>
-          模型将明确绑定 SOP {sop.version} 与 Dataset {dataset?.version || "—"}
-          ，不会覆盖当前已部署模型。
-        </p>
+        <div className="form-stack">
+          <p>
+            AI Package 将绑定 SOP {sop.version} 与 Mapping{" "}
+            {mapping?.version || "—"}
+            {dataRequirements.requiresTraining
+              ? `，训练数据来自 ${packageDataset?.version || "待准备 Dataset"}`
+              : "。当前仅复用已有能力与配置，无需新训练 Dataset"}
+            。
+          </p>
+          {!!packageReadiness.issues.length && (
+            <p className="form-error">{packageReadiness.issues.join("；")}</p>
+          )}
+        </div>
       ),
-      confirmText: "创建候选版本",
+      confirmText: "创建 AI Package",
       onConfirm: () => {
-        const created = store.createModelCandidate(sop.id, dataset?.id);
-        return `已创建模型 ${created.version}`;
+        const created = store.createModelCandidate(sop.id, packageDataset?.id);
+        return `已创建 AI Package ${created.version}`;
       },
     });
   };
   const advanceModel = (item) => {
     const nextLabel = MODEL_LIFECYCLE_ACTIONS[item.status];
     setModal({
-      title: nextLabel || "推进模型生命周期",
+      title: nextLabel || "推进 AI Package 生命周期",
       content: (
         <p>
           {item.version} 绑定 SOP {item.sopVersion} / Dataset{" "}
-          {item.datasetVersion}。部署时同一 SOP 只保留一个生产模型。
+          {item.datasetVersion}。部署时同一 SOP 只保留一个生产 AI Package。
         </p>
       ),
       confirmText: nextLabel || "确认",
@@ -7896,7 +9201,7 @@ function AiEvaluationDetail({ setModal }) {
   };
   const validateModel = (item, passed) => {
     setModal({
-      title: passed ? "确认模型验证通过" : "记录模型验证未通过",
+      title: passed ? "确认 AI Package 验证通过" : "记录 AI Package 验证未通过",
       content: passed ? (
         <p>确认 {item.version} 已完成验证并进入可部署状态。</p>
       ) : (
@@ -7919,6 +9224,7 @@ function AiEvaluationDetail({ setModal }) {
         <ImplementationCheckForm
           ref={implementationRef}
           workstation={selectedWorkstation}
+          evaluationItems={mapping?.evaluationItems || []}
         />
       ),
       confirmText: "保存实施检查",
@@ -7941,6 +9247,7 @@ function AiEvaluationDetail({ setModal }) {
           ref={validationRef}
           workstation={selectedWorkstation}
           sops={[sop]}
+          evaluationItems={mapping?.evaluationItems || []}
         />
       ),
       confirmText: "提交验证结果",
@@ -7952,13 +9259,33 @@ function AiEvaluationDetail({ setModal }) {
       },
     });
   };
+  const confirmCompatibility = (assessment) => {
+    setModal({
+      title: "确认 Compatibility Decision",
+      size: "large",
+      content: (
+        <CompatibilityDecisionForm
+          ref={compatibilityRef}
+          assessment={assessment}
+        />
+      ),
+      confirmText: "保存兼容结论",
+      onConfirm: () => {
+        const decision = store.confirmCompatibilityDecision(
+          assessment.id,
+          compatibilityRef.current.getValue(),
+        );
+        return `${assessment.fromVersion} → ${assessment.toVersion}：${COMPATIBILITY_DECISIONS[decision.decision]}`;
+      },
+    });
+  };
 
   return (
     <>
       <PageHeader
         back
         title={`${sop.name} · AI评价适配`}
-        subtitle="管理员维护数据、模型与工位能力；教师发布的 SOP 标准保持冻结"
+        subtitle="管理员维护数据、AI Package 与工位能力；教师发布的 SOP 标准保持冻结"
         actions={
           <Button
             onClick={() => window.location.reload()}
@@ -7995,7 +9322,7 @@ function AiEvaluationDetail({ setModal }) {
           <strong>{productionDataset ? productionDataset.version : "—"}</strong>
         </span>
         <span>
-          <small>当前生产模型</small>
+          <small>当前生产 AI Package</small>
           <strong>
             {productionModel ? `${productionModel.version} · 已部署` : "—"}
           </strong>
@@ -8012,6 +9339,10 @@ function AiEvaluationDetail({ setModal }) {
           <small>AI 状态</small>
           <strong>{aiStatus.status}</strong>
         </span>
+        <span>
+          <small>当前 Workstation Profile</small>
+          <strong>{selectedProfile?.version || "未配置"}</strong>
+        </span>
       </div>
       {researchDataset && (
         <p className="hint ai-research-note">
@@ -8027,9 +9358,10 @@ function AiEvaluationDetail({ setModal }) {
         {[
           ["mapping", "Evaluation Mapping"],
           ["overview", "适配概览"],
-          ["dataset", "数据集"],
-          ["model", "动作模型"],
+          ["dataset", "数据生产与 Dataset"],
+          ["model", "AI Package"],
           ["validation", "工位验证"],
+          ["compatibility", "影响与兼容性"],
           ["history", "版本与记录"],
         ].map(([value, label]) => (
           <button
@@ -8066,23 +9398,26 @@ function AiEvaluationDetail({ setModal }) {
               }
             />
             <p className="hint">
-              有效运行方式由教师设定、模型能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
+              有效运行方式由教师设定、AI
+              Package能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
             </p>
             <DataTable
               columns={[
                 "Step",
                 "教师设定",
                 "Dataset",
-                "模型能力",
+                "AI Package",
                 "工位验证",
                 "有效运行方式",
               ]}
               rows={sop.steps.map((step) => {
                 const labelCount = matrixDataset?.labels?.[step.id] || 0;
-                const modelCompatible =
-                  productionModel?.sopVersion === sop.version &&
-                  productionModel?.datasetVersion ===
-                    productionDataset?.version;
+                const modelCompatible = Boolean(
+                  productionModel &&
+                    (productionModel.requiresTraining === false ||
+                      productionModel.datasetVersion ===
+                        productionDataset?.version),
+                );
                 const fieldState = !targetWorkstations.length
                   ? "未设置工位"
                   : `${aiStatus.validatedWorkstationCount}/${targetWorkstations.length} 通过`;
@@ -8098,7 +9433,7 @@ function AiEvaluationDetail({ setModal }) {
                     ? `${matrixDataset.version} · ${labelCount} 条 · ${matrixDataset.status}`
                     : "未创建",
                   modelCompatible
-                    ? `${productionModel.version} · ${productionModel.status}`
+                    ? `${productionModel.version} · ${productionModel.status}${productionModel.sopVersion !== sop.version ? " · 兼容复用" : ""}`
                     : "未形成生产基线",
                   fieldState,
                   JUDGEMENT_MODES[effectiveMode]?.shortLabel || "教师评价",
@@ -8131,19 +9466,35 @@ function AiEvaluationDetail({ setModal }) {
           {!dataset ? (
             <section className="panel empty-state">
               <DatabaseOutlined />
-              <h2>尚未创建 Dataset</h2>
+              <h2>
+                {dataRequirements.requiresTraining
+                  ? "Training Required，尚未创建 Dataset"
+                  : "当前 Mapping 无需新训练 Dataset"}
+              </h2>
               <p>
-                {mappingStatus.confirmed
-                  ? "首次 AI 适配从 D1 开始，标签范围只包含当前 Step ID 与 Other。"
-                  : "先完成 Evaluation Mapping 并由教师确认业务口径，再进入数据建设。"}
+                {!mappingStatus.confirmed
+                  ? "先完成 Evaluation Mapping 并由教师确认业务口径，再进入数据建设。"
+                  : dataRequirements.requiresTraining
+                    ? "首次数据生产从 D1 开始，Source Video 经时间片段标注、Annotation 和审核后才能纳入。"
+                    : "当前全部 Machine Event 均可复用已有能力或通过配置实现，可直接组装 AI Package。"}
               </p>
-              <Button
-                type="primary"
-                disabled={!mappingStatus.confirmed}
-                onClick={beginAdaptation}
-              >
-                创建 D1
-              </Button>
+              {dataRequirements.requiresTraining ? (
+                <Button
+                  type="primary"
+                  disabled={!mappingStatus.confirmed}
+                  onClick={beginAdaptation}
+                >
+                  创建 D1
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  disabled={!packageReadiness.passed}
+                  onClick={createModel}
+                >
+                  直接创建 AI Package
+                </Button>
+              )}
             </section>
           ) : (
             <>
@@ -8152,10 +9503,11 @@ function AiEvaluationDetail({ setModal }) {
                   title={`${dataset.name} · ${dataset.status}`}
                   action={
                     <div className="inline-actions">
-                      <Button onClick={uploadSample} icon={<UploadOutlined />}>
-                        上传样本
-                      </Button>
-                      <Button type="primary" onClick={advanceDataset}>
+                      <Button
+                        type="primary"
+                        disabled={!mappingStatus.confirmed}
+                        onClick={advanceDataset}
+                      >
                         {dataset.status === "已锁定"
                           ? `创建 ${dataset.nextVersion || "下一版"}`
                           : dataset.status === "采集中"
@@ -8190,34 +9542,14 @@ function AiEvaluationDetail({ setModal }) {
                     <strong>{dataset.nextVersion || "—"}</strong>
                   </span>
                 </div>
-                <div className="ai-label-grid">
-                  {[
-                    ...sop.steps.map((step) => [step.id, step.name]),
-                    ["Other", "非 SOP / 遮挡 / 停顿"],
-                  ].map(([stepId, name]) => {
-                    const count = dataset.labels?.[stepId] || 0;
-                    const readiness =
-                      count === 0
-                        ? "不足"
-                        : dataset.status === "已锁定"
-                          ? "已验证"
-                          : dataset.status === "待审核"
-                            ? "可训练"
-                            : "待补充";
-                    return (
-                      <article key={stepId}>
-                        <span>
-                          <b>{stepId}</b>
-                          <small>{name}</small>
-                        </span>
-                        <strong>{count} 条</strong>
-                        <Status>{readiness}</Status>
-                      </article>
-                    );
-                  })}
-                </div>
               </section>
-              <AiDatasetSamples sop={sop} setModal={setModal} />
+              <AiDataPipeline
+                sop={sop}
+                mapping={mapping}
+                dataset={dataset}
+                store={store}
+                setModal={setModal}
+              />
             </>
           )}
         </>
@@ -8227,21 +9559,26 @@ function AiEvaluationDetail({ setModal }) {
         <>
           <section className="panel">
             <PanelTitle
-              title="动作模型生命周期"
+              title="AI Package 生命周期"
               action={
                 <Button
                   type="primary"
-                  disabled={!dataset || dataset.status !== "已锁定"}
+                  disabled={!packageReadiness.passed}
                   onClick={createModel}
                 >
-                  创建候选版本
+                  创建 AI Package
                 </Button>
               }
             />
             <p className="hint">
-              每个模型版本都绑定一个 SOP 版本和一个已锁定 Dataset 版本；同一 SOP
-              同时只保留一个生产模型。
+              AI Package 绑定 SOP 与 Mapping；Existing Capability、Configuration
+              Only 直接组装能力，Training Required 才绑定已锁定 Dataset 并训练。
             </p>
+            {!packageReadiness.passed && (
+              <p className="form-error">
+                当前不可创建：{packageReadiness.issues.join("；")}
+              </p>
+            )}
             <div className="ai-model-list">
               {models.map((item) => {
                 const rollbackTarget = models.find(
@@ -8261,15 +9598,43 @@ function AiEvaluationDetail({ setModal }) {
                           {item.name} {item.version}
                         </strong>
                         <small>
-                          SOP {item.sopVersion} · Dataset {item.datasetVersion}
+                          SOP {item.sopVersion} · Mapping{" "}
+                          {item.mappingVersion || "历史Mapping"} · Dataset{" "}
+                          {item.datasetVersion || "无需训练"}
                         </small>
                       </span>
                       <Status>{item.status}</Status>
                     </header>
+                    <div className="ai-package-components">
+                      <span>
+                        <small>复用已有能力</small>
+                        <b>
+                          {item.components?.existingCapabilities?.length || 0}{" "}
+                          项
+                        </b>
+                      </span>
+                      <span>
+                        <small>配置能力</small>
+                        <b>
+                          {item.components?.configuredCapabilities?.length || 0}{" "}
+                          项
+                        </b>
+                      </span>
+                      <span>
+                        <small>训练能力</small>
+                        <b>
+                          {item.components?.trainedCapabilities?.length || 0} 项
+                        </b>
+                      </span>
+                    </div>
                     <div>
                       <span>
                         <small>F1</small>
-                        <b>{item.f1}</b>
+                        <b>
+                          {item.requiresTraining === false
+                            ? "无需训练"
+                            : item.f1}
+                        </b>
                       </span>
                       <span>
                         <small>序列准确率</small>
@@ -8301,18 +9666,19 @@ function AiEvaluationDetail({ setModal }) {
                             <Button
                               onClick={() =>
                                 setModal({
-                                  title: "回滚生产模型",
+                                  title: "回滚生产 AI Package",
                                   content: (
                                     <p>
                                       将停用 {item.version} 并恢复{" "}
                                       {rollbackTarget.version}
-                                      。模型版本变化后，既有工位现场验证会失效并需要重新验证。
+                                      。AI Package
+                                      版本变化后，既有工位现场验证会失效并需要重新验证。
                                     </p>
                                   ),
                                   confirmText: `恢复 ${rollbackTarget.version}`,
                                   onConfirm: () => {
                                     const result = store.rollbackModel(item.id);
-                                    return `已恢复生产模型 ${result.restored.version}`;
+                                    return `已恢复生产 AI Package ${result.restored.version}`;
                                   },
                                 })
                               }
@@ -8351,11 +9717,11 @@ function AiEvaluationDetail({ setModal }) {
               {!models.length && (
                 <div className="empty-inline">
                   <ProductOutlined />
-                  <b>暂无模型版本</b>
+                  <b>暂无 AI Package</b>
                   <p>
-                    {dataset?.status === "已锁定"
-                      ? "可以从当前锁定 Dataset 创建首个候选模型。"
-                      : "先完成并锁定 Dataset，才能创建模型。"}
+                    {packageReadiness.passed
+                      ? "数据需求已满足，可以创建首个 AI Package。"
+                      : packageReadiness.issues.join("；")}
                   </p>
                 </div>
               )}
@@ -8365,18 +9731,22 @@ function AiEvaluationDetail({ setModal }) {
             <section className="panel panel--table">
               <PanelTitle title="步骤与场景验证" />
               <DataTable
-                columns={["对象", "模型能力", "现场结果", "说明"]}
+                columns={["对象", "AI Package能力", "现场结果", "说明"]}
                 rows={[
                   ...sop.steps.map((step) => [
                     `${step.id} · ${step.name}`,
-                    model.status === "已部署"
-                      ? "已具备"
-                      : model.status === "可部署"
-                        ? "验证通过"
-                        : "待验证",
-                    validations.some((item) => item.status === "通过")
-                      ? "有通过记录"
-                      : "待现场验证",
+                    step.judgementMode === "default_pass_manual_deduction"
+                      ? "不进入AI Package"
+                      : model.status === "已部署"
+                        ? "已具备"
+                        : model.status === "可部署"
+                          ? "验证通过"
+                          : "待验证",
+                    step.judgementMode === "default_pass_manual_deduction"
+                      ? "教师评价"
+                      : validations.some((item) => item.status === "通过")
+                        ? "有通过记录"
+                        : "待现场验证",
                     JUDGEMENT_MODES[step.judgementMode]?.shortLabel,
                   ]),
                   ...FIELD_VALIDATION_SCENARIOS.map(([key, label]) => [
@@ -8436,6 +9806,10 @@ function AiEvaluationDetail({ setModal }) {
                 />
                 <div className="definition-list ai-implementation-facts">
                   <span>
+                    <small>Workstation Profile</small>
+                    <strong>{selectedProfile?.version || "未配置"}</strong>
+                  </span>
+                  <span>
                     <small>机位</small>
                     <strong>
                       {selectedWorkstation.implementation?.cameraPosition ||
@@ -8467,6 +9841,24 @@ function AiEvaluationDetail({ setModal }) {
                     <strong>
                       {selectedWorkstation.implementation?.roiVersion ||
                         "未配置"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>Primary Camera</small>
+                    <strong>
+                      {selectedProfile?.cameras?.find(
+                        (camera) =>
+                          camera.id === selectedProfile.primaryCameraId,
+                      )?.name || "未配置"}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>Fallback Camera</small>
+                    <strong>
+                      {selectedProfile?.cameras?.find(
+                        (camera) =>
+                          camera.id === selectedProfile.fallbackCameraId,
+                      )?.name || "—"}
                     </strong>
                   </span>
                 </div>
@@ -8503,15 +9895,12 @@ function AiEvaluationDetail({ setModal }) {
                     <b>{sop.version}</b>
                   </span>
                   <span>
-                    <small>模型</small>
+                    <small>AI Package</small>
                     <b>{model?.version || "未部署"}</b>
                   </span>
                   <span>
-                    <small>ROI</small>
-                    <b>
-                      {selectedWorkstation.implementation?.roiVersion ||
-                        "未配置"}
-                    </b>
+                    <small>Workstation Profile</small>
+                    <b>{selectedProfile?.version || "未配置"}</b>
                   </span>
                   <span>
                     <small>摄像头</small>
@@ -8534,9 +9923,9 @@ function AiEvaluationDetail({ setModal }) {
                 "工位",
                 "结果",
                 "SOP",
-                "模型",
-                "ROI",
-                "摄像头",
+                "AI Package",
+                "Workstation Profile",
+                "Coverage",
                 "验证人",
                 "时间",
               ]}
@@ -8549,8 +9938,10 @@ function AiEvaluationDetail({ setModal }) {
                   record.status,
                   record.sopVersion,
                   record.modelVersion,
-                  record.roiVersion,
-                  record.cameraConfigVersion,
+                  record.workstationProfileVersion || "未记录",
+                  record.coverage?.passed
+                    ? `${record.coverage.coveredItemCount}/${record.coverage.totalItemCount} 已覆盖`
+                    : `${record.coverage?.coveredItemCount || 0}/${record.coverage?.totalItemCount || 0} 未覆盖完整`,
                   record.operator,
                   record.createdAt,
                 ];
@@ -8560,6 +9951,96 @@ function AiEvaluationDetail({ setModal }) {
             />
           </section>
         </>
+      )}
+
+      {tab === "compatibility" && (
+        <div className="compatibility-page-grid">
+          <section className="panel">
+            <PanelTitle
+              title="AI Impact Assessment"
+              action={<span>{impactAssessments.length} 条版本影响评估</span>}
+            />
+            <p className="hint">
+              新 SOP Version 发布后先判断哪些 AI
+              层可以复用。兼容结论只放行明确兼容的层，不会把 Mapping
+              已确认误当成 AI 能力可用。
+            </p>
+            <div className="compatibility-assessment-list">
+              {impactAssessments.map((assessment) => {
+                const decision = compatibilityDecisions.find(
+                  (item) => item.assessmentId === assessment.id,
+                );
+                return (
+                  <article key={assessment.id}>
+                    <header>
+                      <span>
+                        <small>
+                          {assessment.fromVersion} → {assessment.toVersion}
+                        </small>
+                        <strong>{assessment.summary}</strong>
+                      </span>
+                      <Status tone={decision ? "success" : "warning"}>
+                        {decision
+                          ? COMPATIBILITY_DECISIONS[decision.decision]
+                          : "待确认"}
+                      </Status>
+                    </header>
+                    <div className="compatibility-layer-grid">
+                      {Object.entries(assessment.layers || {}).map(
+                        ([layer, status]) => (
+                          <span key={layer}>
+                            <small>{layer}</small>
+                            <strong>
+                              {COMPATIBILITY_LAYER_STATUSES[status] || status}
+                            </strong>
+                          </span>
+                        ),
+                      )}
+                    </div>
+                    <footer>
+                      <small>
+                        数据要求：
+                        {assessment.dataRequirement || "保持现有数据基线"}
+                      </small>
+                      {!decision && (
+                        <Button
+                          onClick={() => confirmCompatibility(assessment)}
+                        >
+                          确认兼容结论
+                        </Button>
+                      )}
+                    </footer>
+                  </article>
+                );
+              })}
+              {!impactAssessments.length && (
+                <div className="empty-inline">
+                  <HistoryOutlined />
+                  <b>暂无版本影响评估</b>
+                  <p>
+                    创建并发布新的 SOP Version 后，系统会在此生成 AI Impact
+                    Assessment。
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="panel panel--table">
+            <PanelTitle title="Compatibility Decision 记录" />
+            <DataTable
+              columns={["版本", "结论", "判断依据", "确认人", "时间"]}
+              rows={compatibilityDecisions.map((decision) => [
+                `${decision.fromVersion} → ${decision.toVersion}`,
+                COMPATIBILITY_DECISIONS[decision.decision] || decision.decision,
+                decision.reason,
+                decision.operator,
+                decision.createdAt,
+              ])}
+              statusColumns={[1]}
+              emptyText="尚无 Compatibility Decision"
+            />
+          </section>
+        </div>
       )}
 
       {tab === "history" && (
@@ -8579,7 +10060,7 @@ function AiEvaluationDetail({ setModal }) {
             />
           </section>
           <section className="panel panel--table">
-            <PanelTitle title="模型版本" />
+            <PanelTitle title="AI Package 版本" />
             <DataTable
               columns={["版本", "状态", "SOP", "Dataset", "更新时间"]}
               rows={models.map((item) => [
@@ -9857,7 +11338,7 @@ function RoiPreview({
 }
 
 const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
-  { workstation },
+  { workstation, evaluationItems = [] },
   ref,
 ) {
   const [form, setForm] = useState(() => ({
@@ -9865,6 +11346,28 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
   }));
   const change = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
+  const updateCamera = (id, field, value) =>
+    setForm((current) => ({
+      ...current,
+      cameras: (current.cameras || []).map((camera) =>
+        camera.id === id ? { ...camera, [field]: value } : camera,
+      ),
+    }));
+  const updateEvidenceBinding = (evaluationItemId, field, value) =>
+    setForm((current) => {
+      const existing = (current.evidenceBindings || []).find(
+        (item) => item.evaluationItemId === evaluationItemId,
+      ) || { evaluationItemId, primaryCameraId: "", fallbackCameraId: "" };
+      return {
+        ...current,
+        evidenceBindings: [
+          ...(current.evidenceBindings || []).filter(
+            (item) => item.evaluationItemId !== evaluationItemId,
+          ),
+          { ...existing, [field]: value },
+        ],
+      };
+    });
   useImperativeHandle(ref, () => ({ getValue: () => form }));
   return (
     <div className="implementation-form">
@@ -9891,6 +11394,132 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
           />
         </label>
       </div>
+      <section className="profile-camera-section">
+        <h3>Camera配置与证据源</h3>
+        <div className="form-row">
+          {(form.cameras || []).map((camera) => (
+            <label className="field" key={camera.id}>
+              {camera.id}
+              <input
+                value={camera.name}
+                onChange={(event) =>
+                  updateCamera(camera.id, "name", event.target.value)
+                }
+              />
+              <select
+                value={camera.status || "在线"}
+                onChange={(event) =>
+                  updateCamera(camera.id, "status", event.target.value)
+                }
+              >
+                <option>在线</option>
+                <option>待检查</option>
+                <option>离线</option>
+              </select>
+            </label>
+          ))}
+        </div>
+        <div className="form-row">
+          <label className="field">
+            默认 Primary Camera
+            <select
+              value={form.primaryCameraId || ""}
+              onChange={(event) =>
+                change("primaryCameraId", event.target.value)
+              }
+            >
+              {(form.cameras || []).map((camera) => (
+                <option key={camera.id} value={camera.id}>
+                  {camera.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            默认 Fallback Camera
+            <select
+              value={form.fallbackCameraId || ""}
+              onChange={(event) =>
+                change("fallbackCameraId", event.target.value)
+              }
+            >
+              <option value="">不设置</option>
+              {(form.cameras || [])
+                .filter((camera) => camera.id !== form.primaryCameraId)
+                .map((camera) => (
+                  <option key={camera.id} value={camera.id}>
+                    {camera.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        {!!evaluationItems.length && (
+          <div className="evidence-binding-list">
+            {evaluationItems.map((item) => {
+              const binding =
+                (form.evidenceBindings || []).find(
+                  (entry) => entry.evaluationItemId === item.id,
+                ) || {};
+              const primary =
+                binding.primaryCameraId || form.primaryCameraId || "";
+              const fallback =
+                binding.fallbackCameraId || form.fallbackCameraId || "";
+              return (
+                <article key={item.id}>
+                  <strong>
+                    {item.id} · {item.name}
+                  </strong>
+                  <label>
+                    Primary
+                    <select
+                      value={primary}
+                      onChange={(event) =>
+                        updateEvidenceBinding(
+                          item.id,
+                          "primaryCameraId",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      {(form.cameras || []).map((camera) => (
+                        <option key={camera.id} value={camera.id}>
+                          {camera.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Fallback
+                    <select
+                      value={fallback}
+                      onChange={(event) =>
+                        updateEvidenceBinding(
+                          item.id,
+                          "fallbackCameraId",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="">不设置</option>
+                      {(form.cameras || [])
+                        .filter((camera) => camera.id !== primary)
+                        .map((camera) => (
+                          <option key={camera.id} value={camera.id}>
+                            {camera.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        <p className="hint">
+          仅当Primary不可用时才尝试Fallback；一期不做跨摄像头事件融合，避免同一动作重复计数。
+        </p>
+      </section>
       <div className="form-row implementation-confirm-grid">
         {[
           ["cameraPosition", "机位条件"],
@@ -9911,10 +11540,10 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
         ))}
       </div>
       <label className="field">
-        实施说明
+        关键设备与环境摘要
         <textarea
-          value={form.note || ""}
-          onChange={(event) => change("note", event.target.value)}
+          value={form.environmentSummary || form.note || ""}
+          onChange={(event) => change("environmentSummary", event.target.value)}
         />
       </label>
     </div>
@@ -9922,24 +11551,40 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
 });
 
 const FieldValidationForm = forwardRef(function FieldValidationForm(
-  { workstation, sops },
+  { workstation, sops, evaluationItems = [] },
   ref,
 ) {
   const [sopId, setSopId] = useState(sops[0]?.id || "");
   const [operator, setOperator] = useState("刘工");
   const [note, setNote] = useState("");
-  const [tests, setTests] = useState(() =>
-    FIELD_VALIDATION_SCENARIOS.map(([key, label]) => ({
-      key,
-      label,
+  const [testCases, setTestCases] = useState(() =>
+    FIELD_VALIDATION_SCENARIOS.map(([key, label], index) => ({
+      id: `case-${key}`,
+      name: `${label}验证`,
+      scenarioTypes: [key],
+      evaluationItemIds:
+        index === 0 ? evaluationItems.map((item) => item.id) : [],
       result: "",
       note: "",
     })),
   );
-  const updateTest = (key, field, value) =>
-    setTests((current) =>
+  const updateCase = (id, field, value) =>
+    setTestCases((current) =>
       current.map((item) =>
-        item.key === key ? { ...item, [field]: value } : item,
+        item.id === id ? { ...item, [field]: value } : item,
+      ),
+    );
+  const toggleCoverage = (caseId, itemId) =>
+    setTestCases((current) =>
+      current.map((item) =>
+        item.id !== caseId
+          ? item
+          : {
+              ...item,
+              evaluationItemIds: item.evaluationItemIds.includes(itemId)
+                ? item.evaluationItemIds.filter((id) => id !== itemId)
+                : [...item.evaluationItemIds, itemId],
+            },
       ),
     );
   useImperativeHandle(ref, () => ({
@@ -9948,7 +11593,7 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
       sopId,
       operator,
       note,
-      tests,
+      testCases,
     }),
   }));
   return (
@@ -9976,15 +11621,29 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
         </label>
       </div>
       <div className="validation-scenario-list">
-        {tests.map((test, index) => (
-          <article key={test.key}>
+        {testCases.map((testCase, index) => (
+          <article key={testCase.id} className="validation-test-case">
             <b>{index + 1}</b>
-            <strong>{test.label}</strong>
+            <div>
+              <strong>{testCase.name}</strong>
+              <small>
+                场景：
+                {testCase.scenarioTypes
+                  .map(
+                    (key) =>
+                      FIELD_VALIDATION_SCENARIOS.find(
+                        (item) => item[0] === key,
+                      )?.[1],
+                  )
+                  .filter(Boolean)
+                  .join("、")}
+              </small>
+            </div>
             <select
-              aria-label={`${test.label}结果`}
-              value={test.result}
+              aria-label={`${testCase.name}结果`}
+              value={testCase.result}
               onChange={(event) =>
-                updateTest(test.key, "result", event.target.value)
+                updateCase(testCase.id, "result", event.target.value)
               }
             >
               <option value="">请选择结果</option>
@@ -9993,13 +11652,28 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
               <option>不适用</option>
             </select>
             <input
-              aria-label={`${test.label}说明`}
-              value={test.note}
+              aria-label={`${testCase.name}说明`}
+              value={testCase.note}
               onChange={(event) =>
-                updateTest(test.key, "note", event.target.value)
+                updateCase(testCase.id, "note", event.target.value)
               }
               placeholder="现场现象或失败原因"
             />
+            <div className="validation-item-coverage">
+              {evaluationItems.map((item) => (
+                <label key={item.id}>
+                  <input
+                    type="checkbox"
+                    checked={testCase.evaluationItemIds.includes(item.id)}
+                    onChange={() => toggleCoverage(testCase.id, item.id)}
+                  />
+                  {item.id} · {item.name}
+                </label>
+              ))}
+              {!evaluationItems.length && (
+                <span className="hint">当前Mapping无AI Evaluation Item</span>
+              )}
+            </div>
           </article>
         ))}
       </div>
@@ -10011,7 +11685,8 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
         />
       </label>
       <p className="hint">
-        SOP 仍可独立发布；只有本表通过且版本一致时，当前工位才启用视频自动判定。
+        一个 Validation Test Case 可以覆盖多个 Evaluation
+        Item，不建立机械笛卡尔积。只有通过Case覆盖全部评价项后，当前工位才允许自动评价。
       </p>
     </div>
   );
@@ -10250,6 +11925,9 @@ function AdminDetail({ type, setModal }) {
   );
   const workstationSops = supportedSops.length ? supportedSops : publishedSops;
   const primarySop = workstationSops[0];
+  const primaryMapping = primarySop
+    ? store.getSopMappingStatus(primarySop.id).mapping
+    : null;
   const validationRecords =
     type === "workstation"
       ? (data.fieldValidations || []).filter(
@@ -10264,14 +11942,15 @@ function AdminDetail({ type, setModal }) {
   const primaryModel = data.models.find(
     (model) => model.sopId === primarySop?.id && model.status === "已部署",
   );
-  const evaluationGate =
+  const currentProfile =
     type === "workstation"
-      ? automaticEvaluationGate({
-          workstation: item,
-          sop: primarySop,
-          model: primaryModel,
-          validation: latestValidation,
-        })
+      ? (data.workstationProfiles || []).find(
+          (profile) => profile.id === item.currentProfileId,
+        )
+      : null;
+  const evaluationGate =
+    type === "workstation" && primarySop
+      ? store.getWorkstationEvaluationGate(item.id, primarySop.id)
       : null;
   const openImplementationCheck = () =>
     setModal({
@@ -10279,7 +11958,11 @@ function AdminDetail({ type, setModal }) {
       title: `${item.name} · 实施检查`,
       size: "large",
       content: (
-        <ImplementationCheckForm ref={implementationRef} workstation={item} />
+        <ImplementationCheckForm
+          ref={implementationRef}
+          workstation={item}
+          evaluationItems={primaryMapping?.evaluationItems || []}
+        />
       ),
       confirmText: "保存实施检查",
       onConfirm: () => {
@@ -10300,6 +11983,7 @@ function AdminDetail({ type, setModal }) {
           ref={validationRef}
           workstation={item}
           sops={workstationSops}
+          evaluationItems={primaryMapping?.evaluationItems || []}
         />
       ),
       confirmText: "提交验证记录",
@@ -10322,6 +12006,10 @@ function AdminDetail({ type, setModal }) {
         <div className="validation-record-detail">
           <div className="definition-list">
             <span>
+              <small>Workstation Profile</small>
+              <strong>{record.workstationProfileVersion || "未记录"}</strong>
+            </span>
+            <span>
               <small>模型版本</small>
               <strong>{record.modelVersion}</strong>
             </span>
@@ -10339,15 +12027,26 @@ function AdminDetail({ type, setModal }) {
               <small>时间</small>
               <strong>{record.createdAt}</strong>
             </span>
+            <span>
+              <small>Evaluation Item Coverage</small>
+              <strong>
+                {record.coverage?.coveredItemCount || 0}/
+                {record.coverage?.totalItemCount || 0} ·{" "}
+                {record.coverage?.passed ? "完整" : "缺失"}
+              </strong>
+            </span>
           </div>
           <div className="validation-record-tests">
-            {record.tests.map((test) => (
-              <article key={test.key}>
-                <strong>{test.label}</strong>
+            {(record.testCases || record.tests || []).map((test) => (
+              <article key={test.id || test.key}>
+                <strong>{test.name || test.label}</strong>
                 <Status tone={test.result === "失败" ? "danger" : "success"}>
                   {test.result}
                 </Status>
                 <p>{test.note || "未填写补充说明"}</p>
+                {!!test.evaluationItemIds?.length && (
+                  <small>覆盖：{test.evaluationItemIds.join("、")}</small>
+                )}
               </article>
             ))}
           </div>
@@ -10426,13 +12125,35 @@ function AdminDetail({ type, setModal }) {
             <section className="panel">
               <PanelTitle
                 title="当前画面与 ROI"
-                action={<Status>{item.implementation.roiVersion}</Status>}
+                action={
+                  <Status>
+                    {currentProfile?.version || "Workstation Profile 未配置"}
+                  </Status>
+                }
               />
               <RoiPreview implementation={item.implementation} />
               <div className="roi-legend">
                 <span className="blue">操作区</span>
                 <span className="green">工具区</span>
                 <span className="red">危险区</span>
+              </div>
+              <div className="definition-list ai-implementation-facts">
+                <span>
+                  <small>Primary Camera</small>
+                  <strong>
+                    {currentProfile?.cameras?.find(
+                      (camera) => camera.id === currentProfile.primaryCameraId,
+                    )?.name || "未配置"}
+                  </strong>
+                </span>
+                <span>
+                  <small>Fallback Camera</small>
+                  <strong>
+                    {currentProfile?.cameras?.find(
+                      (camera) => camera.id === currentProfile.fallbackCameraId,
+                    )?.name || "—"}
+                  </strong>
+                </span>
               </div>
             </section>
             <section className="panel evaluation-gate-panel">
@@ -10480,8 +12201,9 @@ function AdminDetail({ type, setModal }) {
                   </strong>
                 </span>
                 <span>
-                  <small>ROI / 摄像头配置</small>
+                  <small>Profile / ROI / 摄像头配置</small>
                   <strong>
+                    {currentProfile?.version || "未配置"} /{" "}
                     {item.implementation.roiVersion} /{" "}
                     {item.implementation.cameraConfigVersion}
                   </strong>
@@ -10541,7 +12263,8 @@ function AdminDetail({ type, setModal }) {
                 "验证时间",
                 "SOP版本",
                 "模型版本",
-                "ROI版本",
+                "Workstation Profile",
+                "Coverage",
                 "结果",
                 "验证人",
               ]}
@@ -10549,11 +12272,12 @@ function AdminDetail({ type, setModal }) {
                 record.createdAt,
                 record.sopVersion,
                 record.modelVersion,
-                record.roiVersion,
+                record.workstationProfileVersion || "未记录",
+                `${record.coverage?.coveredItemCount || 0}/${record.coverage?.totalItemCount || 0}`,
                 record.status,
                 record.operator,
               ])}
-              statusColumns={[4]}
+              statusColumns={[5]}
               rowKey={(_, index) => validationRecords[index].id}
               onView={(_, index) =>
                 openValidationRecord(validationRecords[index])
@@ -10941,9 +12665,21 @@ function SessionDiagnosticPanel({ record, store }) {
       <div className="diagnostic-versions">
         {[
           ["SOP", selectedStep.evidenceMetadata?.sopVersion],
-          ["模型", selectedStep.evidenceMetadata?.modelVersion],
-          ["ROI", selectedStep.evidenceMetadata?.roiVersion],
-          ["摄像头配置", selectedStep.evidenceMetadata?.cameraConfigVersion],
+          ["Mapping", selectedStep.evidenceMetadata?.mappingVersion],
+          [
+            "AI Package",
+            selectedStep.evidenceMetadata?.aiPackageVersion ||
+              selectedStep.evidenceMetadata?.modelVersion,
+          ],
+          [
+            "Workstation Profile",
+            selectedStep.evidenceMetadata?.workstationProfileVersion,
+          ],
+          ["现场验证", selectedStep.evidenceMetadata?.validationId],
+          [
+            "Compatibility",
+            selectedStep.evidenceMetadata?.compatibilityDecisionId,
+          ],
         ].map(([label, value]) => (
           <span key={label}>
             <small>{label}</small>

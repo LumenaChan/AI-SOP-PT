@@ -51,6 +51,7 @@ export const SCORE_DEDUCTION_MODES = {
 
 export const CORRECTION_TREATMENTS = {
   keep_deduction: "纠正后仍保留扣分",
+  reduce_after_correction: "纠正后减轻扣分",
   cancel_after_correction: "纠正完成后撤销本次扣分",
   teacher_review: "纠正后由教师确认",
 };
@@ -86,6 +87,74 @@ export const EVALUATION_MAPPING_STATUSES = {
   pending_teacher_confirmation: "待教师确认",
   confirmed: "已确认",
   changes_requested: "配置中",
+};
+
+export const DATA_SPLITS = {
+  train: "Train",
+  validation: "Validation",
+  test: "Test",
+};
+
+export const ACTOR_BINDING_STATUSES = {
+  confirmed: "已确认",
+  uncertain: "不确定",
+  lost: "已丢失",
+  rebind_required: "需要重新绑定",
+};
+
+export const STEP_EXECUTION_STATES = {
+  waiting: "等待进入",
+  active: "执行中",
+  paused: "已暂停",
+  closed: "已关闭",
+  safety_blocked: "安全阻断",
+  terminated: "已终止",
+};
+
+export const COMPLETION_RESULTS = {
+  complete: "完整完成",
+  partial: "部分完成",
+  not_completed: "未完成",
+  uncertain: "无法确认",
+  not_evaluable: "不可评价",
+};
+
+export const SCORE_DISPOSITIONS = {
+  pending: "待教师处置",
+  teacher_resolved: "教师已处置",
+  retest_required: "需要补测",
+  retest_resolved: "补测已完成",
+  policy_protected: "政策保护",
+  normal: "正常计分",
+};
+
+export const TECHNICAL_INCIDENT_TYPES = {
+  camera_offline: "摄像头离线",
+  frame_loss: "画面丢帧",
+  severe_occlusion: "严重遮挡",
+  tracking_lost: "人员跟踪丢失",
+  model_timeout: "AI能力响应超时",
+  inference_unavailable: "AI推理不可用",
+};
+
+export const SAFETY_CANDIDATE_STATUSES = {
+  pending: "待教师确认",
+  false_positive: "误报已排除",
+  confirmed: "已确认违规",
+};
+
+export const COMPATIBILITY_LAYER_STATUSES = {
+  compatible: "兼容",
+  update_required: "需要更新",
+  validation_required: "需要重新验证",
+  not_applicable: "不适用",
+};
+
+export const COMPATIBILITY_DECISIONS = {
+  pending: "待确认",
+  compatible: "兼容复用",
+  conditional: "有条件兼容",
+  incompatible: "不兼容",
 };
 
 export const FIELD_VALIDATION_SCENARIOS = [
@@ -172,6 +241,7 @@ export function createScoreRuleDraft({ id, stepId } = {}) {
     deductionValue: 5,
     maxTriggerCount: 1,
     correctionTreatment: "keep_deduction",
+    correctedDeductionValue: 0,
     description: "",
   };
 }
@@ -210,6 +280,7 @@ export function normalizeScoreRule(rule = {}, index = 0) {
     deductionValue: Number(rule.deductionValue || 0),
     maxTriggerCount: Math.max(1, Number(rule.maxTriggerCount || 1)),
     correctionTreatment: rule.correctionTreatment || "keep_deduction",
+    correctedDeductionValue: Number(rule.correctedDeductionValue || 0),
     description: rule.description || "",
   };
 }
@@ -373,6 +444,17 @@ export function validateScoreRule(rule = {}, step = {}) {
     issues.push("最大触发次数必须是正整数");
   if (!CORRECTION_TREATMENTS[normalized.correctionTreatment])
     issues.push("纠正后处理无效");
+  if (normalized.correctionTreatment === "reduce_after_correction") {
+    const originalDeduction =
+      normalized.deductionMode === "zero_step"
+        ? Number(step.score || 0)
+        : normalized.deductionValue;
+    if (
+      !(normalized.correctedDeductionValue > 0) ||
+      normalized.correctedDeductionValue >= originalDeduction
+    )
+      issues.push("纠正后扣分值必须大于0且小于原扣分值");
+  }
   return issues;
 }
 
@@ -479,21 +561,25 @@ export function validateSopDefinition(draft = {}) {
 }
 
 export function normalizeEvaluationItem(item = {}, index = 0) {
+  const scoreTreatment = {
+    type: item.scoreTreatment?.type || "",
+    note: item.scoreTreatment?.note || "",
+  };
+  const roles = [...new Set(item.roles || [])];
+  if (scoreTreatment.type === "score_rule" && !roles.includes("scoring"))
+    roles.push("scoring");
   return {
     ...item,
     id: item.id || `EI-${String(index + 1).padStart(3, "0")}`,
     stepId: item.stepId || "",
     name: item.name || "",
     type: item.type || "业务判断项",
-    roles: [...new Set(item.roles || [])],
+    roles,
     sourceCompletion: item.sourceCompletion || "",
     sourceScoreRuleIds: [...new Set(item.sourceScoreRuleIds || [])],
     sourceSafetyRuleIds: [...new Set(item.sourceSafetyRuleIds || [])],
     machineEventIds: [...new Set(item.machineEventIds || [])],
-    scoreTreatment: {
-      type: item.scoreTreatment?.type || "",
-      note: item.scoreTreatment?.note || "",
-    },
+    scoreTreatment,
     fallback: item.fallback || "no_negative_auto_decision",
   };
 }
@@ -581,7 +667,11 @@ export function checkCompletionScoringCoverage({
 
   for (const source of sop.steps || []) {
     const step = normalizeSopStep(source);
-    if (step.incompletePolicy !== "rule_based") continue;
+    if (
+      step.incompletePolicy !== "rule_based" ||
+      step.expectedJudgementMode === "default_pass_manual_deduction"
+    )
+      continue;
     const completionItems = normalized.evaluationItems.filter(
       (item) => item.stepId === step.id && item.roles.includes("completion"),
     );
@@ -652,7 +742,15 @@ export function validateEvaluationMapping({ sop = {}, mapping = {} } = {}) {
       issues.push(`${item.id} 包含无效 role`);
     if (item.machineEventIds.some((eventId) => !eventIds.has(eventId)))
       issues.push(`${item.id} 引用了不存在的 Machine Event`);
-    if (!item.machineEventIds.length)
+    const step = (sop.steps || [])
+      .map(normalizeSopStep)
+      .find((entry) => entry.id === item.stepId);
+    if (step?.expectedJudgementMode === "default_pass_manual_deduction")
+      issues.push(`${item.id} 关联的是教师评价步骤，不进入AI自动映射`);
+    if (
+      step?.expectedJudgementMode !== "default_pass_manual_deduction" &&
+      !item.machineEventIds.length
+    )
       issues.push(`${item.id} 至少需要关联一个 Machine Event`);
     if (item.roles.includes("completion") && !item.sourceCompletion.trim())
       issues.push(`${item.id} 缺少来自 SOP 的完成条件`);
@@ -699,11 +797,393 @@ export function canSubmitMappingForTeacherConfirmation(input = {}) {
   return validateEvaluationMapping(input).passed;
 }
 
+export function deriveDataRequirements(mapping = {}) {
+  const normalized = normalizeEvaluationMapping(mapping);
+  const referencedEventIds = new Set(
+    normalized.evaluationItems.flatMap((item) => item.machineEventIds),
+  );
+  const events = normalized.machineEvents.filter((event) =>
+    referencedEventIds.has(event.id),
+  );
+  return {
+    existingCapability: events.filter(
+      (event) => event.capabilityMode === "existing_capability",
+    ),
+    configurationOnly: events.filter(
+      (event) => event.capabilityMode === "configuration_only",
+    ),
+    trainingRequired: events.filter(
+      (event) => event.capabilityMode === "training_required",
+    ),
+    requiresTraining: events.some(
+      (event) => event.capabilityMode === "training_required",
+    ),
+  };
+}
+
+export function assignSourceVideosToSplits(sourceVideoIds = []) {
+  const unique = [...new Set(sourceVideoIds.filter(Boolean))];
+  const result = { train: [], validation: [], test: [] };
+  unique.forEach((id, index) => {
+    const ratio = (index * 37) % 100;
+    const split = ratio < 70 ? "train" : ratio < 85 ? "validation" : "test";
+    result[split].push(id);
+  });
+  return result;
+}
+
+export function validateDatasetSplitIsolation(splits = {}) {
+  const seen = new Map();
+  const issues = [];
+  for (const split of Object.keys(DATA_SPLITS)) {
+    for (const sourceVideoId of splits[split] || []) {
+      if (seen.has(sourceVideoId))
+        issues.push(
+          `${sourceVideoId} 同时出现在 ${DATA_SPLITS[seen.get(sourceVideoId)]} 与 ${DATA_SPLITS[split]}`,
+        );
+      else seen.set(sourceVideoId, split);
+    }
+  }
+  return { passed: issues.length === 0, issues, sourceVideoCount: seen.size };
+}
+
+export function getAiPackageCreationReadiness({ sop, mapping, dataset } = {}) {
+  const issues = [];
+  const requirements = deriveDataRequirements(mapping);
+  if (!sop || sop.status !== "已发布") issues.push("SOP 尚未发布");
+  if (!mapping || mapping.status !== "confirmed")
+    issues.push("Evaluation Mapping 尚未完成教师确认");
+  if (requirements.requiresTraining) {
+    if (!dataset || dataset.status !== "已锁定")
+      issues.push("Training Required 能力必须绑定已锁定 Dataset");
+    const isolation = validateDatasetSplitIsolation(dataset?.splits || {});
+    if (dataset && !isolation.passed) issues.push(...isolation.issues);
+    if (dataset && isolation.sourceVideoCount < 1)
+      issues.push("Dataset 尚未纳入通过审核的 Source Video");
+  }
+  return { passed: issues.length === 0, issues, requirements };
+}
+
+export function createEvaluationClock({
+  status = "idle",
+  elapsedSeconds = 0,
+  wallSeconds = 0,
+  pausedSeconds = 0,
+  pauseReason = "",
+  history = [],
+} = {}) {
+  return {
+    status,
+    elapsedSeconds: Math.max(0, Number(elapsedSeconds || 0)),
+    wallSeconds: Math.max(0, Number(wallSeconds || 0)),
+    pausedSeconds: Math.max(0, Number(pausedSeconds || 0)),
+    pauseReason,
+    history,
+  };
+}
+
+export function normalizeWorkstationProfile(profile = {}, index = 0) {
+  const cameras =
+    Array.isArray(profile.cameras) && profile.cameras.length
+      ? profile.cameras
+      : [
+          { id: "camera-main", name: "主视角摄像头", status: "在线" },
+          { id: "camera-assist", name: "辅助视角摄像头", status: "在线" },
+        ];
+  return {
+    ...profile,
+    id: profile.id || `workstation-profile-${index + 1}`,
+    version: profile.version || "WP1",
+    status: profile.status || "已发布",
+    cameras,
+    primaryCameraId: profile.primaryCameraId || cameras[0]?.id || "",
+    fallbackCameraId:
+      profile.fallbackCameraId || cameras[1]?.id || cameras[0]?.id || "",
+    rois: profile.rois || [],
+    evidenceBindings: Array.isArray(profile.evidenceBindings)
+      ? profile.evidenceBindings
+      : [],
+    environmentSummary: profile.environmentSummary || profile.note || "",
+  };
+}
+
+export function buildValidationCoverage({
+  evaluationItems = [],
+  testCases = [],
+} = {}) {
+  const requiredIds = evaluationItems.map((item) => item.id);
+  const coveredIds = [
+    ...new Set(
+      testCases
+        .filter((item) => item.result === "通过")
+        .flatMap((item) => item.evaluationItemIds || []),
+    ),
+  ].filter((id) => requiredIds.includes(id));
+  const uncoveredItemIds = requiredIds.filter((id) => !coveredIds.includes(id));
+  return {
+    totalItemCount: requiredIds.length,
+    coveredItemCount: coveredIds.length,
+    coveredItemIds: coveredIds,
+    uncoveredItemIds,
+    passed: requiredIds.length === 0 || uncoveredItemIds.length === 0,
+  };
+}
+
+function aiRelevantSopShape(sop = {}) {
+  return {
+    steps: (sop.steps || []).map((step) => ({
+      id: step.id,
+      name: step.name,
+      completionCondition: step.completionCondition,
+      incompletePolicy: step.incompletePolicy,
+      expectedJudgementMode: step.expectedJudgementMode || step.judgementMode,
+      flowPolicy: step.flowPolicy,
+    })),
+    safetyRules: sop.safetyRules || [],
+  };
+}
+
+function scoringSopShape(sop = {}) {
+  return {
+    steps: (sop.steps || []).map((step) => ({
+      id: step.id,
+      score: Number(step.score ?? step.maxScore ?? 0),
+      incompletePolicy: step.incompletePolicy,
+    })),
+    scoreRules: sop.scoreRules || [],
+  };
+}
+
+export function assessSopAiImpact({ fromSop, toSop } = {}) {
+  if (!fromSop || !toSop)
+    return {
+      changeType: "unknown",
+      summary: "缺少前后SOP版本，无法完成AI影响分析",
+      layers: {
+        mapping: "update_required",
+        aiPackage: "validation_required",
+        workstationProfile: "compatible",
+        validation: "validation_required",
+        scoringRegression: "validation_required",
+      },
+    };
+  const semanticChanged =
+    JSON.stringify(aiRelevantSopShape(fromSop)) !==
+    JSON.stringify(aiRelevantSopShape(toSop));
+  const scoringChanged =
+    JSON.stringify(scoringSopShape(fromSop)) !==
+    JSON.stringify(scoringSopShape(toSop));
+  if (semanticChanged)
+    return {
+      changeType: "ai_semantic",
+      summary: "完成条件、评价方式、步骤语义或安全规则发生变化",
+      layers: {
+        mapping: "update_required",
+        aiPackage: "update_required",
+        workstationProfile: "compatible",
+        validation: "validation_required",
+        scoringRegression: "validation_required",
+      },
+      dataRequirement: "required",
+    };
+  if (scoringChanged)
+    return {
+      changeType: "scoring",
+      summary: "评分分值或Score Rule发生变化，机器事实能力可继续复用",
+      layers: {
+        mapping: "update_required",
+        aiPackage: "compatible",
+        workstationProfile: "compatible",
+        validation: "compatible",
+        scoringRegression: "validation_required",
+      },
+      dataRequirement: "not_required",
+    };
+  return {
+    changeType: "non_ai",
+    summary: "仅教学文案、示教资料或非AI语义信息发生变化",
+    layers: {
+      mapping: "compatible",
+      aiPackage: "compatible",
+      workstationProfile: "compatible",
+      validation: "compatible",
+      scoringRegression: "not_applicable",
+    },
+    dataRequirement: "not_required",
+  };
+}
+
+export function normalizeCompatibilityDecision(decision = {}) {
+  return {
+    ...decision,
+    decision: decision.decision || "pending",
+    affectedLayers: {
+      mapping: "update_required",
+      aiPackage: "validation_required",
+      workstationProfile: "compatible",
+      validation: "validation_required",
+      scoringRegression: "validation_required",
+      ...(decision.affectedLayers || decision.layers || {}),
+    },
+    reason: decision.reason || "",
+    operator: decision.operator || "",
+    time: decision.time || "",
+  };
+}
+
+export function isCompatibilityLayerAccepted(decision, layer) {
+  const normalized = normalizeCompatibilityDecision(decision || {});
+  return (
+    ["compatible", "conditional"].includes(normalized.decision) &&
+    ["compatible", "not_applicable"].includes(normalized.affectedLayers[layer])
+  );
+}
+
+export function advanceEvaluationClock(clock = {}, seconds = 1) {
+  const normalized = createEvaluationClock(clock);
+  const increment = Math.max(0, Number(seconds || 0));
+  return {
+    ...normalized,
+    wallSeconds: normalized.wallSeconds + increment,
+    elapsedSeconds:
+      normalized.status === "running"
+        ? normalized.elapsedSeconds + increment
+        : normalized.elapsedSeconds,
+    pausedSeconds:
+      normalized.status === "paused"
+        ? normalized.pausedSeconds + increment
+        : normalized.pausedSeconds,
+  };
+}
+
+export function setEvaluationClockPaused(
+  clock = {},
+  paused,
+  { reason = "", at = "" } = {},
+) {
+  const normalized = createEvaluationClock(clock);
+  const status = paused ? "paused" : "running";
+  if (normalized.status === status) return normalized;
+  return {
+    ...normalized,
+    status,
+    pauseReason: paused ? reason : "",
+    history: [
+      ...normalized.history,
+      { action: paused ? "paused" : "resumed", reason, at },
+    ],
+  };
+}
+
+export function normalizeRuntimeStep(step = {}) {
+  const legacyState = step.state || "pending";
+  const executionState =
+    step.executionState ||
+    ({
+      pending: "waiting",
+      active: "active",
+      pass: "closed",
+      blocked: "safety_blocked",
+    }[legacyState] ??
+      "waiting");
+  const completionResult =
+    step.completionResult ||
+    ({ pass: "complete", blocked: "not_completed" }[legacyState] ??
+      "uncertain");
+  return {
+    ...step,
+    executionState,
+    completionResult,
+    observationWindow: {
+      status:
+        step.observationWindow?.status ||
+        (executionState === "active"
+          ? "open"
+          : executionState === "waiting"
+            ? "pending"
+            : "closed"),
+      openedAt: step.observationWindow?.openedAt || "",
+      closedAt: step.observationWindow?.closedAt || "",
+      closeReason: step.observationWindow?.closeReason || "",
+    },
+    scoreDisposition: {
+      status: step.scoreDisposition?.status || "normal",
+      reason: step.scoreDisposition?.reason || "",
+      resolvedBy: step.scoreDisposition?.resolvedBy || "",
+      resolvedAt: step.scoreDisposition?.resolvedAt || "",
+    },
+  };
+}
+
+export function canProduceNegativeAutoEvaluation({
+  actorBinding,
+  observationWindow,
+  evidenceValid = true,
+  sessionPaused = false,
+} = {}) {
+  const reasons = [];
+  if (actorBinding?.status !== "confirmed")
+    reasons.push("Primary Actor 未确认");
+  if (observationWindow?.status !== "open")
+    reasons.push("Observation Window 未开启");
+  if (!evidenceValid) reasons.push("Camera / AI 证据链无效");
+  if (sessionPaused) reasons.push("Session 已暂停");
+  return { allowed: reasons.length === 0, reasons };
+}
+
+export function deriveTechnicalIncidentDisposition({
+  arrangementType,
+  incident,
+} = {}) {
+  if (!incident) return { status: "normal", reason: "" };
+  if (arrangementType === "exam")
+    return {
+      status: "pending",
+      reason: `${TECHNICAL_INCIDENT_TYPES[incident.type] || incident.type}导致本步骤不可可靠评价`,
+    };
+  return {
+    status: "normal",
+    reason: "练习技术异常采用默认通过，不形成负向自动扣分",
+  };
+}
+
+export function calculateScoreEngine({
+  steps = [],
+  manualAdjustments = [],
+} = {}) {
+  const baseScore = steps.reduce(
+    (total, step) => total + Number(step.maxScore || 0),
+    0,
+  );
+  const deductions = steps.reduce((total, step) => {
+    const score = Number(
+      step.effectiveScore ?? step.score ?? step.maxScore ?? 0,
+    );
+    return total + Math.max(0, Number(step.maxScore || 0) - score);
+  }, 0);
+  const adjustment = manualAdjustments.reduce(
+    (total, item) => total + Number(item.value || 0),
+    0,
+  );
+  const hasPending = steps.some((step) =>
+    ["pending", "retest_required"].includes(
+      step.scoreDisposition?.status || "normal",
+    ),
+  );
+  return {
+    baseScore,
+    deductions,
+    manualAdjustments: adjustment,
+    effectiveScore: Math.max(0, baseScore - deductions + adjustment),
+    scoreStatus: hasPending ? "pending" : "final",
+  };
+}
+
 export function createSessionStepsFromSop(sopSteps = []) {
   return sopSteps.map((source, index) => {
     const step = normalizeSopStep(source, index);
     const maxScore = Number(step.maxScore ?? step.score ?? 0);
-    return {
+    return normalizeRuntimeStep({
       ...step,
       state: "pending",
       result: "未进行",
@@ -719,7 +1199,7 @@ export function createSessionStepsFromSop(sopSteps = []) {
       evidenceSources: [],
       evidence: "尚未产生证据",
       observation: "等待进入步骤",
-    };
+    });
   });
 }
 
@@ -800,19 +1280,28 @@ export function workstationFeedbackPolicy(type, published = false) {
 
 export function automaticEvaluationGate({
   workstation,
+  workstationProfile,
   sop,
   model,
   validation,
   mapping,
+  compatibilityDecision,
   requireConfirmedMapping = false,
 } = {}) {
-  const implementation = workstation?.implementation || {};
+  const implementation = normalizeWorkstationProfile(
+    workstationProfile || workstation?.implementation || {},
+  );
   const reasons = [];
   if (!sop || sop.status !== "已发布") reasons.push("SOP 尚未发布");
   if (requireConfirmedMapping && mapping?.status !== "confirmed")
     reasons.push("AI评价业务口径尚未完成教师确认");
   if (!model || model.status !== "已部署") reasons.push("没有兼容的已部署模型");
-  if (model && sop && model.sopVersion !== sop.version)
+  if (
+    model &&
+    sop &&
+    model.sopVersion !== sop.version &&
+    !isCompatibilityLayerAccepted(compatibilityDecision, "aiPackage")
+  )
     reasons.push("模型与当前 SOP 版本不兼容");
   if (implementation.cameraPosition !== "已确认") reasons.push("机位尚未确认");
   if (implementation.lighting !== "已确认") reasons.push("光照尚未确认");
@@ -823,22 +1312,37 @@ export function automaticEvaluationGate({
   if (!validation) reasons.push("当前 SOP 版本尚无现场验证记录");
   if (validation && validation.status !== "通过")
     reasons.push("现场验证未通过");
-  if (validation && sop && validation.sopVersion !== sop.version)
+  if (
+    validation &&
+    sop &&
+    validation.sopVersion !== sop.version &&
+    !isCompatibilityLayerAccepted(compatibilityDecision, "validation")
+  )
     reasons.push("现场验证记录不属于当前 SOP 版本");
   if (validation && model && validation.modelVersion !== model.version)
     reasons.push("模型版本已变化，需要重新现场验证");
   if (
     validation &&
     implementation.roiVersion &&
-    validation.roiVersion !== implementation.roiVersion
+    validation.roiVersion !== implementation.roiVersion &&
+    !isCompatibilityLayerAccepted(compatibilityDecision, "workstationProfile")
   )
     reasons.push("ROI 版本已变化，需要重新现场验证");
   if (
     validation &&
     implementation.cameraConfigVersion &&
-    validation.cameraConfigVersion !== implementation.cameraConfigVersion
+    validation.cameraConfigVersion !== implementation.cameraConfigVersion &&
+    !isCompatibilityLayerAccepted(compatibilityDecision, "workstationProfile")
   )
     reasons.push("摄像头配置已变化，需要重新现场验证");
+  if (
+    validation?.workstationProfileVersion &&
+    validation.workstationProfileVersion !== implementation.version &&
+    !isCompatibilityLayerAccepted(compatibilityDecision, "workstationProfile")
+  )
+    reasons.push("Workstation Profile 已变化，需要重新现场验证");
+  if (validation?.coverage && !validation.coverage.passed)
+    reasons.push("Validation Test Case 尚未覆盖全部 Evaluation Item");
 
   const enabled = reasons.length === 0;
   const automaticSteps = (sop?.steps || []).filter(
@@ -862,6 +1366,55 @@ export function getEffectiveJudgementMode({ sopStep, gate } = {}) {
   return gate?.enabled ? "visual_auto" : "visual_assist_default_pass";
 }
 
+export function getStepAiCapabilityDisplay({
+  expectedMode,
+  aiStatus = "未配置",
+  mappingConfirmed = false,
+} = {}) {
+  if (expectedMode === "default_pass_manual_deduction")
+    return {
+      actual: "教师评价",
+      reason: "由教师依据业务标准进行评价",
+    };
+  if (expectedMode === "visual_assist_default_pass") {
+    if (!mappingConfirmed)
+      return {
+        actual: "待AI适配",
+        reason: "教师期望AI辅助，但业务映射尚未确认",
+      };
+    if (aiStatus === "可用")
+      return {
+        actual: "AI辅助评价",
+        reason: "AI辅助能力与现场条件均已就绪",
+      };
+    if (aiStatus === "部分可用")
+      return {
+        actual: "AI辅助能力部分可用",
+        reason: "教师期望已记录，当前能力仍有部分工位未完成验证",
+      };
+    return {
+      actual: "AI辅助能力配置中",
+      reason: "教师期望已记录，当前能力仍在配置或验证",
+    };
+  }
+  if (!mappingConfirmed)
+    return {
+      actual: "待AI适配",
+      reason: "业务判断口径尚未确认，不能启用自动评价",
+    };
+  if (aiStatus === "可用")
+    return { actual: "自动评价", reason: "当前能力与现场条件均已就绪" };
+  if (aiStatus === "部分可用")
+    return {
+      actual: "部分工位自动评价",
+      reason: "自动能力未完全就绪，运行时安全降级",
+    };
+  return {
+    actual: "待AI适配",
+    reason: "自动能力未完全就绪，运行时安全降级",
+  };
+}
+
 function versionNumber(value = "") {
   const parts = String(value).match(/\d+/g) || [];
   return parts.reduce((total, part, index) => {
@@ -883,6 +1436,8 @@ export function getSopAiEvaluationStatus({
   workstations = [],
   fieldValidations = [],
   evaluationMappings = [],
+  workstationProfiles = [],
+  compatibilityDecisions = [],
   targetWorkstationIds,
 } = {}) {
   const mappingStatus = getMappingStatusForSop({
@@ -911,7 +1466,15 @@ export function getSopAiEvaluationStatus({
   const latestLockedDataset = latestVersion(
     sopDatasets.filter((item) => item.status === "已锁定"),
   );
-  const deployedModel = latestVersion(
+  const compatibilityDecision = compatibilityDecisions
+    .map(normalizeCompatibilityDecision)
+    .find(
+      (item) =>
+        item.toSopId === sop.id &&
+        item.toVersion === sop.version &&
+        ["compatible", "conditional"].includes(item.decision),
+    );
+  const exactDeployedModel = latestVersion(
     models.filter(
       (item) =>
         item.sopId === sop.id &&
@@ -919,11 +1482,30 @@ export function getSopAiEvaluationStatus({
         item.status === "已部署",
     ),
   );
+  const deployedModel =
+    exactDeployedModel ||
+    (isCompatibilityLayerAccepted(compatibilityDecision, "aiPackage")
+      ? latestVersion(
+          models.filter(
+            (item) =>
+              item.status === "已部署" &&
+              item.sopVersion === compatibilityDecision.fromVersion &&
+              (!compatibilityDecision.fromSopId ||
+                item.sopId === compatibilityDecision.fromSopId),
+          ),
+        )
+      : null);
   const productionDataset = deployedModel
-    ? sopDatasets.find(
-        (item) => item.version === deployedModel.datasetVersion,
+    ? datasets.find(
+        (item) =>
+          item.version === deployedModel.datasetVersion &&
+          (!deployedModel.sopId || item.sopId === deployedModel.sopId),
       ) || null
     : null;
+  const productionDataReady = Boolean(
+    deployedModel &&
+      (deployedModel.requiresTraining === false || productionDataset),
+  );
   const researchDataset =
     latestDataset && latestDataset.version !== productionDataset?.version
       ? latestDataset
@@ -931,7 +1513,10 @@ export function getSopAiEvaluationStatus({
   const compatibleModels = models.filter(
     (item) => item.sopId === sop.id && item.sopVersion === sop.version,
   );
-  const hasStarted = sopDatasets.length > 0 || compatibleModels.length > 0;
+  const hasStarted =
+    sopDatasets.length > 0 ||
+    compatibleModels.length > 0 ||
+    Boolean(deployedModel);
   const explicitTargets = Array.isArray(targetWorkstationIds)
     ? new Set(targetWorkstationIds)
     : null;
@@ -949,18 +1534,31 @@ export function getSopAiEvaluationStatus({
       .filter(
         (record) =>
           record.workstationId === workstation.id &&
-          record.sopId === sop.id &&
-          record.sopVersion === sop.version,
+          ((record.sopId === sop.id && record.sopVersion === sop.version) ||
+            (isCompatibilityLayerAccepted(
+              compatibilityDecision,
+              "validation",
+            ) &&
+              record.sopVersion === compatibilityDecision.fromVersion &&
+              (!compatibilityDecision.fromSopId ||
+                record.sopId === compatibilityDecision.fromSopId))),
       )
       .sort((a, b) =>
         String(b.createdAt || "").localeCompare(String(a.createdAt || "")),
       )[0];
+    const workstationProfile = latestVersion(
+      workstationProfiles.filter(
+        (profile) => profile.workstationId === workstation.id,
+      ),
+    );
     return automaticEvaluationGate({
       workstation,
+      workstationProfile,
       sop,
       model: deployedModel,
       validation,
       mapping: mappingStatus.mapping,
+      compatibilityDecision,
       requireConfirmedMapping: true,
     });
   });
@@ -971,9 +1569,17 @@ export function getSopAiEvaluationStatus({
   const validatedCount = validatedWorkstationCount ? automaticTargetCount : 0;
   const availableCount = validatedCount;
   const reasons = [];
-  if (!productionDataset && !latestLockedDataset)
+  if (
+    deployedModel?.requiresTraining !== false &&
+    !productionDataset &&
+    !latestLockedDataset
+  )
     reasons.push("尚无已锁定 Dataset");
-  if (deployedModel && !productionDataset)
+  if (
+    deployedModel &&
+    deployedModel.requiresTraining !== false &&
+    !productionDataset
+  )
     reasons.push("已部署模型绑定的 Dataset 不存在");
   if (!deployedModel) reasons.push("尚无兼容的已部署模型");
   if (!targetWorkstations.length) reasons.push("尚未设置或识别目标工位");
@@ -983,7 +1589,7 @@ export function getSopAiEvaluationStatus({
   let status = "配置中";
   if (!hasStarted) status = "未配置";
   else if (
-    productionDataset &&
+    productionDataReady &&
     deployedModel &&
     mappingStatus.confirmed &&
     targetWorkstations.length > 0 &&
@@ -991,7 +1597,7 @@ export function getSopAiEvaluationStatus({
   )
     status = "可用";
   else if (
-    productionDataset &&
+    productionDataReady &&
     deployedModel &&
     mappingStatus.confirmed &&
     validatedWorkstationCount > 0
@@ -1011,6 +1617,7 @@ export function getSopAiEvaluationStatus({
     researchDataset,
     latestDataset: latestDataset || null,
     model: deployedModel || null,
+    compatibilityDecision: compatibilityDecision || null,
     mappingStatus,
     reasons: [...new Set(reasons)],
   };
@@ -1095,17 +1702,71 @@ export function arrangementDestination(item) {
 
 export function getPublishBlockers(sessions = []) {
   return sessions.filter((session) => {
-    if (["正式成绩", "已发布", "未参加"].includes(session.resultStatus))
-      return false;
+    if (session.resultStatus === "未参加") return false;
     const steps = session.steps || [];
     const hasMandatoryReview = steps.some(requiresMandatoryReview);
+    const hasPendingDisposition = steps.some((step) =>
+      ["pending", "retest_required"].includes(
+        step.scoreDisposition?.status || "normal",
+      ),
+    );
+    const hasPendingSafety = (session.runtime?.safetyCandidates || []).some(
+      (candidate) => candidate.status === "pending",
+    );
     const hasCompleteScore =
-      steps.length > 0 &&
-      steps.every((step) =>
-        Number.isFinite(Number(step.effectiveScore ?? step.score)),
-      );
-    return hasMandatoryReview || !hasCompleteScore;
+      steps.length === 0 ||
+      steps.every((step) => {
+        const value = step.effectiveScore ?? step.score;
+        return value !== null && value !== "" && Number.isFinite(Number(value));
+      });
+    const resultReady = ["正式成绩", "已发布"].includes(session.resultStatus);
+    return (
+      hasMandatoryReview ||
+      hasPendingDisposition ||
+      hasPendingSafety ||
+      !hasCompleteScore ||
+      (steps.length === 0 && !resultReady)
+    );
   });
+}
+
+export function getExamPublishGate(sessions = []) {
+  const details = [];
+  for (const session of sessions) {
+    if (session.resultStatus === "未参加") continue;
+    const pendingReviews = (session.steps || []).filter(
+      requiresMandatoryReview,
+    );
+    const pendingDispositions = (session.steps || []).filter((step) =>
+      ["pending", "retest_required"].includes(
+        step.scoreDisposition?.status || "normal",
+      ),
+    );
+    const pendingSafety = (session.runtime?.safetyCandidates || []).filter(
+      (candidate) => candidate.status === "pending",
+    );
+    const emptyScores = (session.steps || []).filter((step) => {
+      const value = step.effectiveScore ?? step.score;
+      return value === null || value === "" || !Number.isFinite(Number(value));
+    });
+    if (
+      pendingReviews.length ||
+      pendingDispositions.length ||
+      pendingSafety.length ||
+      emptyScores.length ||
+      (!(session.steps || []).length &&
+        !["正式成绩", "已发布"].includes(session.resultStatus))
+    )
+      details.push({
+        sessionId: session.id,
+        pendingReviewCount: pendingReviews.length,
+        pendingDispositionCount: pendingDispositions.length,
+        pendingSafetyCount: pendingSafety.length,
+        emptyScoreCount: emptyScores.length,
+        resultStatus: session.resultStatus,
+      });
+  }
+  return { passed: details.length === 0, details };
 }
 
 export function canCloseIssue(issue) {
