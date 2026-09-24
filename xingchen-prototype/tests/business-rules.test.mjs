@@ -10,6 +10,8 @@ import {
   canCloseIssue,
   canProduceNegativeAutoEvaluation,
   calculateScoreEngine,
+  createIndependentSopCopy,
+  deactivatePublishedSop,
   createEvaluationClock,
   checkCompletionScoringCoverage,
   createSopStepDraft,
@@ -26,6 +28,7 @@ import {
   getSopAiEvaluationStatus,
   getStepAiCapabilityDisplay,
   isMappingApplicableToSop,
+  isSopAvailableForNewArrangement,
   isCompatibilityLayerAccepted,
   nextStableStepId,
   normalizeEvaluationItem,
@@ -927,8 +930,8 @@ test("legacy SOP text remains as history notes and is not auto-converted into fo
 test("SOP validation enforces linear required steps and structured teacher rules", () => {
   const valid = {
     name: "标准",
+    major: "新能源汽车技术",
     operation: "操作",
-    version: "V1.0",
     basis: "依据",
     conditions: "实训室",
     steps: [
@@ -954,6 +957,23 @@ test("SOP validation enforces linear required steps and structured teacher rules
     safetyRules: [],
   };
   assert.equal(validateSopDefinition(valid).length, 0);
+  assert.ok(validateSopDefinition(null).length > 0);
+  assert.ok(validateSopDefinition({ ...valid, steps: [null] }).length > 0);
+  assert.match(
+    validateSopDefinition({ ...valid, major: "" })
+      .map((issue) => issue.message)
+      .join("；"),
+    /所属专业/,
+  );
+  assert.match(
+    validateSopDefinition({
+      ...valid,
+      steps: [{ ...valid.steps[0], id: "bad" }],
+    })
+      .map((issue) => issue.message)
+      .join("；"),
+    /Step ID 不合法/,
+  );
   assert.match(
     validateSopDefinition({
       ...valid,
@@ -962,6 +982,67 @@ test("SOP validation enforces linear required steps and structured teacher rules
       .map((issue) => issue.message)
       .join("；"),
     /线性必做/,
+  );
+});
+
+test("copying a published SOP creates an independent draft without AI or runtime links", () => {
+  const source = {
+    id: "sop-original",
+    familyId: "old-family",
+    version: "V3.2",
+    name: "高压操作",
+    status: "已发布",
+    frozen: true,
+    publishedAt: "2026-09-01",
+    signedBy: "王伟",
+    major: "新能源汽车技术",
+    operation: "高压操作",
+    basis: "教学标准",
+    conditions: "实训室",
+    steps: [{ id: "Step 01", name: "检查", score: 100 }],
+    scoreRules: [{ id: "SR-1", stepId: "Step 01" }],
+    safetyRules: [{ id: "SAFE-1", stepId: "Step 01" }],
+    evaluationMappings: [{ id: "old-mapping" }],
+    arrangements: [{ id: "old-exam" }],
+    history: [{ version: "V3.2" }],
+  };
+  const copy = createIndependentSopCopy(source, {
+    id: "sop-copy",
+    name: "高压操作（副本）",
+    at: "2026-09-24",
+  });
+  assert.equal(copy.id, "sop-copy");
+  assert.equal(copy.status, "草稿");
+  assert.equal(copy.frozen, false);
+  assert.equal(copy.familyId, "sop-copy");
+  assert.equal(copy.publishedAt, "");
+  assert.equal(copy.signedBy, "");
+  assert.deepEqual(copy.steps, source.steps);
+  assert.deepEqual(copy.scoreRules, source.scoreRules);
+  assert.deepEqual(copy.safetyRules, source.safetyRules);
+  assert.notStrictEqual(copy.steps, source.steps);
+  assert.equal("evaluationMappings" in copy, false);
+  assert.equal("arrangements" in copy, false);
+  assert.deepEqual(copy.history, []);
+  assert.equal(isSopAvailableForNewArrangement(copy), false);
+  assert.equal(isSopAvailableForNewArrangement(source), true);
+  assert.equal(
+    isSopAvailableForNewArrangement({ ...source, status: "已停用" }),
+    false,
+  );
+  const disabled = deactivatePublishedSop(source, "2026-09-24");
+  assert.equal(disabled.status, "已停用");
+  assert.equal(disabled.updatedAt, "2026-09-24");
+  assert.deepEqual(disabled.steps, source.steps);
+  assert.equal(source.status, "已发布");
+  assert.equal(isSopAvailableForNewArrangement(disabled), false);
+  assert.throws(
+    () => deactivatePublishedSop(disabled, "2026-09-25"),
+    /只有已发布/,
+  );
+  assert.throws(
+    () => createIndependentSopCopy(copy, { id: "another", name: "草稿副本" }),
+    /只能复制/,
   );
 });
 

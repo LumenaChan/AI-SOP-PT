@@ -1,11 +1,31 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
+  assertCapabilityDeletable,
+  createCapability,
+  deactivateCapability,
+  reactivateCapability,
+  updateCapability,
+} from "./aiCapabilityRules.js";
+import {
+  assertAiSourceVideosDeletable,
+  batchUpdateAiSourceVideos as applyAiSourceVideoBatchUpdate,
+  capabilityStatusAfterVideoUpload,
+  createAiSourceVideos,
+  updateAiSourceVideo as applyAiSourceVideoUpdate,
+} from "./aiVideoRules.js";
+import {
+  assertDerivedItemsDeletable,
+  buildFrameExtractionTask,
+  buildVideoSlicingTask,
+} from "./aiExtractionRules.js";
+import {
   applyDefaultPassPolicy,
-  assessSopAiImpact,
   advanceEvaluationClock,
   automaticEvaluationGate,
   calculateScoreEngine,
   canCloseIssue,
+  createIndependentSopCopy,
+  deactivatePublishedSop,
   createSessionStepsFromSop,
   createEvaluationClock,
   DIAGNOSTIC_ROOT_CAUSES,
@@ -19,6 +39,7 @@ import {
   getMappingStatusForSop,
   getPublishBlockers,
   getAiPackageCreationReadiness,
+  isSopAvailableForNewArrangement,
   normalizeEvaluationMapping,
   normalizeCompatibilityDecision,
   normalizeRuntimeStep,
@@ -639,6 +660,302 @@ const seedData = {
       lastTestAt: "2026-09-16 14:10",
       updatedAt: "2026-09-18 10:23",
       notes: "",
+    },
+  ],
+  aiCapabilities: [
+    {
+      id: "cap-insulating-gloves",
+      name: "绝缘手套检测",
+      type: "object_detection",
+      description: "识别画面中的绝缘手套并返回目标位置。",
+      targetName: "绝缘手套",
+      status: "已发布",
+      currentModelStatus: "已发布",
+      referenceCount: 0,
+      createdBy: "系统管理员",
+      createdAt: "2026-09-16 10:00",
+      updatedAt: "2026-09-20 15:30",
+      note: "",
+    },
+    {
+      id: "cap-voltage-tester",
+      name: "验电笔检测",
+      type: "object_detection",
+      description: "识别画面中的验电笔并返回目标位置。",
+      targetName: "验电笔",
+      status: "已发布",
+      currentModelStatus: "已发布",
+      referenceCount: 0,
+      createdBy: "系统管理员",
+      createdAt: "2026-09-17 09:20",
+      updatedAt: "2026-09-21 11:40",
+      note: "",
+    },
+    {
+      id: "cap-secondary-voltage-check",
+      name: "二次验电动作识别",
+      type: "action_recognition",
+      description: "识别操作者是否完成完整的二次验电动作过程。",
+      targetName: "二次验电",
+      status: "数据准备中",
+      currentModelStatus: "未训练",
+      referenceCount: 0,
+      createdBy: "系统管理员",
+      createdAt: "2026-09-22 14:10",
+      updatedAt: "2026-09-23 16:00",
+      note: "待采集不同视角的动作视频。",
+    },
+    {
+      id: "cap-workpiece-clamping",
+      name: "工件夹紧动作识别",
+      type: "action_recognition",
+      description: "识别操作者完成工件夹紧的动作过程。",
+      targetName: "工件夹紧",
+      status: "草稿",
+      currentModelStatus: "未训练",
+      referenceCount: 0,
+      createdBy: "系统管理员",
+      createdAt: "2026-09-24 09:00",
+      updatedAt: "2026-09-24 09:00",
+      note: "",
+    },
+  ],
+  aiSourceVideos: [
+    {
+      id: "ai-video-gloves-01",
+      capabilityId: "cap-insulating-gloves",
+      fileName: "绝缘手套-标准展示.mp4",
+      displayName: "绝缘手套标准展示",
+      storageRef: "",
+      mimeType: "video/mp4",
+      codec: "H.264",
+      duration: "00:24",
+      width: 1920,
+      height: 1080,
+      frameRate: 30,
+      fileSize: 16777216,
+      dataCategory: "normal",
+      sourceType: "standard_demo",
+      workstationId: "w1",
+      capturedAt: "2026-09-20",
+      note: "双手正反面展示，画面清晰。",
+      processingStatus: "derived",
+      uploadedBy: "系统管理员",
+      uploadedAt: "2026-09-20 10:20",
+      updatedAt: "2026-09-20 10:45",
+    },
+    {
+      id: "ai-video-gloves-02",
+      capabilityId: "cap-insulating-gloves",
+      fileName: "绝缘手套-侧面弱光.mov",
+      displayName: "侧面弱光手套展示",
+      storageRef: "",
+      mimeType: "video/quicktime",
+      codec: "H.264",
+      duration: "00:18",
+      width: 1280,
+      height: 720,
+      frameRate: 25,
+      fileSize: 10485760,
+      dataCategory: "normal",
+      sourceType: "supplemental_capture",
+      workstationId: "w2",
+      capturedAt: "2026-09-21",
+      note: "专项补采侧面弱光场景。",
+      processingStatus: "unprocessed",
+      uploadedBy: "系统管理员",
+      uploadedAt: "2026-09-21 16:10",
+      updatedAt: "2026-09-21 16:10",
+    },
+    {
+      id: "ai-video-secondary-check-01",
+      capabilityId: "cap-secondary-voltage-check",
+      fileName: "二次验电-教师标准示范.mp4",
+      displayName: "二次验电教师标准示范",
+      storageRef: "",
+      mimeType: "video/mp4",
+      codec: "H.264",
+      duration: "00:42",
+      width: 1920,
+      height: 1080,
+      fileSize: 38482944,
+      dataCategory: "normal",
+      sourceType: "standard_demo",
+      workstationId: "w2",
+      capturedAt: "2026-09-22",
+      note: "正面主机位，动作完整，光照稳定。",
+      processingStatus: "derived",
+      uploadedBy: "系统管理员",
+      uploadedAt: "2026-09-22 14:20",
+      updatedAt: "2026-09-23 15:40",
+    },
+    {
+      id: "ai-video-secondary-check-02",
+      capabilityId: "cap-secondary-voltage-check",
+      fileName: "二次验电-遗漏复检.mov",
+      displayName: "遗漏复检错误示范",
+      storageRef: "",
+      mimeType: "video/quicktime",
+      codec: "H.264",
+      duration: "00:31",
+      width: 1920,
+      height: 1080,
+      fileSize: 29884416,
+      dataCategory: "error",
+      sourceType: "supplemental_capture",
+      workstationId: "w2",
+      capturedAt: "2026-09-23",
+      note: "专项补采，遗漏第二验电点。",
+      processingStatus: "unprocessed",
+      uploadedBy: "系统管理员",
+      uploadedAt: "2026-09-23 15:45",
+      updatedAt: "2026-09-23 15:45",
+    },
+    {
+      id: "ai-video-secondary-check-03",
+      capabilityId: "cap-secondary-voltage-check",
+      fileName: "工位待机背景-01.mp4",
+      displayName: "验电工位待机背景",
+      storageRef: "",
+      mimeType: "video/mp4",
+      codec: "H.264",
+      duration: "01:10",
+      width: 1280,
+      height: 720,
+      fileSize: 21872640,
+      dataCategory: "background",
+      sourceType: "historical_recording",
+      workstationId: "w3",
+      capturedAt: "2026-09-18",
+      note: "无目标动作，用于区分环境背景。",
+      processingStatus: "unprocessed",
+      uploadedBy: "系统管理员",
+      uploadedAt: "2026-09-23 16:00",
+      updatedAt: "2026-09-23 16:00",
+    },
+  ],
+  aiExtractionTasks: [
+    {
+      id: "extract-task-gloves-01",
+      capabilityId: "cap-insulating-gloves",
+      taskType: "frame_extraction",
+      method: "interval",
+      sourceVideoIds: ["ai-video-gloves-01"],
+      parameters: {
+        samplingMode: "interval",
+        sampleValue: 4,
+        rangeMode: "entire",
+        startTime: "00:00",
+        endTime: "",
+        maxFrames: 500,
+        outputResolution: "original",
+      },
+      status: "completed",
+      progress: 100,
+      completedVideoIds: ["ai-video-gloves-01"],
+      generatedCount: 3,
+      failures: [],
+      createdBy: "系统管理员",
+      createdAt: "2026-09-20 10:45",
+      updatedAt: "2026-09-20 10:45",
+    },
+    {
+      id: "slice-task-secondary-01",
+      capabilityId: "cap-secondary-voltage-check",
+      taskType: "video_slicing",
+      method: "manual",
+      sourceVideoIds: ["ai-video-secondary-check-01"],
+      parameters: { startTime: "00:06", endTime: "00:25", note: "完整验电动作" },
+      status: "completed",
+      progress: 100,
+      completedVideoIds: ["ai-video-secondary-check-01"],
+      generatedCount: 1,
+      failures: [],
+      createdBy: "系统管理员",
+      createdAt: "2026-09-22 15:10",
+      updatedAt: "2026-09-22 15:10",
+    },
+    {
+      id: "slice-task-secondary-failed",
+      capabilityId: "cap-secondary-voltage-check",
+      taskType: "video_slicing",
+      method: "fixed_length",
+      sourceVideoIds: ["ai-video-secondary-check-02"],
+      parameters: { clipLength: 5, step: 5, startTime: "", endTime: "" },
+      status: "failed",
+      progress: 100,
+      completedVideoIds: [],
+      generatedCount: 0,
+      failures: [
+        {
+          sourceVideoId: "ai-video-secondary-check-02",
+          reason: "视频解码服务临时异常，可重试处理。",
+        },
+      ],
+      createdBy: "系统管理员",
+      createdAt: "2026-09-23 16:10",
+      updatedAt: "2026-09-23 16:10",
+    },
+  ],
+  aiFrames: [
+    {
+      id: "ai-frame-gloves-001",
+      capabilityId: "cap-insulating-gloves",
+      sourceVideoId: "ai-video-gloves-01",
+      taskId: "extract-task-gloves-01",
+      sourceTimeMs: 4000,
+      fileName: "ai-video-gloves-01_00m04.000.jpg",
+      storageRef: "",
+      width: 1920,
+      height: 1080,
+      generationStatus: "success",
+      processingStatus: "derived",
+      createdAt: "2026-09-20 10:45",
+    },
+    {
+      id: "ai-frame-gloves-002",
+      capabilityId: "cap-insulating-gloves",
+      sourceVideoId: "ai-video-gloves-01",
+      taskId: "extract-task-gloves-01",
+      sourceTimeMs: 8000,
+      fileName: "ai-video-gloves-01_00m08.000.jpg",
+      storageRef: "",
+      width: 1920,
+      height: 1080,
+      generationStatus: "success",
+      processingStatus: "pending_cleaning",
+      createdAt: "2026-09-20 10:45",
+    },
+    {
+      id: "ai-frame-gloves-003",
+      capabilityId: "cap-insulating-gloves",
+      sourceVideoId: "ai-video-gloves-01",
+      taskId: "extract-task-gloves-01",
+      sourceTimeMs: 12000,
+      fileName: "ai-video-gloves-01_00m12.000.jpg",
+      storageRef: "",
+      width: 1920,
+      height: 1080,
+      generationStatus: "success",
+      processingStatus: "pending_cleaning",
+      createdAt: "2026-09-20 10:45",
+    },
+  ],
+  aiClips: [
+    {
+      id: "ai-clip-secondary-001",
+      capabilityId: "cap-secondary-voltage-check",
+      sourceVideoId: "ai-video-secondary-check-01",
+      taskId: "slice-task-secondary-01",
+      startMs: 6000,
+      endMs: 25000,
+      durationMs: 19000,
+      storageRef: "",
+      generationMethod: "manual",
+      note: "完整验电动作",
+      generationStatus: "success",
+      processingStatus: "pending_cleaning",
+      createdAt: "2026-09-22 15:10",
     },
   ],
   sops: [
@@ -1859,7 +2176,41 @@ function cloneSeed() {
 
 function normalizePrototypeData(input) {
   const next = input;
+  const hasAiExtractionData =
+    Array.isArray(next.aiExtractionTasks) ||
+    Array.isArray(next.aiFrames) ||
+    Array.isArray(next.aiClips);
   next.version = seedData.version;
+  next.aiCapabilities = Array.isArray(next.aiCapabilities)
+    ? next.aiCapabilities.filter((item) => item?.id)
+    : JSON.parse(JSON.stringify(seedData.aiCapabilities));
+  next.aiSourceVideos = Array.isArray(next.aiSourceVideos)
+    ? next.aiSourceVideos.filter(
+        (item) => item?.id && item?.capabilityId && item?.fileName,
+      )
+    : JSON.parse(JSON.stringify(seedData.aiSourceVideos || []));
+  if (!hasAiExtractionData) {
+    const currentVideoIds = new Set(next.aiSourceVideos.map((item) => item.id));
+    next.aiSourceVideos = [
+      ...next.aiSourceVideos,
+      ...JSON.parse(JSON.stringify(seedData.aiSourceVideos || [])).filter(
+        (item) => !currentVideoIds.has(item.id),
+      ),
+    ];
+  }
+  next.aiExtractionTasks = Array.isArray(next.aiExtractionTasks)
+    ? next.aiExtractionTasks.filter((item) => item?.id && item?.capabilityId)
+    : JSON.parse(JSON.stringify(seedData.aiExtractionTasks || []));
+  next.aiFrames = Array.isArray(next.aiFrames)
+    ? next.aiFrames.filter(
+        (item) => item?.id && item?.capabilityId && item?.sourceVideoId,
+      )
+    : JSON.parse(JSON.stringify(seedData.aiFrames || []));
+  next.aiClips = Array.isArray(next.aiClips)
+    ? next.aiClips.filter(
+        (item) => item?.id && item?.capabilityId && item?.sourceVideoId,
+      )
+    : JSON.parse(JSON.stringify(seedData.aiClips || []));
   next.workstations = (next.workstations || []).map((workstation) => ({
     ...workstation,
     implementation: {
@@ -1971,18 +2322,15 @@ function normalizePrototypeData(input) {
     scoreRules: (sop.scoreRules || []).map(normalizeScoreRule),
     safetyRules: (sop.safetyRules || []).map(normalizeSafetyRule),
   }));
-  const usedIdsByFamily = new Map();
-  for (const sop of normalizedSops) {
-    const familyKey = sop.familyId || sop.id;
-    const usedIds = usedIdsByFamily.get(familyKey) || new Set();
-    for (const id of sop.usedStepIds || []) usedIds.add(id);
-    for (const step of sop.steps || []) usedIds.add(step.id);
-    usedIdsByFamily.set(familyKey, usedIds);
-  }
   next.sops = normalizedSops.map((sop) => ({
     ...sop,
+    stepIdScope: "sop",
     usedStepIds: [
-      ...(usedIdsByFamily.get(sop.familyId || sop.id) || new Set()),
+      ...new Set([
+        // Old records stored IDs from the whole version family; discard that legacy scope once.
+        ...(sop.stepIdScope === "sop" ? sop.usedStepIds || [] : []),
+        ...(sop.steps || []).map((step) => step.id),
+      ]),
     ],
   }));
   next.evaluationMappings = Array.isArray(next.evaluationMappings)
@@ -3227,6 +3575,443 @@ export function PrototypeDataProvider({ children }) {
         });
       },
 
+      createAiCapability(input) {
+        const created = createCapability(input, data.aiCapabilities || [], {
+          id: uid("capability"),
+          now: timestamp(),
+          actor: "系统管理员",
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilities: [created, ...(current.aiCapabilities || [])],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "新建AI能力", created.name);
+          return next;
+        });
+        return created;
+      },
+      updateAiCapability(id, input) {
+        const existing = (data.aiCapabilities || []).find(
+          (item) => item.id === id,
+        );
+        if (!existing) throw new Error("AI能力不存在或已删除。");
+        const updated = updateCapability(
+          existing,
+          input,
+          data.aiCapabilities || [],
+          timestamp(),
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilities: (current.aiCapabilities || []).map((item) =>
+              item.id === id ? updated : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "编辑AI能力", updated.name);
+          return next;
+        });
+        return updated;
+      },
+      deactivateAiCapability(id) {
+        const existing = (data.aiCapabilities || []).find(
+          (item) => item.id === id,
+        );
+        const updated = deactivateCapability(existing, timestamp());
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilities: (current.aiCapabilities || []).map((item) =>
+              item.id === id ? updated : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "停用AI能力", updated.name);
+          return next;
+        });
+        return updated;
+      },
+      reactivateAiCapability(id) {
+        const existing = (data.aiCapabilities || []).find(
+          (item) => item.id === id,
+        );
+        const updated = reactivateCapability(existing, timestamp());
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilities: (current.aiCapabilities || []).map((item) =>
+              item.id === id ? updated : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "重新启用AI能力", updated.name);
+          return next;
+        });
+        return updated;
+      },
+      deleteAiCapability(id) {
+        const existing = (data.aiCapabilities || []).find(
+          (item) => item.id === id,
+        );
+        assertCapabilityDeletable(existing);
+        if (
+          (data.aiSourceVideos || []).some(
+            (video) => video.capabilityId === id,
+          )
+        )
+          throw new Error("当前能力仍有原始视频，请先清理视频数据。");
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilities: (current.aiCapabilities || []).filter(
+              (item) => item.id !== id,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "删除AI能力", existing.name);
+          return next;
+        });
+        return existing;
+      },
+
+      uploadAiSourceVideos(input) {
+        const capability = (data.aiCapabilities || []).find(
+          (item) => item.id === input?.capabilityId,
+        );
+        if (!capability) throw new Error("所选AI能力不存在，请重新选择。");
+        const files = Array.isArray(input?.files) ? input.files : [];
+        const now = timestamp();
+        const created = createAiSourceVideos(
+          input,
+          data.aiSourceVideos || [],
+          {
+            ids: files.map(() => uid("ai-video")),
+            now,
+            actor: "系统管理员",
+          },
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiSourceVideos: [
+              ...created,
+              ...(current.aiSourceVideos || []),
+            ],
+            aiCapabilities: (current.aiCapabilities || []).map((item) =>
+              item.id === capability.id
+                ? {
+                    ...item,
+                    status: capabilityStatusAfterVideoUpload(item.status),
+                    updatedAt: now,
+                  }
+                : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "上传原始视频",
+            `${capability.name} / ${created.length} 个文件`,
+          );
+          return next;
+        });
+        return created;
+      },
+      updateAiSourceVideo(id, input) {
+        const existing = (data.aiSourceVideos || []).find(
+          (item) => item.id === id,
+        );
+        const updated = applyAiSourceVideoUpdate(existing, input, timestamp());
+        setData((current) => {
+          const next = {
+            ...current,
+            aiSourceVideos: (current.aiSourceVideos || []).map((item) =>
+              item.id === id ? updated : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "编辑视频信息", updated.displayName);
+          return next;
+        });
+        return updated;
+      },
+      batchUpdateAiSourceVideos(ids, patch) {
+        const now = timestamp();
+        const updated = applyAiSourceVideoBatchUpdate(
+          data.aiSourceVideos || [],
+          ids,
+          patch,
+          now,
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiSourceVideos: updated,
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "批量编辑视频信息", `${ids.length} 个原始视频`);
+          return next;
+        });
+        return updated.filter((item) => ids.includes(item.id));
+      },
+      deleteAiSourceVideos(ids) {
+        const selected = (data.aiSourceVideos || []).filter((item) =>
+          ids.includes(item.id),
+        );
+        assertAiSourceVideosDeletable(selected);
+        setData((current) => {
+          const next = {
+            ...current,
+            aiSourceVideos: (current.aiSourceVideos || []).filter(
+              (item) => !ids.includes(item.id),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "删除原始视频", `${selected.length} 个文件`);
+          return next;
+        });
+        return selected;
+      },
+      startFrameExtraction(input) {
+        const capability = (data.aiCapabilities || []).find(
+          (item) => item.id === input?.capabilityId,
+        );
+        if (!capability || capability.type !== "object_detection")
+          throw new Error("当前能力不支持抽帧，请重新选择目标检测能力。");
+        const videos = (data.aiSourceVideos || []).filter((item) =>
+          (input.sourceVideoIds || []).includes(item.id),
+        );
+        if (
+          videos.length !== (input.sourceVideoIds || []).length ||
+          videos.some((item) => item.capabilityId !== capability.id)
+        )
+          throw new Error("所选原始视频不存在或不属于当前AI能力。");
+        const existingFrames = (data.aiFrames || []).filter((frame) =>
+          videos.some((video) => video.id === frame.sourceVideoId),
+        );
+        if (existingFrames.some((item) => item.processingStatus === "derived"))
+          throw new Error(
+            "部分抽帧结果已进入后续数据处理，不能直接重新生成。请先清理相关后续数据。",
+          );
+        if (existingFrames.length)
+          throw new Error("所选视频已有图片帧，请先删除现有结果后再重新抽帧。");
+        const now = timestamp();
+        const taskId = uid("frame-task");
+        const result = buildFrameExtractionTask(
+          {
+            ...input,
+            videos,
+          },
+          {
+            taskId,
+            frameId: () => uid("frame"),
+            now,
+            actor: "系统管理员",
+          },
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiExtractionTasks: [
+              result.task,
+              ...(current.aiExtractionTasks || []),
+            ],
+            aiFrames: [...result.frames, ...(current.aiFrames || [])],
+            aiSourceVideos: (current.aiSourceVideos || []).map((video) =>
+              result.task.completedVideoIds.includes(video.id)
+                ? { ...video, processingStatus: "derived", updatedAt: now }
+                : video,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "执行抽帧",
+            `${capability.name} / ${result.frames.length} 张图片`,
+          );
+          return next;
+        });
+        return result;
+      },
+      startVideoSlicing(input) {
+        const capability = (data.aiCapabilities || []).find(
+          (item) => item.id === input?.capabilityId,
+        );
+        if (!capability || capability.type !== "action_recognition")
+          throw new Error("当前能力不支持视频切片，请重新选择动作识别能力。");
+        const videos = (data.aiSourceVideos || []).filter((item) =>
+          (input.sourceVideoIds || []).includes(item.id),
+        );
+        if (
+          videos.length !== (input.sourceVideoIds || []).length ||
+          videos.some((item) => item.capabilityId !== capability.id)
+        )
+          throw new Error("所选原始视频不存在或不属于当前AI能力。");
+        const now = timestamp();
+        const result = buildVideoSlicingTask(
+          { ...input, videos },
+          {
+            taskId: uid("slice-task"),
+            clipId: () => uid("clip"),
+            now,
+            actor: "系统管理员",
+          },
+        );
+        const duplicateClip = result.clips.find((candidate) =>
+          (data.aiClips || []).some(
+            (existing) =>
+              existing.sourceVideoId === candidate.sourceVideoId &&
+              existing.startMs === candidate.startMs &&
+              existing.endMs === candidate.endMs,
+          ),
+        );
+        if (duplicateClip)
+          throw new Error(
+            "相同时间范围的视频片段已经存在。请先删除原结果或调整切片范围。",
+          );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiExtractionTasks: [
+              result.task,
+              ...(current.aiExtractionTasks || []),
+            ],
+            aiClips: [...result.clips, ...(current.aiClips || [])],
+            aiSourceVideos: (current.aiSourceVideos || []).map((video) =>
+              result.task.completedVideoIds.includes(video.id)
+                ? { ...video, processingStatus: "derived", updatedAt: now }
+                : video,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "执行视频切片",
+            `${capability.name} / ${result.clips.length} 个片段`,
+          );
+          return next;
+        });
+        return result;
+      },
+      deleteAiDerivedItems(kind, ids) {
+        const collection = kind === "frames" ? "aiFrames" : "aiClips";
+        const selected = (data[collection] || []).filter((item) =>
+          ids.includes(item.id),
+        );
+        assertDerivedItemsDeletable(selected);
+        const affectedVideoIds = [...new Set(selected.map((item) => item.sourceVideoId))];
+        setData((current) => {
+          const remaining = (current[collection] || []).filter(
+            (item) => !ids.includes(item.id),
+          );
+          const otherCollection = kind === "frames" ? current.aiClips || [] : current.aiFrames || [];
+          const next = {
+            ...current,
+            [collection]: remaining,
+            aiSourceVideos: (current.aiSourceVideos || []).map((video) =>
+              affectedVideoIds.includes(video.id) &&
+              !remaining.some((item) => item.sourceVideoId === video.id) &&
+              !otherCollection.some((item) => item.sourceVideoId === video.id)
+                ? { ...video, processingStatus: "unprocessed", updatedAt: timestamp() }
+                : video,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            kind === "frames" ? "删除图片帧" : "删除视频片段",
+            `${selected.length} 条生成结果`,
+          );
+          return next;
+        });
+        return selected;
+      },
+      retryExtractionTask(taskId) {
+        const task = (data.aiExtractionTasks || []).find(
+          (item) => item.id === taskId,
+        );
+        if (!task?.failures?.length) throw new Error("当前任务没有可重试的失败项。");
+        const sourceVideoIds = task.failures.map((item) => item.sourceVideoId);
+        const videos = (data.aiSourceVideos || []).filter((item) =>
+          sourceVideoIds.includes(item.id),
+        );
+        const capability = (data.aiCapabilities || []).find(
+          (item) => item.id === task.capabilityId,
+        );
+        if (!capability || videos.length !== sourceVideoIds.length)
+          throw new Error("失败项的原始视频已不存在，无法重试。");
+        const now = timestamp();
+        const retryId = uid(task.taskType === "frame_extraction" ? "frame-task" : "slice-task");
+        const result =
+          task.taskType === "frame_extraction"
+            ? buildFrameExtractionTask(
+                {
+                  capabilityId: task.capabilityId,
+                  videos,
+                  parameters: task.parameters,
+                },
+                {
+                  taskId: retryId,
+                  frameId: () => uid("frame"),
+                  now,
+                  actor: "系统管理员",
+                },
+              )
+            : buildVideoSlicingTask(
+                {
+                  capabilityId: task.capabilityId,
+                  videos,
+                  method: task.method,
+                  parameters: task.parameters,
+                },
+                {
+                  taskId: retryId,
+                  clipId: () => uid("clip"),
+                  now,
+                  actor: "系统管理员",
+                },
+              );
+        result.task.retryOfTaskId = task.id;
+        setData((current) => {
+          const next = {
+            ...current,
+            aiExtractionTasks: [
+              result.task,
+              ...(current.aiExtractionTasks || []).map((item) =>
+                item.id === task.id
+                  ? {
+                      ...item,
+                      retryStatus: "resolved",
+                      retryTaskId: result.task.id,
+                      updatedAt: now,
+                    }
+                  : item,
+              ),
+            ],
+            aiFrames:
+              task.taskType === "frame_extraction"
+                ? [...result.frames, ...(current.aiFrames || [])]
+                : current.aiFrames || [],
+            aiClips:
+              task.taskType === "video_slicing"
+                ? [...result.clips, ...(current.aiClips || [])]
+                : current.aiClips || [],
+            aiSourceVideos: (current.aiSourceVideos || []).map((video) =>
+              result.task.completedVideoIds.includes(video.id)
+                ? { ...video, processingStatus: "derived", updatedAt: now }
+                : video,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "重试数据生成任务", `${capability.name} / ${task.id}`);
+          return next;
+        });
+        return result;
+      },
+
       createDevice(input) {
         const name = input.name.trim().toUpperCase();
         const serial = input.serial.trim().toUpperCase();
@@ -3343,20 +4128,21 @@ export function PrototypeDataProvider({ children }) {
         const created = {
           ...input,
           id: uid("sop"),
-          familyId: input.familyId || uid("sop-family"),
+          familyId: uid("sop-family"), // Retained for legacy AI data only.
           name: input.name.trim(),
           owner: input.owner || "王老师",
-          version: input.version || "V1.0",
+          version: "V1.0", // Legacy AI compatibility only.
           status: "草稿",
           frozen: false,
           signedBy: "",
           publishedAt: "",
           updatedAt: timestamp(),
-          history: input.history || [],
+          history: [],
           steps,
           scoreRules,
           safetyRules,
           usedStepIds: collectUsedStepIds(input.usedStepIds, steps),
+          stepIdScope: "sop",
         };
         setData((current) => {
           const next = {
@@ -3376,8 +4162,8 @@ export function PrototypeDataProvider({ children }) {
       updateSopDraft(id, input) {
         const existing = data.sops.find((item) => item.id === id);
         if (!existing) throw new Error("SOP 不存在或已失效。");
-        if (existing.frozen || existing.status === "已发布")
-          throw new Error("已发布版本已冻结，请创建新版本后再修改。");
+        if (existing.status !== "草稿" || existing.frozen)
+          throw new Error("只有草稿可以编辑；请复制创建新的 SOP 草稿。");
         if (!input.name?.trim()) throw new Error("请填写 SOP 标准名称。");
         const updated = {
           ...existing,
@@ -3419,7 +4205,8 @@ export function PrototypeDataProvider({ children }) {
       publishSop(id, input, signature) {
         const existing = data.sops.find((item) => item.id === id);
         if (!existing) throw new Error("SOP 不存在或已失效。");
-        if (existing.frozen) throw new Error("当前版本已经冻结发布。");
+        if (existing.status !== "草稿" || existing.frozen)
+          throw new Error("只有草稿可以发布。");
         if (!signature?.trim()) throw new Error("请填写专业教师签名。");
         const validationIssues = validateSopDefinition(input);
         if (validationIssues.length)
@@ -3446,91 +4233,20 @@ export function PrototypeDataProvider({ children }) {
             input.usedStepIds,
             input.steps,
           ),
-          history: [
-            {
-              version: input.version,
-              status: "已发布",
-              time: timestamp(),
-              actor: signature.trim(),
-              note: "教师完成校验、签名并冻结发布",
-            },
-            ...(existing.history || []),
-          ],
+          history: existing.history || [], // Legacy history is hidden from the teacher UI.
         };
-        const sourceId = String(existing.basedOn || "").split(" / ")[0];
-        const fromSop = data.sops.find((item) => item.id === sourceId);
-        const impact = fromSop
-          ? {
-              id: uid("impact"),
-              sopFamilyId: published.familyId || published.id,
-              fromSopId: fromSop.id,
-              fromVersion: fromSop.version,
-              toSopId: published.id,
-              toVersion: published.version,
-              status: "待确认",
-              ...assessSopAiImpact({ fromSop, toSop: published }),
-              createdAt: timestamp(),
-              createdBy: "系统影响分析",
-            }
-          : null;
         setData((current) => {
           const next = {
             ...current,
             sops: current.sops.map((item) =>
               item.id === id ? published : item,
             ),
-            aiImpactAssessments: impact
-              ? [impact, ...(current.aiImpactAssessments || [])]
-              : current.aiImpactAssessments || [],
             auditLogs: [...current.auditLogs],
           };
-          addAuditLog(
-            next,
-            "发布并冻结 SOP",
-            `${published.name} / ${published.version}`,
-          );
-          if (impact)
-            addAuditLog(
-              next,
-              "生成 AI Impact Assessment",
-              `${impact.fromVersion} → ${impact.toVersion} / ${impact.changeType}`,
-            );
+          addAuditLog(next, "发布并冻结 SOP", published.name);
           return next;
         });
         return published;
-      },
-      createSopVersion(id) {
-        const existing = data.sops.find((item) => item.id === id);
-        if (!existing) throw new Error("SOP 不存在或已失效。");
-        const match = String(existing.version).match(/V(\d+)\.(\d+)/);
-        const version = match ? `V${match[1]}.${Number(match[2]) + 1}` : "V1.1";
-        const created = {
-          ...JSON.parse(JSON.stringify(existing)),
-          id: uid("sop"),
-          version,
-          status: "草稿",
-          frozen: false,
-          basedOn: `${existing.id} / ${existing.version}`,
-          signedBy: "",
-          publishedAt: "",
-          updatedAt: timestamp(),
-          history: [...(existing.history || [])],
-          usedStepIds: collectUsedStepIds(existing.usedStepIds, existing.steps),
-        };
-        setData((current) => {
-          const next = {
-            ...current,
-            sops: [created, ...current.sops],
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            "创建 SOP 新版本",
-            `${created.name} / ${created.version}`,
-          );
-          return next;
-        });
-        return created;
       },
       confirmCompatibilityDecision(assessmentId, input) {
         const assessment = (data.aiImpactAssessments || []).find(
@@ -3621,32 +4337,78 @@ export function PrototypeDataProvider({ children }) {
       copySop(id, name) {
         const existing = data.sops.find((item) => item.id === id);
         if (!existing) throw new Error("SOP 不存在或已失效。");
-        if (!name?.trim()) throw new Error("请填写副本名称。");
-        const created = {
-          ...JSON.parse(JSON.stringify(existing)),
+        const created = createIndependentSopCopy(existing, {
           id: uid("sop"),
-          familyId: uid("sop-family"),
-          name: name.trim(),
-          version: "V1.0",
-          status: "草稿",
-          frozen: false,
-          basedOn: `${existing.id} / ${existing.version}`,
-          signedBy: "",
-          publishedAt: "",
-          updatedAt: timestamp(),
-          history: [],
-          usedStepIds: collectUsedStepIds(existing.steps),
-        };
+          name,
+          at: timestamp(),
+        });
         setData((current) => {
           const next = {
             ...current,
             sops: [created, ...current.sops],
             auditLogs: [...current.auditLogs],
           };
-          addAuditLog(next, "复制 SOP", `${created.name} / V1.0`);
+          addAuditLog(
+            next,
+            "复制创建 SOP",
+            `${existing.name} → ${created.name}`,
+          );
           return next;
         });
         return created;
+      },
+      deactivateSop(id) {
+        const existing = data.sops.find((item) => item.id === id);
+        const updated = deactivatePublishedSop(existing, timestamp());
+        setData((current) => {
+          const next = {
+            ...current,
+            sops: current.sops.map((item) => (item.id === id ? updated : item)),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "停用 SOP", existing.name);
+          return next;
+        });
+        return updated;
+      },
+      deleteSopDraft(id) {
+        const existing = data.sops.find((item) => item.id === id);
+        if (!existing || existing.status !== "草稿")
+          throw new Error("只有 SOP 草稿可以删除。");
+        if (data.arrangements.some((item) => item.sopId === id))
+          throw new Error("此 SOP 已被安排引用，不能删除。");
+        if (
+          [
+            "evaluationMappings",
+            "sourceVideos",
+            "timeRangeAnnotations",
+            "annotations",
+            "datasets",
+            "models",
+            "learningSamples",
+            "fieldValidations",
+          ].some((key) =>
+            (data[key] || []).some(
+              (item) => item.sopId === id || item.authoredFor?.sopId === id,
+            ),
+          ) ||
+          (data.aiImpactAssessments || []).some(
+            (item) => item.fromSopId === id || item.toSopId === id,
+          ) ||
+          (data.compatibilityDecisions || []).some(
+            (item) => item.fromSopId === id || item.toSopId === id,
+          )
+        )
+          throw new Error("此历史草稿已有 AI 数据引用，不能直接删除。");
+        setData((current) => {
+          const next = {
+            ...current,
+            sops: current.sops.filter((item) => item.id !== id),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "删除 SOP 草稿", existing.name);
+          return next;
+        });
       },
       createEvaluationMapping(sopId) {
         const sop = data.sops.find((item) => item.id === sopId);
@@ -4664,8 +5426,8 @@ export function PrototypeDataProvider({ children }) {
         )
           throw new Error("允许入场截止时间必须晚于开始时间。");
         const sop = data.sops.find((item) => item.id === input.sopId);
-        if (!sop || sop.status !== "已发布")
-          throw new Error("只能选择已发布的 SOP 版本。");
+        if (!isSopAvailableForNewArrangement(sop))
+          throw new Error("只能选择已发布且未停用的 SOP。");
         if (finalize && !input.studentIds?.length)
           throw new Error("至少选择一名参与学生。");
         if (finalize && !input.workstationIds?.length)

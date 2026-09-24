@@ -477,20 +477,32 @@ export function validateSafetyRule(rule = {}, step = {}) {
 }
 
 export function validateSopDefinition(draft = {}) {
+  draft = draft && typeof draft === "object" ? draft : {};
+  const steps = Array.isArray(draft?.steps) ? draft.steps : [];
   const issues = [];
   const add = (stage, message, stepIndex = null) =>
     issues.push({ stage, message, stepIndex });
   if (!draft.name?.trim()) add(0, "未填写 SOP 名称");
+  if (!draft.major?.trim()) add(0, "未选择所属专业");
   if (!draft.operation?.trim()) add(0, "未填写适用操作");
   if (!draft.basis?.trim()) add(0, "未填写标准依据");
   if (!draft.conditions?.trim()) add(0, "未填写适用实训环境");
-  if (!draft.steps?.length) add(1, "至少需要一个操作步骤");
+  if (!steps.length) add(1, "至少需要一个操作步骤");
 
-  const scoreRules = (draft.scoreRules || []).map(normalizeScoreRule);
-  const safetyRules = (draft.safetyRules || []).map(normalizeSafetyRule);
+  const scoreRules = (Array.isArray(draft.scoreRules) ? draft.scoreRules : [])
+    .filter(Boolean)
+    .map(normalizeScoreRule);
+  const safetyRules = (
+    Array.isArray(draft.safetyRules) ? draft.safetyRules : []
+  )
+    .filter(Boolean)
+    .map(normalizeSafetyRule);
   const ids = new Set();
-  for (const [index, source] of (draft.steps || []).entries()) {
+  for (const [index, raw] of steps.entries()) {
+    const source = raw && typeof raw === "object" ? raw : {};
     const step = normalizeSopStep(source, index);
+    if (!/^Step \d{2,}$/.test(String(source.id || "")))
+      add(1, `第 ${index + 1} 步的 Step ID 不合法`, index);
     if (ids.has(step.id)) add(1, `${step.id} 重复`, index);
     ids.add(step.id);
     if (!step.name?.trim()) add(1, `${step.id} 未填写步骤名称`, index);
@@ -501,7 +513,7 @@ export function validateSopDefinition(draft = {}) {
     if (!step.keyPoints?.trim()) add(1, `${step.id} 未填写操作要点`, index);
     if (source.attribute && !["必做", "required"].includes(source.attribute))
       add(1, `${step.id} 仍为可选或分支步骤，请调整为线性必做步骤`, index);
-    const expectedPredecessor = index === 0 ? "无" : draft.steps[index - 1]?.id;
+    const expectedPredecessor = index === 0 ? "无" : steps[index - 1]?.id;
     if (step.predecessor !== expectedPredecessor)
       add(1, `${step.id} 前置步骤必须为 ${expectedPredecessor}`, index);
     if (!JUDGEMENT_MODES[step.expectedJudgementMode])
@@ -544,7 +556,7 @@ export function validateSopDefinition(draft = {}) {
     }
   }
 
-  const validStepIds = new Set((draft.steps || []).map((step) => step.id));
+  const validStepIds = new Set(steps.filter(Boolean).map((step) => step.id));
   for (const rule of [...scoreRules, ...safetyRules]) {
     if (!validStepIds.has(rule.stepId)) add(2, `${rule.id} 关联的步骤不存在`);
   }
@@ -552,12 +564,50 @@ export function validateSopDefinition(draft = {}) {
   if (new Set(allRuleIds).size !== allRuleIds.length)
     add(2, "评分规则或安全规则存在重复 ID");
 
-  const total = (draft.steps || []).reduce(
-    (sum, step) => sum + Number(step.score || 0),
-    0,
-  );
+  const total = steps.reduce((sum, step) => sum + Number(step?.score || 0), 0);
   if (total !== 100) add(2, `步骤总分为 ${total}，必须等于 100`);
   return issues;
+}
+
+export function isSopAvailableForNewArrangement(sop) {
+  return sop?.status === "已发布";
+}
+
+export function deactivatePublishedSop(sop, at) {
+  if (!isSopAvailableForNewArrangement(sop))
+    throw new Error("只有已发布的 SOP 可以停用。");
+  return { ...sop, status: "已停用", updatedAt: at };
+}
+
+export function createIndependentSopCopy(source, { id, name, at }) {
+  if (!source || !["已发布", "已停用"].includes(source.status))
+    throw new Error("只能复制已发布或已停用的 SOP。");
+  if (!id || !name?.trim()) throw new Error("请填写新 SOP 名称。");
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+  return {
+    id,
+    familyId: id, // Legacy AI pages still expect this field.
+    version: "V1.0", // Legacy AI compatibility only; not a product version.
+    name: name.trim(),
+    owner: source.owner || "王老师",
+    major: source.major || "",
+    course: source.course || "",
+    operation: source.operation || "",
+    basis: source.basis || "",
+    conditions: source.conditions || "",
+    standardDuration: source.standardDuration || "",
+    steps: copy(source.steps || []),
+    scoreRules: copy(source.scoreRules || []),
+    safetyRules: copy(source.safetyRules || []),
+    usedStepIds: [...new Set((source.steps || []).map((step) => step.id))],
+    stepIdScope: "sop",
+    status: "草稿",
+    frozen: false,
+    signedBy: "",
+    publishedAt: "",
+    updatedAt: at || "",
+    history: [],
+  };
 }
 
 export function normalizeEvaluationItem(item = {}, index = 0) {

@@ -1,4 +1,5 @@
 import {
+  Fragment,
   forwardRef,
   useEffect,
   useImperativeHandle,
@@ -48,6 +49,7 @@ import {
   ProductOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
+  ScissorOutlined,
   SearchOutlined,
   SettingOutlined,
   TeamOutlined,
@@ -62,6 +64,36 @@ import {
   PrototypeDataProvider,
   usePrototypeData,
 } from "./prototypeData.jsx";
+import {
+  AI_CONFIG_PATH,
+  AI_LIBRARY_PATH,
+  AI_LIBRARY_SECTIONS,
+  getConfigurableSops,
+} from "./aiEntry.js";
+import {
+  AI_CAPABILITY_STATUSES,
+  AI_CAPABILITY_TYPES,
+  canEditCapability,
+  canEditCapabilityMeaning,
+  capabilityReferenceCount,
+} from "./aiCapabilityRules.js";
+import {
+  AI_VIDEO_CATEGORIES,
+  AI_VIDEO_PROCESSING_STATUSES,
+  AI_VIDEO_SOURCES,
+  potentialVideoDuplicates,
+  videoStats,
+} from "./aiVideoRules.js";
+import {
+  CLIP_GENERATION_MODES,
+  DERIVED_DATA_STATUSES,
+  EXTRACTION_TASK_STATUSES,
+  FRAME_SAMPLING_MODES,
+  estimateFrameExtraction,
+  extractionModeForCapability,
+  formatTimecode as formatDerivedTimecode,
+  parseTimecode as parseDerivedTimecode,
+} from "./aiExtractionRules.js";
 import {
   automaticEvaluationGate,
   ACTOR_BINDING_STATUSES,
@@ -82,6 +114,7 @@ import {
   getAiPackageCreationReadiness,
   getExamPublishGate,
   getStepAiCapabilityDisplay,
+  isSopAvailableForNewArrangement,
   INCOMPLETE_POLICIES,
   JUDGEMENT_MODES,
   MACHINE_EVENT_CAPABILITY_MODES,
@@ -115,7 +148,8 @@ const adminNav = [
   ["学生管理", "/admin/students", <UserOutlined />],
   ["工位管理", "/admin/workstations", <DesktopOutlined />],
   ["设备管理", "/admin/devices", <HddOutlined />],
-  ["AI评价管理", "/admin/ai-evaluation", <VideoCameraOutlined />],
+  ["AI能力配置", AI_CONFIG_PATH, <ApartmentOutlined />],
+  ["AI能力库", AI_LIBRARY_PATH, <VideoCameraOutlined />],
   ["练习记录", "/admin/practices", <EditOutlined />],
   ["考试记录", "/admin/exams", <FileDoneOutlined />],
   ["运行配置", "/admin/settings", <SettingOutlined />],
@@ -665,6 +699,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
       () => typeof window !== "undefined" && window.innerWidth < 1180,
     ),
     [wide, setWide] = useState(false),
+    [aiLibraryOpen, setAiLibraryOpen] = useState(true),
     [roleMenuOpen, setRoleMenuOpen] = useState(false),
     [notificationOpen, setNotificationOpen] = useState(false),
     [clock, setClock] = useState(() => new Date());
@@ -673,6 +708,13 @@ function Shell({ children, modal, setModal, toast, setToast }) {
     return () => window.clearInterval(timer);
   }, []);
   const items = admin ? adminNav : teacherNav;
+  const onAiLibraryPage = loc.pathname.startsWith(AI_LIBRARY_PATH);
+  const showAiLibraryChildren = onAiLibraryPage && aiLibraryOpen && !collapsed;
+  const activeAiLibraryItemRef = useRef(null);
+  useEffect(() => {
+    if (showAiLibraryChildren)
+      activeAiLibraryItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [loc.pathname, showAiLibraryChildren]);
   const unreadCount = notifications.filter((item) => !item.read).length;
   const displayedNotifications = notifications.map((item) => {
     const issueId = item.path?.startsWith("/admin/issues/")
@@ -725,18 +767,85 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             <small>兴辰智能 · AI赋能职业教育</small>
           </span>
         </button>
-        <nav>
+        <nav className={admin ? "sidebar__nav--admin" : ""}>
           {items.map(([label, path, icon]) => (
-            <button
-              title={label}
-              aria-label={label}
-              className={loc.pathname.startsWith(path) ? "active" : ""}
-              key={path}
-              onClick={() => nav(path)}
-            >
-              {icon}
-              <span>{label}</span>
-            </button>
+            <Fragment key={path}>
+              <button
+                title={label}
+                aria-label={label}
+                className={`${loc.pathname.startsWith(path) ? "active" : ""} ${path === AI_LIBRARY_PATH ? "sidebar__parent" : ""}`}
+                aria-expanded={
+                  path === AI_LIBRARY_PATH ? showAiLibraryChildren : undefined
+                }
+                aria-controls={
+                  path === AI_LIBRARY_PATH ? "ai-library-subnav" : undefined
+                }
+                onClick={() => {
+                  if (path !== AI_LIBRARY_PATH) {
+                    nav(path);
+                    return;
+                  }
+                  if (collapsed) {
+                    setCollapsed(false);
+                    setAiLibraryOpen(true);
+                  } else if (onAiLibraryPage) {
+                    setAiLibraryOpen((open) => !open);
+                  } else {
+                    setAiLibraryOpen(true);
+                  }
+                  if (!onAiLibraryPage) nav(AI_LIBRARY_PATH);
+                }}
+              >
+                {icon}
+                <span>{label}</span>
+              </button>
+              {path === AI_LIBRARY_PATH && showAiLibraryChildren && (
+                <div
+                  id="ai-library-subnav"
+                  className="sidebar__subnav"
+                  role="group"
+                  aria-label="AI能力库二级菜单"
+                >
+                  {AI_LIBRARY_SECTIONS.map((section) => {
+                    const sectionPath = `${AI_LIBRARY_PATH}/${section.path}`;
+                    const active =
+                      loc.pathname === sectionPath ||
+                      (section.path === "capabilities" &&
+                        loc.pathname.startsWith(`${sectionPath}/`));
+                    return (
+                      <button
+                        key={section.path}
+                        ref={active ? activeAiLibraryItemRef : undefined}
+                        title={section.title}
+                        className={active ? "active" : ""}
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => {
+                          const detailId = loc.pathname.startsWith(
+                            `${AI_LIBRARY_PATH}/capabilities/`,
+                          )
+                            ? loc.pathname.split("/")[4]
+                            : null;
+                          const selectedId =
+                            new URLSearchParams(loc.search).get(
+                              "capabilityId",
+                            ) || detailId;
+                          const selected = (
+                            store.data.aiCapabilities || []
+                          ).some((item) => item.id === selectedId);
+                          nav(
+                            selected && section.path !== "capabilities"
+                              ? `${sectionPath}?capabilityId=${encodeURIComponent(selectedId)}`
+                              : sectionPath,
+                          );
+                        }}
+                      >
+                        <span>{section.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </Fragment>
           ))}
         </nav>
         <div className="sidebar__footer">
@@ -2937,7 +3046,6 @@ function Toolbar({
 const emptySopDraft = () => ({
   name: "",
   owner: "王老师",
-  version: "V1.0",
   status: "草稿",
   frozen: false,
   major: "新能源汽车技术",
@@ -2946,7 +3054,6 @@ const emptySopDraft = () => ({
   basis: "",
   conditions: "",
   standardDuration: "15 分钟",
-  history: [],
   scoreRules: [],
   safetyRules: [],
   usedStepIds: ["Step 01"],
@@ -3394,9 +3501,8 @@ function SopList() {
     sop.name,
     `${sop.major || "未设置专业"}${sop.course ? ` / ${sop.course}` : ""}`,
     sop.owner,
-    sop.version,
     sop.status,
-    `${sop.steps.length} 步`,
+    `${(sop.steps || []).length} 步`,
     store.getSopAiEvaluationStatus(sop.id).status,
     sop.updatedAt,
   ]);
@@ -3487,20 +3593,18 @@ function SopList() {
             "SOP名称",
             "所属专业 / 课程",
             "创建教师",
-            "当前版本",
             "SOP状态",
             "步骤",
             "AI评价",
             "更新时间",
           ]}
           rows={rows}
-          statusColumns={[4, 6]}
-          viewLabel={(row) => (row[4] === "草稿" ? "继续编辑" : "查看")}
-          rowKey={(row) => `${row[0]}-${row[3]}`}
-          onView={(row) => {
-            const sop = visible.find(
-              (item) => item.name === row[0] && item.version === row[3],
-            );
+          statusColumns={[3, 5]}
+          viewLabel={(row) => (row[3] === "草稿" ? "继续编辑" : "查看")}
+          rowKey={(_, index) => visible[index].id}
+          onView={(_, index) => {
+            const sop = visible[index];
+            if (!sop) return;
             nav(
               sop.status === "草稿"
                 ? `/teacher/sop/edit/${sop.id}`
@@ -3707,20 +3811,19 @@ function SopDetail({ setModal }) {
         return `已创建 ${created.name}`;
       },
     });
-  const newVersion = () =>
+  const deactivate = () =>
     setModal({
-      title: "创建新版本",
+      title: "停用 SOP",
       content: (
         <p>
-          将基于冻结的 {sop.version} 创建可编辑草稿。原版本永久保留；新版本的
-          AI评价能力需要重新确认，不会直接继承当前可用状态。
+          停用后该 SOP 不再用于新建练习、考试和新的 AI
+          配置；已有历史记录不受影响。
         </p>
       ),
-      confirmText: "创建并编辑",
+      confirmText: "确认停用",
       onConfirm: () => {
-        const created = store.createSopVersion(sop.id);
-        window.setTimeout(() => nav(`/teacher/sop/edit/${created.id}`), 0);
-        return `${created.version} 草稿已创建`;
+        store.deactivateSop(sop.id);
+        return `${sop.name} 已停用`;
       },
     });
   return (
@@ -3728,35 +3831,53 @@ function SopDetail({ setModal }) {
       <PageHeader
         back
         title={sop.name}
-        subtitle={`${sop.status} ${sop.version} · 责任教师：${sop.owner} · ${sop.publishedAt || sop.updatedAt}`}
+        subtitle={`${sop.status} · 责任教师：${sop.owner} · ${sop.publishedAt || sop.updatedAt}`}
         actions={
           <>
-            <Button onClick={copy}>复制标准</Button>
-            <Button onClick={newVersion}>创建新版本</Button>
-            <Button
-              onClick={() =>
-                nav("/teacher/practices/new", { state: { sopId: sop.id } })
-              }
-            >
-              创建练习
-            </Button>
-            <Button
-              type="primary"
-              onClick={() =>
-                nav("/teacher/exams/new", { state: { sopId: sop.id } })
-              }
-            >
-              创建考试
-            </Button>
+            {sop.status === "草稿" && (
+              <Button onClick={() => nav(`/teacher/sop/edit/${sop.id}`)}>
+                编辑草稿
+              </Button>
+            )}
+            {["已发布", "已停用"].includes(sop.status) && (
+              <Button onClick={copy}>复制创建</Button>
+            )}
+            {sop.status === "已发布" && (
+              <Button onClick={deactivate}>停用</Button>
+            )}
+            {sop.status === "已发布" && (
+              <Button
+                onClick={() =>
+                  nav("/teacher/practices/new", { state: { sopId: sop.id } })
+                }
+              >
+                创建练习
+              </Button>
+            )}
+            {sop.status === "已发布" && (
+              <Button
+                type="primary"
+                onClick={() =>
+                  nav("/teacher/exams/new", { state: { sopId: sop.id } })
+                }
+              >
+                创建考试
+              </Button>
+            )}
           </>
         }
       />
       <section className="sop-boundary-note">
         <LockOutlined />
         <div>
-          <strong>{sop.version} 已签名冻结，不能原地修改</strong>
+          <strong>
+            {sop.status === "草稿"
+              ? "草稿可继续编辑"
+              : `${sop.status} · 内容已冻结`}
+          </strong>
           <p>
-            步骤、评分和安全规则由教师定义。AI评价能力独立建设，不能反向改写本标准。
+            步骤、评分和安全规则由教师定义。如需调整已发布标准，请使用“复制创建”生成新的
+            SOP 草稿。
           </p>
         </div>
         <Status tone="success">
@@ -3766,13 +3887,13 @@ function SopDetail({ setModal }) {
       <div className="detail-grid sop-top-metrics">
         <Metric
           label="操作步骤"
-          value={`${sop.steps.length} 步`}
+          value={`${(sop.steps || []).length} 步`}
           hint="固定 Step ID"
           icon={<BookOutlined />}
         />
         <Metric
           label="总分"
-          value={`${sop.steps.reduce((sum, step) => sum + Number(step.score), 0)} 分`}
+          value={`${(sop.steps || []).reduce((sum, step) => sum + Number(step.score || 0), 0)} 分`}
           hint="教师评分标准"
           icon={<FileTextOutlined />}
         />
@@ -3806,7 +3927,6 @@ function SopDetail({ setModal }) {
           ["overview", "标准概览"],
           ["steps", "步骤与评价"],
           ["ai", "AI评价能力"],
-          ["versions", "版本记录"],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -3846,7 +3966,7 @@ function SopDetail({ setModal }) {
           </div>
           <PanelTitle title="操作流程预览" />
           <div className="sop-flow-preview">
-            {sop.steps.map((step, index) => (
+            {(sop.steps || []).map((step, index) => (
               <span key={step.id}>
                 <b>{String(index + 1).padStart(2, "0")}</b>
                 <strong>{step.name}</strong>
@@ -3860,7 +3980,7 @@ function SopDetail({ setModal }) {
         <div className="rule-layout sop-readonly-layout">
           <aside className="panel rule-steps">
             <PanelTitle title="操作步骤" />
-            {sop.steps.map((step, index) => (
+            {(sop.steps || []).map((step, index) => (
               <button
                 className={index === selectedStep ? "active" : ""}
                 key={step.id}
@@ -3923,7 +4043,7 @@ function SopDetail({ setModal }) {
                 <small>未完成计分</small>
                 <strong>
                   {INCOMPLETE_POLICIES[activeStep.incompletePolicy]?.label ||
-                    "历史版本未明确"}
+                    "历史标准未明确"}
                 </strong>
               </span>
               <span>
@@ -3982,14 +4102,10 @@ function SopDetail({ setModal }) {
               <strong>{mappingStatus.status}</strong>
             </span>
             <span>
-              <small>业务口径版本</small>
-              <strong>{mapping?.version || "—"}</strong>
-            </span>
-            <span>
               <small>完成判断项</small>
               <strong>
-                {mapping?.evaluationItems.filter((item) =>
-                  item.roles.includes("completion"),
+                {mapping?.evaluationItems?.filter((item) =>
+                  item.roles?.includes("completion"),
                 ).length || 0}{" "}
                 项
               </strong>
@@ -3997,8 +4113,8 @@ function SopDetail({ setModal }) {
             <span>
               <small>评分依据项</small>
               <strong>
-                {mapping?.evaluationItems.filter((item) =>
-                  item.roles.includes("scoring"),
+                {mapping?.evaluationItems?.filter((item) =>
+                  item.roles?.includes("scoring"),
                 ).length || 0}{" "}
                 项
               </strong>
@@ -4006,8 +4122,8 @@ function SopDetail({ setModal }) {
             <span>
               <small>安全提醒项</small>
               <strong>
-                {mapping?.evaluationItems.filter((item) =>
-                  item.roles.includes("safety"),
+                {mapping?.evaluationItems?.filter((item) =>
+                  item.roles?.includes("safety"),
                 ).length || 0}{" "}
                 项
               </strong>
@@ -4029,28 +4145,6 @@ function SopDetail({ setModal }) {
               return [`${step.id} · ${step.name}`, configured, actual, reason];
             })}
           />
-        </section>
-      )}
-      {tab === "versions" && (
-        <section className="panel">
-          <PanelTitle title="SOP 版本记录" />
-          <div className="mapping-list">
-            {(sop.history || []).map((item) => (
-              <div
-                className="mapping-row sop-version-row"
-                key={`${item.version}-${item.time}`}
-              >
-                <code>{item.version}</code>
-                <span>
-                  <strong>{item.note}</strong>
-                  <small>
-                    {item.actor} · {item.time}
-                  </small>
-                </span>
-                <Status>{item.status}</Status>
-              </div>
-            ))}
-          </div>
         </section>
       )}
     </>
@@ -4250,9 +4344,7 @@ function SopEditor({ setModal }) {
     setModal({
       title: "保存 SOP 草稿",
       content: (
-        <p>
-          只保存教师定义的业务标准草稿，不影响任何已发布版本和正在进行的教学安排。
-        </p>
+        <p>只保存当前 SOP 草稿，不影响已发布标准和正在进行的教学安排。</p>
       ),
       confirmText: "保存草稿",
       onConfirm: () => {
@@ -4266,7 +4358,7 @@ function SopEditor({ setModal }) {
               }),
             0,
           );
-        return `${saved.name} ${saved.version} 已保存`;
+        return `${saved.name} 草稿已保存`;
       },
     });
   const goToStage = (target) => {
@@ -4292,7 +4384,7 @@ function SopEditor({ setModal }) {
   };
   const publish = () =>
     setModal({
-      title: `签名并冻结 ${draft.version}`,
+      title: "签名并发布 SOP",
       content: (
         <p>
           发布只冻结当前 SOP 业务标准，AI评价能力将在发布后独立配置。
@@ -4308,7 +4400,7 @@ function SopEditor({ setModal }) {
           throw new Error("请填写教师姓名并勾选签名确认。");
         const published = store.publishSop(id, draft, signature);
         window.setTimeout(() => nav(`/teacher/sop/${published.id}`), 0);
-        return `${published.version} 已签名冻结`;
+        return `${published.name} 已发布并冻结`;
       },
     });
   const moveStep = (offset) => {
@@ -4323,12 +4415,8 @@ function SopEditor({ setModal }) {
     setSelectedRuleStep(target);
   };
   const addStep = () => {
-    const historicalSteps = store.data.sops
-      .filter((item) => draft.familyId && item.familyId === draft.familyId)
-      .flatMap((item) => item.steps || []);
     const idValue = nextStableStepId({
       steps: draft.steps,
-      historicalSteps,
       usedStepIds: draft.usedStepIds || [],
     });
     setDraft((current) => ({
@@ -4370,14 +4458,35 @@ function SopEditor({ setModal }) {
     setDirty(true);
     setSelectedRuleStep(Math.max(0, selectedRuleStep - 1));
   };
+  const deleteDraft = () =>
+    setModal({
+      title: "删除 SOP 草稿",
+      content: (
+        <p>
+          确认删除“{source?.name}
+          ”？删除后草稿无法恢复，已发布标准及历史安排不受影响。
+        </p>
+      ),
+      confirmText: "确认删除",
+      onConfirm: () => {
+        store.deleteSopDraft(id);
+        window.setTimeout(() => nav("/teacher/sop"), 0);
+        return "SOP 草稿已删除";
+      },
+    });
+  if (id && (!source || source.status !== "草稿" || source.frozen))
+    return (
+      <Navigate to={source ? `/teacher/sop/${id}` : "/teacher/sop"} replace />
+    );
   return (
     <>
       <PageHeader
         back
         title={`${id ? "编辑" : "创建"} SOP：${draft.name || "未命名标准"}`}
-        subtitle={`${draft.version} · ${dirty ? "有未保存更改" : id ? `最近保存 ${draft.updatedAt}` : "尚未保存"} · Step ID 永久稳定`}
+        subtitle={`${dirty ? "有未保存更改" : id ? `最近保存 ${draft.updatedAt}` : "尚未保存"} · Step ID 在当前 SOP 内稳定`}
         actions={
           <>
+            {id && <Button onClick={deleteDraft}>删除草稿</Button>}
             <Button onClick={save}>保存草稿</Button>
             <Button
               type="primary"
@@ -4409,12 +4518,6 @@ function SopEditor({ setModal }) {
         <div className="editor-grid sop-basic-layout">
           <section className="panel">
             <PanelTitle title="基本信息" />
-            {draft.basedOn && (
-              <p className="hint">
-                来源：{draft.basedOn}
-                。当前草稿是独立对象，修改不会影响来源版本及其历史引用。
-              </p>
-            )}
             <label className="field">
               SOP名称
               <input
@@ -4505,10 +4608,6 @@ function SopEditor({ setModal }) {
             <span>
               <small>标准责任人</small>
               <strong>{draft.owner}</strong>
-            </span>
-            <span>
-              <small>当前版本</small>
-              <strong>{draft.version}</strong>
             </span>
             <span>
               <small>当前状态</small>
@@ -5055,7 +5154,7 @@ function SopEditor({ setModal }) {
                         <strong>历史安全红线说明</strong>
                         <small>{active.legacySafetyNote}</small>
                       </span>
-                      <em>请在新版本中由教师结构化确认</em>
+                      <em>请在当前草稿中由教师结构化确认</em>
                     </div>
                   )}
                   <div className="structured-rule-list">
@@ -5351,9 +5450,10 @@ function SopEditor({ setModal }) {
           </div>
           <div className="publish-boundary">
             <span>
-              <strong>发布 SOP {draft.version}</strong>
+              <strong>发布 SOP</strong>
               <small>
-                签名后当前版本被冻结；后续调整需要创建新版本。AI评价能力在发布后独立建设。
+                签名后当前 SOP 内容冻结；后续调整请复制创建新的独立
+                SOP。AI评价能力在发布后独立建设。
               </small>
             </span>
           </div>
@@ -5727,7 +5827,7 @@ function ArrangementList({ exam = false }) {
     const sop = data.sops.find((entry) => entry.id === item.sopId);
     return [
       item.name,
-      `${sop?.name || "标准已失效"} ${item.snapshot?.sopVersion || sop?.version || ""}`,
+      sop?.name || "历史标准",
       `${item.studentIds.length}人`,
       item.status,
       item.type === "exam" && item.entryEnd
@@ -5735,8 +5835,9 @@ function ArrangementList({ exam = false }) {
         : item.scheduleStart.replace("T", " "),
     ];
   });
-  const openArrangement = (row) => {
-    const item = visible.find((entry) => entry.name === row[0]);
+  const openArrangement = (_, index) => {
+    const item = visible[index];
+    if (!item) return;
     const destination = arrangementDestination(item);
     nav(`/teacher/${base}/${item.id}/${destination}`);
   };
@@ -5771,13 +5872,13 @@ function ArrangementList({ exam = false }) {
         <DataTable
           columns={[
             `${name}名称`,
-            "SOP / 锁定版本",
+            "SOP",
             "参与人数",
             "状态",
             exam ? "允许入场时间" : "计划时间",
           ]}
           rows={rows}
-          rowKey={(row) => row[0]}
+          rowKey={(_, index) => visible[index].id}
           onView={openArrangement}
         />
       </section>
@@ -5796,9 +5897,7 @@ function ArrangementForm({ exam = false, setModal }) {
   const existing = id
     ? store.data.arrangements.find((item) => item.id === id)
     : null;
-  const publishedSops = store.data.sops.filter(
-    (item) => item.status === "已发布",
-  );
+  const publishedSops = store.data.sops.filter(isSopAvailableForNewArrangement);
   const preferredSopId = publishedSops.some(
     (item) => item.id === location.state?.sopId,
   )
@@ -5839,7 +5938,7 @@ function ArrangementForm({ exam = false, setModal }) {
       content: (
         <p>
           {finalize
-            ? "保存后进入工位准备；只有逐工位检查通过后才会生成版本快照并允许入场。"
+            ? "保存后进入工位准备；只有逐工位检查通过后才会锁定本次安排并允许入场。"
             : "草稿保存后可从列表继续编辑，不会开放任何工位。"}
         </p>
       ),
@@ -5918,7 +6017,7 @@ function ArrangementForm({ exam = false, setModal }) {
             >
               {publishedSops.map((sop) => (
                 <option key={sop.id} value={sop.id}>
-                  {sop.name} · {sop.version}
+                  {sop.name}
                 </option>
               ))}
             </select>
@@ -5928,9 +6027,8 @@ function ArrangementForm({ exam = false, setModal }) {
             <span>
               <strong>{selectedSop?.name || "未选择 SOP"}</strong>
               <small>
-                SOP {selectedSop?.version || "—"} · 自动评价目标{" "}
-                {selectedAiStatus.automaticTargetCount} 步 · 当前已适配{" "}
-                {selectedAiStatus.modelReadyCount} 步
+                自动评价目标 {selectedAiStatus.automaticTargetCount} 步 ·
+                当前已适配 {selectedAiStatus.modelReadyCount} 步
               </small>
               <small>
                 工位能力 {selectedAiStatus.validatedWorkstationCount} /{" "}
@@ -6017,7 +6115,7 @@ function ArrangementForm({ exam = false, setModal }) {
           })}
           <p className="hint">
             <AlertOutlined />{" "}
-            选择只保存候选范围；主辅画面、设备、缓存和版本将在准备页逐站确认。
+            选择只保存候选范围；主辅画面、设备和缓存将在准备页逐站确认。
           </p>
         </aside>
       </div>
@@ -6084,7 +6182,7 @@ function PrepPage({ exam = false, setModal }) {
           workstation.id,
           checkRef.current.getValue(),
         );
-        return `${workstation.name} 已开放，使用 SOP ${result.snapshot.sopVersion}，${result.session.evaluationProfile.automaticEvaluationEnabled ? "自动评价已启用" : "自动评价已安全降级"}`;
+        return `${workstation.name} 已开放，${result.session.evaluationProfile.automaticEvaluationEnabled ? "自动评价已启用" : "自动评价已安全降级"}`;
       },
     });
   };
@@ -6095,7 +6193,7 @@ function PrepPage({ exam = false, setModal }) {
         <p>
           当前已开放 {arrangement.openWorkstationIds.length} /{" "}
           {arrangement.workstationIds.length}{" "}
-          个工位。未开放工位保持阻断，可在开始后继续按同一版本快照加入。
+          个工位。未开放工位保持阻断，可在开始后按本次安排继续加入。
         </p>
       ),
       confirmText: "开始并进入监控",
@@ -6139,28 +6237,24 @@ function PrepPage({ exam = false, setModal }) {
           <span>
             <strong>
               {arrangement.snapshot
-                ? `已锁定本次教学标准与AI能力快照 · SOP ${arrangement.snapshot.sopVersion}`
+                ? "已锁定本次教学标准与AI能力快照"
                 : "首次开放工位时生成本次教学与AI能力快照"}
             </strong>
             <small>
               {arrangement.snapshot
-                ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续标准和AI适配升级不影响本安排。`
+                ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续新 SOP 和 AI 调整不影响本安排。`
                 : "尚未开放工位，因此没有虚假显示已锁定。"}
             </small>
           </span>
         </div>
         <Status tone={arrangement.snapshot ? "success" : "warning"}>
-          {arrangement.snapshot ? "版本已锁定" : "尚未锁定"}
+          {arrangement.snapshot ? "已锁定" : "尚未锁定"}
         </Status>
       </div>
       {arrangement.snapshot && (
         <section className="panel evaluation-snapshot-panel">
           <PanelTitle title="Evaluation Snapshot" action={<LockOutlined />} />
           <div className="version-binding">
-            <span>
-              <small>SOP</small>
-              <b>{arrangement.snapshot.sopVersion}</b>
-            </span>
             <span>
               <small>Mapping</small>
               <b>{arrangement.snapshot.mappingVersion || "未确认"}</b>
@@ -6180,7 +6274,7 @@ function PrepPage({ exam = false, setModal }) {
           </div>
           <p className="hint">
             每个已开放工位还会独立锁定 Workstation Profile
-            与现场验证记录；后续版本升级不追溯改写本次运行证据。
+            与现场验证记录；后续调整不追溯改写本次运行证据。
           </p>
         </section>
       )}
@@ -6236,11 +6330,7 @@ function PrepPage({ exam = false, setModal }) {
                   <Status tone={readiness.gate.enabled ? "success" : "warning"}>
                     {readiness.gate.enabled ? "自动评价可用" : "默认通过模式"}
                   </Status>
-                  <Status>
-                    {opened
-                      ? `快照 ${arrangement.snapshot?.sopVersion}`
-                      : "待检查"}
-                  </Status>
+                  <Status>{opened ? "已锁定" : "待检查"}</Status>
                 </div>
                 <Button
                   disabled={opened}
@@ -6649,7 +6739,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       "有效得分",
       "成绩状态",
       "成绩版本",
-      "SOP版本",
+      "SOP",
     ];
     const body = sessions.map((session) => {
       const student = store.data.students.find(
@@ -6665,7 +6755,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         session.resultStatus === "未参加" ? "—" : session.score,
         session.resultStatus,
         `V${session.scoreVersion || 0}`,
-        arrangement.snapshot?.sopVersion || "—",
+        store.data.sops.find((item) => item.id === arrangement.sopId)?.name ||
+          "历史标准",
       ];
     });
     return [header, ...body]
@@ -6779,7 +6870,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}${adminReadOnly ? "记录" : "结果"}：${arrangement.name}`}
-        subtitle={`状态 ${arrangement.status} · 结束时间 ${arrangement.endedAt || "历史安排"} · 快照 SOP ${arrangement.snapshot?.sopVersion || "—"}`}
+        subtitle={`状态 ${arrangement.status} · 结束时间 ${arrangement.endedAt || "历史安排"} · SOP ${store.data.sops.find((item) => item.id === arrangement.sopId)?.name || "历史标准"}`}
         actions={
           <>
             <Button icon={<ExportOutlined />} onClick={exportResults}>
@@ -7015,7 +7106,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               `<tr><td>${step.id}</td><td>${step.name}</td><td>${step.effectiveScore}/${step.maxScore}</td><td>${step.result}</td><td>${step.reviewStatus}</td><td>${step.timeRange}</td></tr>`,
           )
           .join("");
-        const html = `<!doctype html><meta charset="utf-8"><title>${student.name}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${arrangement.name} · ${student.name}</h1><p>学号 ${student.no}｜SOP ${arrangement.snapshot?.sopVersion}｜有效成绩 ${session.score}/${totalMax}｜成绩版本 V${session.scoreVersion || 0}｜状态 ${session.resultStatus}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>修订历史</h2><pre>${(session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${item.reason}`).join("\n") || "无修订"}</pre>`;
+        const html = `<!doctype html><meta charset="utf-8"><title>${student.name}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${arrangement.name} · ${student.name}</h1><p>学号 ${student.no}｜SOP ${sop?.name || "历史标准"}｜有效成绩 ${session.score}/${totalMax}｜成绩版本 V${session.scoreVersion || 0}｜状态 ${session.resultStatus}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>修订历史</h2><pre>${(session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${item.reason}`).join("\n") || "无修订"}</pre>`;
         store.createExportJob({
           scope: "个人报告",
           targetId: arrangement.id,
@@ -7081,7 +7172,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}个人${adminReadOnly ? "记录" : "报告"} · ${student.name}`}
-        subtitle={`${sop?.name || "SOP 已失效"} · SOP ${arrangement.snapshot?.sopVersion || sop?.version || "—"} · 成绩版本 V${session.scoreVersion || 0}`}
+        subtitle={`${sop?.name || "历史标准"} · 成绩版本 V${session.scoreVersion || 0}`}
         actions={
           <>
             {!exam && !adminReadOnly && (
@@ -7318,10 +7409,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
             </span>
             <span>
               <small>评价快照</small>
-              <strong>
-                SOP {activeStep.evidenceMetadata?.sopVersion || "—"} ·
-                本次工位能力已锁定
-              </strong>
+              <strong>本次教学标准与工位能力已锁定</strong>
             </span>
           </div>
           {activeStep.evidenceMetadata?.systemAnomaly && (
@@ -7433,8 +7521,20 @@ function HistoryCompare() {
         backTo="/teacher/practices"
       />
     );
-  const comparable =
-    before && after && before.arrangement.sopId === after.arrangement.sopId;
+  const beforeSteps = before?.session.steps || [];
+  const afterSteps = after?.session.steps || [];
+  const comparable = Boolean(
+    before &&
+      after &&
+      before.arrangement.sopId === after.arrangement.sopId &&
+      beforeSteps.length === afterSteps.length &&
+      beforeSteps.every(
+        (step, index) =>
+          step.id === afterSteps[index]?.id &&
+          step.name === afterSteps[index]?.name &&
+          Number(step.maxScore) === Number(afterSteps[index]?.maxScore),
+      ),
+  );
   const dimensions = (before?.session.steps || []).map((step) => {
     const other = after?.session.steps.find((item) => item.id === step.id);
     return [
@@ -7452,7 +7552,7 @@ function HistoryCompare() {
       <PageHeader
         back
         title={`练习历史比较 · ${student?.name || "选择学生"}`}
-        subtitle="先选择同一学生的两次正式记录；版本差异和不可比边界会显式提示"
+        subtitle="先选择同一学生的两次正式记录；不同 SOP 或步骤结构会提示不可直接比较"
       />
       <section className="panel comparison">
         <div className="comparison-controls">
@@ -7514,7 +7614,10 @@ function HistoryCompare() {
               基准 · {before?.arrangement.scheduleStart.slice(0, 10)}
             </small>
             <strong>{before?.session.score}分</strong>
-            <Status>SOP {before?.arrangement.snapshot?.sopVersion}</Status>
+            <Status>
+              {data.sops.find((item) => item.id === before?.arrangement.sopId)
+                ?.name || "历史标准"}
+            </Status>
           </span>
           <span className="comparison-arrow">
             →
@@ -7529,7 +7632,10 @@ function HistoryCompare() {
               对比 · {after?.arrangement.scheduleStart.slice(0, 10)}
             </small>
             <strong>{after?.session.score}分</strong>
-            <Status>SOP {after?.arrangement.snapshot?.sopVersion}</Status>
+            <Status>
+              {data.sops.find((item) => item.id === after?.arrangement.sopId)
+                ?.name || "历史标准"}
+            </Status>
           </span>
         </div>
         <div className="comparison-legend" aria-label="图例">
@@ -7581,12 +7687,12 @@ function HistoryCompare() {
           <div>
             <strong>
               {comparable
-                ? "同一任务仍需结合版本解释"
+                ? "同一标准下的两次记录"
                 : "所选记录不可直接解释为能力变化"}
             </strong>
             <p>
               {comparable
-                ? `两次记录属于同一 SOP 业务对象，但版本从 ${before?.arrangement.snapshot?.sopVersion} 变化为 ${after?.arrangement.snapshot?.sopVersion}。柱形按各自步骤满分归一化，顶部仍保留原始分。`
+                ? "两次记录引用同一 SOP，步骤名称和分值结构一致。柱形按各自步骤满分归一化，顶部保留原始分。"
                 : "两次记录使用不同 SOP 或步骤结构，只展示原始事实，不计算或宣称能力提升。"}
             </p>
           </div>
@@ -7923,6 +8029,1934 @@ function TeacherMappingReview({ setModal }) {
   );
 }
 
+function AiCapabilityConfigList() {
+  const nav = useNavigate();
+  const { data } = usePrototypeData();
+  const sops = getConfigurableSops(data?.sops);
+  const rows = sops.map((sop) => [
+    sop.name || "未命名SOP",
+    [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
+    sop.owner || "未设置",
+    `${Array.isArray(sop.steps) ? sop.steps.length : 0} 步`,
+    "未配置",
+    "0",
+    "0",
+    "未配置",
+  ]);
+  return (
+    <>
+      <PageHeader
+        title="AI能力配置"
+        subtitle="为已发布SOP配置可复用AI能力、判断条件与现场启用规则。"
+      />
+      <section className="panel">
+        <PanelTitle title="可配置的SOP" />
+        <p className="hint">
+          从教师已发布的SOP中选择一项，进入对应的AI能力配置。
+        </p>
+      </section>
+      {sops.length ? (
+        <section className="panel panel--table ai-entry-table">
+          <DataTable
+            columns={[
+              "SOP名称",
+              "专业/课程",
+              "创建教师",
+              "步骤数",
+              "AI配置状态",
+              "已配置判断项",
+              "引用AI能力",
+              "工位状态",
+            ]}
+            rows={rows}
+            rowKey={(_, index) => sops[index].id}
+            onView={(_, index) =>
+              nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sops[index].id)}`)
+            }
+            viewLabel="开始配置"
+            statusColumns={[4, 7]}
+          />
+        </section>
+      ) : (
+        <section className="panel empty-state ai-entry-table">
+          <BookOutlined />
+          <h2>暂无可配置的SOP</h2>
+          <p>教师发布SOP后，可在此为SOP配置AI判断能力。</p>
+        </section>
+      )}
+    </>
+  );
+}
+
+function AiCapabilityConfigDetail() {
+  const nav = useNavigate();
+  const { sopId } = useParams();
+  const { data } = usePrototypeData();
+  const sop = getConfigurableSops(data?.sops).find((item) => item.id === sopId);
+  if (!sop) {
+    return <MissingState title="可配置的SOP不存在" backTo={AI_CONFIG_PATH} />;
+  }
+  return (
+    <>
+      <PageHeader
+        title="AI能力配置"
+        subtitle={sop.name || "未命名SOP"}
+        actions={
+          <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+        }
+      />
+      <section className="panel ai-config-summary">
+        <PanelTitle title="SOP信息" />
+        <div className="ai-config-summary__grid">
+          <div>
+            <small>SOP名称</small>
+            <strong>{sop.name || "未命名SOP"}</strong>
+          </div>
+          <div>
+            <small>创建教师</small>
+            <strong>{sop.owner || "未设置"}</strong>
+          </div>
+          <div>
+            <small>SOP状态</small>
+            <Status>{sop.status}</Status>
+          </div>
+          <div>
+            <small>步骤数</small>
+            <strong>
+              {Array.isArray(sop.steps) ? sop.steps.length : 0} 步
+            </strong>
+          </div>
+        </div>
+      </section>
+      <section className="panel ai-entry-table">
+        <PanelTitle title="AI能力配置" />
+        <p>
+          当前状态：<Status>未配置</Status>
+        </p>
+        <p className="hint">详细的AI判断项配置将在后续任务中开放。</p>
+      </section>
+    </>
+  );
+}
+
+const AI_CAPABILITIES_PATH = `${AI_LIBRARY_PATH}/capabilities`;
+
+function confirmAiCapabilityAction(action, capability, store, setModal, nav) {
+  const count = capabilityReferenceCount(capability);
+  if (action === "delete" && count) {
+    setModal({
+      title: "当前能力不可删除",
+      content: (
+        <p>当前AI能力正在被 {count} 个AI能力配置引用，请先解除引用后再删除。</p>
+      ),
+      dismissOnly: true,
+    });
+    return;
+  }
+  if (action === "reactivate" && capability.currentModelStatus !== "已发布") {
+    setModal({
+      title: "当前能力不可重新启用",
+      content: <p>当前能力没有已发布模型，不能重新启用。</p>,
+      dismissOnly: true,
+    });
+    return;
+  }
+  const deleting = action === "delete";
+  const deactivating = action === "deactivate";
+  setModal({
+    title: deleting
+      ? "删除AI能力"
+      : deactivating
+        ? "停用AI能力"
+        : "重新启用AI能力",
+    content: (
+      <p>
+        {deleting
+          ? `确认删除“${capability.name}”？删除后无法恢复。`
+          : deactivating
+            ? `停用“${capability.name}”后，该能力不再供新的AI能力配置选择；已有引用不会自动删除。`
+            : `确认重新启用“${capability.name}”？启用后可供新的AI能力配置选择。`}
+      </p>
+    ),
+    confirmText: deleting ? "确认删除" : deactivating ? "确认停用" : "确认启用",
+    onConfirm: () => {
+      if (deleting) {
+        store.deleteAiCapability(capability.id);
+        window.setTimeout(() => nav(AI_CAPABILITIES_PATH), 0);
+      } else if (deactivating) {
+        store.deactivateAiCapability(capability.id);
+      } else {
+        store.reactivateAiCapability(capability.id);
+      }
+      return `${capability.name} 已${deleting ? "删除" : deactivating ? "停用" : "重新启用"}`;
+    },
+  });
+}
+
+function AiCapabilityList({ setModal }) {
+  const nav = useNavigate();
+  const store = usePrototypeData();
+  const capabilities = Array.isArray(store.data.aiCapabilities)
+    ? store.data.aiCapabilities
+    : [];
+  const sourceVideos = Array.isArray(store.data.aiSourceVideos)
+    ? store.data.aiSourceVideos
+    : [];
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const visible = capabilities
+    .filter(
+      (item) =>
+        item?.id &&
+        (!query.trim() ||
+          item.name
+            ?.toLocaleLowerCase()
+            .includes(query.trim().toLocaleLowerCase())) &&
+        (!typeFilter || item.type === typeFilter) &&
+        (!statusFilter || item.status === statusFilter),
+    )
+    .sort((a, b) =>
+      String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")),
+    );
+  const showAction = (capability, action, label) => (
+    <button
+      key={action}
+      className="table-action"
+      onClick={() =>
+        confirmAiCapabilityAction(action, capability, store, setModal, nav)
+      }
+    >
+      {label}
+    </button>
+  );
+  const rows = visible.map((capability) => [
+    capability.name,
+    AI_CAPABILITY_TYPES[capability.type] || "未知类型",
+    <Status key="status">{capability.status || "草稿"}</Status>,
+    String(
+      sourceVideos.filter((video) => video.capabilityId === capability.id)
+        .length,
+    ),
+    "0",
+    <Status key="model">{capability.currentModelStatus || "未训练"}</Status>,
+    `${capabilityReferenceCount(capability)} 个`,
+    capability.updatedAt || "—",
+    <div className="ai-capability-row-actions" key="actions">
+      <button
+        className="table-action"
+        onClick={() =>
+          nav(`${AI_CAPABILITIES_PATH}/${encodeURIComponent(capability.id)}`)
+        }
+      >
+        查看
+      </button>
+      {canEditCapability(capability) && (
+        <button
+          className="table-action"
+          onClick={() =>
+            nav(
+              `${AI_CAPABILITIES_PATH}/${encodeURIComponent(capability.id)}/edit`,
+            )
+          }
+        >
+          {canEditCapabilityMeaning(capability) ? "编辑" : "编辑备注"}
+        </button>
+      )}
+      {capability.status === "已发布" &&
+        showAction(capability, "deactivate", "停用")}
+      {capability.status === "已停用" &&
+        showAction(capability, "reactivate", "重新启用")}
+      {!["已发布", "训练中"].includes(capability.status) &&
+        showAction(capability, "delete", "删除")}
+    </div>,
+  ]);
+  return (
+    <>
+      <PageHeader
+        title="能力管理"
+        subtitle="管理可跨SOP复用的目标检测和动作识别能力。"
+        actions={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => nav(`${AI_CAPABILITIES_PATH}/new`)}
+          >
+            新建AI能力
+          </Button>
+        }
+      />
+      {capabilities.length ? (
+        <section className="panel panel--table">
+          <div className="list-toolbar ai-capability-toolbar">
+            <label className="search">
+              <SearchOutlined aria-hidden="true" />
+              <input
+                aria-label="搜索能力名称"
+                placeholder="搜索能力名称"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <select
+              aria-label="筛选能力类型"
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+            >
+              <option value="">全部类型</option>
+              {Object.entries(AI_CAPABILITY_TYPES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="筛选能力状态"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="">全部状态</option>
+              {AI_CAPABILITY_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+          <DataTable
+            columns={[
+              "能力名称",
+              "能力类型",
+              "当前状态",
+              "原始视频",
+              "有效训练数据",
+              "当前模型",
+              "被引用",
+              "更新时间",
+              "操作",
+            ]}
+            rows={rows}
+            rowKey={(_, index) => visible[index].id}
+            statusColumns={[]}
+            emptyText="没有符合筛选条件的AI能力"
+          />
+        </section>
+      ) : (
+        <section className="panel empty-state">
+          <DatabaseOutlined />
+          <h2>暂无AI能力</h2>
+          <p>
+            创建可复用的目标检测或动作识别能力后，可继续准备训练数据并完成模型发布。
+          </p>
+          <Button
+            type="primary"
+            onClick={() => nav(`${AI_CAPABILITIES_PATH}/new`)}
+          >
+            新建AI能力
+          </Button>
+        </section>
+      )}
+    </>
+  );
+}
+
+function AiCapabilityForm() {
+  const nav = useNavigate();
+  const { capabilityId } = useParams();
+  const store = usePrototypeData();
+  const existing = capabilityId
+    ? (store.data.aiCapabilities || []).find((item) => item.id === capabilityId)
+    : null;
+  const creating = !capabilityId;
+  const [draft, setDraft] = useState(() => ({
+    name: existing?.name || "",
+    type: existing?.type || "",
+    description: existing?.description || "",
+    targetName: existing?.targetName || "",
+    note: existing?.note || "",
+  }));
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setDraft({
+      name: existing?.name || "",
+      type: existing?.type || "",
+      description: existing?.description || "",
+      targetName: existing?.targetName || "",
+      note: existing?.note || "",
+    });
+    setError("");
+  }, [capabilityId]);
+  if (!creating && !existing)
+    return <MissingState title="AI能力不存在" backTo={AI_CAPABILITIES_PATH} />;
+  if (!creating && !canEditCapability(existing))
+    return (
+      <MissingState
+        title="当前能力状态不可编辑"
+        backTo={`${AI_CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}`}
+      />
+    );
+  const meaningEditable = creating || canEditCapabilityMeaning(existing);
+  const targetLabel =
+    draft.type === "object_detection"
+      ? "识别对象"
+      : draft.type === "action_recognition"
+        ? "动作名称"
+        : "识别对象 / 动作名称";
+  const setField = (field) => (event) =>
+    setDraft((current) => ({ ...current, [field]: event.target.value }));
+  const save = (event) => {
+    event.preventDefault();
+    try {
+      const saved = creating
+        ? store.createAiCapability(draft)
+        : store.updateAiCapability(capabilityId, draft);
+      nav(`${AI_CAPABILITIES_PATH}/${encodeURIComponent(saved.id)}`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "保存失败，请检查输入。",
+      );
+    }
+  };
+  return (
+    <>
+      <PageHeader
+        title={creating ? "新建AI能力" : `编辑AI能力 · ${existing.name}`}
+        subtitle="能力描述平台可重复使用的视觉识别事实，不包含SOP评分和工位规则。"
+        actions={
+          <Button
+            onClick={() =>
+              nav(
+                creating
+                  ? AI_CAPABILITIES_PATH
+                  : `${AI_CAPABILITIES_PATH}/${encodeURIComponent(capabilityId)}`,
+              )
+            }
+          >
+            取消
+          </Button>
+        }
+      />
+      <form className="panel ai-capability-form" onSubmit={save}>
+        {!meaningEditable && (
+          <p className="hint ai-capability-lock-note">
+            已发布能力的识别含义已锁定。本页仅可修改备注；如需改变识别对象或动作，请新建AI能力。
+          </p>
+        )}
+        <div className="ai-capability-form__grid">
+          <label className="field">
+            能力名称
+            <input
+              value={draft.name}
+              onChange={setField("name")}
+              disabled={!meaningEditable}
+              maxLength={50}
+              placeholder="例如：验电笔检测"
+            />
+          </label>
+          <label className="field">
+            能力类型
+            <select
+              value={draft.type}
+              onChange={setField("type")}
+              disabled={!creating}
+            >
+              <option value="">请选择能力类型</option>
+              {Object.entries(AI_CAPABILITY_TYPES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          能力说明
+          <textarea
+            value={draft.description}
+            onChange={setField("description")}
+            disabled={!meaningEditable}
+            placeholder="说明该能力识别什么，不填写SOP评分或工位规则。"
+          />
+        </label>
+        <label className="field">
+          {targetLabel}
+          <input
+            value={draft.targetName}
+            onChange={setField("targetName")}
+            disabled={!meaningEditable}
+            placeholder={
+              draft.type === "action_recognition"
+                ? "例如：二次验电"
+                : "例如：绝缘手套"
+            }
+          />
+        </label>
+        <label className="field">
+          备注（选填）
+          <textarea
+            value={draft.note}
+            onChange={setField("note")}
+            placeholder="记录数据采集注意事项或实施说明。"
+          />
+        </label>
+        {error && (
+          <p className="form-error" role="alert">
+            <ExclamationCircleFilled /> {error}
+          </p>
+        )}
+        <div className="ai-capability-form__actions">
+          <Button type="primary" htmlType="submit">
+            {creating ? "创建能力" : "保存修改"}
+          </Button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function AiCapabilityDetail({ setModal }) {
+  const nav = useNavigate();
+  const { capabilityId } = useParams();
+  const store = usePrototypeData();
+  const capability = (store.data.aiCapabilities || []).find(
+    (item) => item.id === capabilityId,
+  );
+  if (!capability)
+    return <MissingState title="AI能力不存在" backTo={AI_CAPABILITIES_PATH} />;
+  const count = capabilityReferenceCount(capability);
+  const sourceVideoCount = (store.data.aiSourceVideos || []).filter(
+    (video) => video.capabilityId === capability.id,
+  ).length;
+  return (
+    <>
+      <div className="ai-capability-breadcrumb">
+        AI能力库 /{" "}
+        <button onClick={() => nav(AI_CAPABILITIES_PATH)}>能力管理</button> /{" "}
+        {capability.name}
+      </div>
+      <PageHeader
+        title={capability.name}
+        subtitle="平台可复用的视觉识别能力"
+        actions={
+          <>
+            <Button onClick={() => nav(AI_CAPABILITIES_PATH)}>返回列表</Button>
+            {canEditCapability(capability) && (
+              <Button
+                onClick={() =>
+                  nav(
+                    `${AI_CAPABILITIES_PATH}/${encodeURIComponent(capability.id)}/edit`,
+                  )
+                }
+              >
+                {canEditCapabilityMeaning(capability) ? "编辑" : "编辑备注"}
+              </Button>
+            )}
+            {capability.status === "已发布" && (
+              <Button
+                onClick={() =>
+                  confirmAiCapabilityAction(
+                    "deactivate",
+                    capability,
+                    store,
+                    setModal,
+                    nav,
+                  )
+                }
+              >
+                停用
+              </Button>
+            )}
+            {capability.status === "已停用" && (
+              <Button
+                type="primary"
+                onClick={() =>
+                  confirmAiCapabilityAction(
+                    "reactivate",
+                    capability,
+                    store,
+                    setModal,
+                    nav,
+                  )
+                }
+              >
+                重新启用
+              </Button>
+            )}
+            {!["已发布", "训练中"].includes(capability.status) && (
+              <Button
+                onClick={() =>
+                  confirmAiCapabilityAction(
+                    "delete",
+                    capability,
+                    store,
+                    setModal,
+                    nav,
+                  )
+                }
+              >
+                删除
+              </Button>
+            )}
+          </>
+        }
+      />
+      <div className="ai-library-capability-summary">
+        <span>
+          <small>能力类型</small>
+          <strong>{AI_CAPABILITY_TYPES[capability.type] || "未知类型"}</strong>
+        </span>
+        <span>
+          <small>当前状态</small>
+          <Status>{capability.status}</Status>
+        </span>
+        <span>
+          <small>当前模型</small>
+          <Status>{capability.currentModelStatus || "未训练"}</Status>
+        </span>
+        <span>
+          <small>被引用</small>
+          <strong>{count} 个AI能力配置</strong>
+        </span>
+        <span>
+          <small>最近更新</small>
+          <strong>{capability.updatedAt || "—"}</strong>
+        </span>
+      </div>
+      <section className="panel ai-capability-detail-section">
+        <PanelTitle title="基础信息" />
+        <div className="ai-capability-facts">
+          {[
+            ["能力名称", capability.name],
+            ["能力类型", AI_CAPABILITY_TYPES[capability.type]],
+            ["能力说明", capability.description],
+            [
+              capability.type === "object_detection" ? "识别对象" : "动作名称",
+              capability.targetName,
+            ],
+            ["创建人", capability.createdBy],
+            ["创建时间", capability.createdAt],
+            ["更新时间", capability.updatedAt],
+            ["备注", capability.note || "—"],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <small>{label}</small>
+              <strong>{value || "—"}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel ai-capability-detail-section">
+        <PanelTitle title="数据概览" />
+        <div className="ai-capability-data-grid">
+          {[
+            ["原始视频", String(sourceVideoCount)],
+            ["已生成数据", "0"],
+            ["有效训练数据", "0"],
+            ["已标注", "0"],
+            ["当前模型", capability.currentModelStatus || "未训练"],
+          ].map(([label, value]) => (
+            <span key={label}>
+              <small>{label}</small>
+              <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+      </section>
+      <section className="panel ai-capability-detail-section">
+        <PanelTitle title="引用关系" />
+        <p className="hint">
+          {count
+            ? `当前被 ${count} 个AI能力配置引用。`
+            : "暂无AI能力配置引用。"}
+        </p>
+      </section>
+      <section className="panel ai-capability-detail-section">
+        <PanelTitle title="后续数据流程" />
+        <p className="hint">
+          以下入口会保留当前能力，后续页面按该能力单独管理数据。
+        </p>
+        <div className="ai-capability-flow-links">
+          {AI_LIBRARY_SECTIONS.slice(1).map((section) => (
+            <Button
+              key={section.path}
+              onClick={() =>
+                nav(
+                  `${AI_LIBRARY_PATH}/${section.path}?capabilityId=${encodeURIComponent(capability.id)}`,
+                )
+              }
+            >
+              {section.title}
+            </Button>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function formatVideoFileSize(value) {
+  const bytes = Number(value || 0);
+  if (!bytes) return "—";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatVideoDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "待读取";
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remaining = total % 60;
+  return hours
+    ? [hours, minutes, remaining]
+        .map((item) => String(item).padStart(2, "0"))
+        .join(":")
+    : [minutes, remaining]
+        .map((item) => String(item).padStart(2, "0"))
+        .join(":");
+}
+
+function readVideoFileMetadata(file) {
+  const storageRef = URL.createObjectURL(file);
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      resolve({
+        fileName: file.name,
+        displayName: file.name,
+        storageRef,
+        mimeType: file.type,
+        codec: file.type || "—",
+        duration: formatVideoDuration(video.duration),
+        width: Number(video.videoWidth || 0),
+        height: Number(video.videoHeight || 0),
+        fileSize: Number(file.size || 0),
+      });
+    };
+    video.preload = "metadata";
+    video.onloadedmetadata = finish;
+    video.onerror = finish;
+    window.setTimeout(finish, 1600);
+    video.src = storageRef;
+  });
+}
+
+const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
+  { capability, workstations, existingVideos },
+  ref,
+) {
+  const [form, setForm] = useState({
+    dataCategory: "normal",
+    sourceType: "standard_demo",
+    workstationId: "",
+    note: "",
+    capturedAt: "",
+    allowDuplicates: false,
+  });
+  const [files, setFiles] = useState([]);
+  const [reading, setReading] = useState(false);
+  const duplicates = potentialVideoDuplicates(
+    files,
+    existingVideos,
+    capability.id,
+  );
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ ...form, files, reading }),
+  }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="form-stack ai-video-upload-form">
+      <div className="ai-video-readonly-capability">
+        <small>当前AI能力</small>
+        <strong>{capability.name}</strong>
+        <span>{AI_CAPABILITY_TYPES[capability.type] || "未知类型"}</span>
+      </div>
+      <label className="field">
+        视频文件（支持批量选择）
+        <input
+          type="file"
+          multiple
+          accept=".mp4,.mov,.avi,.mkv,video/mp4,video/quicktime,video/x-msvideo,video/x-matroska"
+          onChange={async (event) => {
+            const selectedFiles = [...(event.target.files || [])];
+            setReading(Boolean(selectedFiles.length));
+            setFiles(await Promise.all(selectedFiles.map(readVideoFileMetadata)));
+            setReading(false);
+          }}
+        />
+      </label>
+      {reading && <p className="hint">正在读取视频基础信息…</p>}
+      {!!files.length && (
+        <div className="ai-video-upload-files">
+          {files.map((file) => (
+            <span key={`${file.fileName}-${file.fileSize}`}>
+              <VideoCameraOutlined />
+              <strong>{file.fileName}</strong>
+              <small>
+                {file.duration} · {file.width && file.height ? `${file.width}×${file.height}` : "分辨率待读取"} · {formatVideoFileSize(file.fileSize)}
+              </small>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="form-row">
+        <label className="field">
+          数据属性
+          <select
+            value={form.dataCategory}
+            onChange={(event) => update("dataCategory", event.target.value)}
+          >
+            {Object.entries(AI_VIDEO_CATEGORIES).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          数据来源
+          <select
+            value={form.sourceType}
+            onChange={(event) => update("sourceType", event.target.value)}
+          >
+            {Object.entries(AI_VIDEO_SOURCES).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="form-row">
+        <label className="field">
+          拍摄工位（选填）
+          <select
+            value={form.workstationId}
+            onChange={(event) => update("workstationId", event.target.value)}
+          >
+            <option value="">未记录</option>
+            {(workstations || []).map((item) => (
+              <option key={item.id} value={item.id}>{item.name} · {item.code}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          拍摄日期（选填）
+          <input
+            type="date"
+            value={form.capturedAt}
+            onChange={(event) => update("capturedAt", event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        拍摄说明（选填）
+        <textarea
+          rows={3}
+          placeholder="例如：正面机位、弱光环境、有轻微遮挡"
+          value={form.note}
+          onChange={(event) => update("note", event.target.value)}
+        />
+      </label>
+      {!!duplicates.length && (
+        <label className="ai-video-duplicate-warning">
+          <input
+            type="checkbox"
+            checked={form.allowDuplicates}
+            onChange={(event) => update("allowDuplicates", event.target.checked)}
+          />
+          检测到 {duplicates.length} 个同名且同大小的视频，仍然继续上传
+        </label>
+      )}
+    </div>
+  );
+});
+
+const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
+  { video, workstations },
+  ref,
+) {
+  const [form, setForm] = useState({
+    displayName: video.displayName || video.fileName,
+    dataCategory: video.dataCategory,
+    sourceType: video.sourceType,
+    workstationId: video.workstationId || "",
+    capturedAt: video.capturedAt || "",
+    note: video.note || "",
+  });
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="form-stack">
+      <label className="field">
+        视频名称
+        <input
+          value={form.displayName}
+          maxLength={80}
+          onChange={(event) => update("displayName", event.target.value)}
+        />
+      </label>
+      <div className="form-row">
+        <label className="field">
+          数据属性
+          <select
+            value={form.dataCategory}
+            onChange={(event) => update("dataCategory", event.target.value)}
+          >
+            {Object.entries(AI_VIDEO_CATEGORIES).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          数据来源
+          <select
+            value={form.sourceType}
+            onChange={(event) => update("sourceType", event.target.value)}
+          >
+            {Object.entries(AI_VIDEO_SOURCES).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="form-row">
+        <label className="field">
+          拍摄工位（选填）
+          <select
+            value={form.workstationId}
+            onChange={(event) => update("workstationId", event.target.value)}
+          >
+            <option value="">未记录</option>
+            {(workstations || []).map((item) => (
+              <option key={item.id} value={item.id}>{item.name} · {item.code}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          拍摄日期（选填）
+          <input
+            type="date"
+            value={form.capturedAt}
+            onChange={(event) => update("capturedAt", event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="field">
+        拍摄说明（选填）
+        <textarea rows={3} value={form.note} onChange={(event) => update("note", event.target.value)} />
+      </label>
+      <div className="ai-video-locked-fields">
+        <span><small>原始文件</small><strong>{video.fileName}</strong></span>
+        <span><small>所属能力</small><strong>上传后不可修改</strong></span>
+        <span><small>原始时长</small><strong>{video.duration}</strong></span>
+        <span><small>文件大小</small><strong>{formatVideoFileSize(video.fileSize)}</strong></span>
+      </div>
+    </div>
+  );
+});
+
+const AiVideoBatchForm = forwardRef(function AiVideoBatchForm(
+  { mode, count },
+  ref,
+) {
+  const options = mode === "category" ? AI_VIDEO_CATEGORIES : AI_VIDEO_SOURCES;
+  const [value, setValue] = useState(Object.keys(options)[0]);
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ [mode === "category" ? "dataCategory" : "sourceType"]: value }),
+  }));
+  return (
+    <div className="form-stack">
+      <p className="hint">将同时修改已选择的 {count} 个视频。</p>
+      <label className="field">
+        {mode === "category" ? "数据属性" : "数据来源"}
+        <select value={value} onChange={(event) => setValue(event.target.value)}>
+          {Object.entries(options).map(([option, label]) => (
+            <option key={option} value={option}>{label}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+});
+
+function AiVideoPreview({ video, workstation }) {
+  const [previewUnavailable, setPreviewUnavailable] = useState(
+    !video.storageRef,
+  );
+  return (
+    <div className="ai-video-preview">
+      {!previewUnavailable ? (
+        <video
+          controls
+          preload="metadata"
+          src={video.storageRef}
+          onError={() => setPreviewUnavailable(true)}
+        >
+          当前浏览器无法播放该视频。
+        </video>
+      ) : (
+        <div className="ai-video-preview__unavailable">
+          <VideoCameraOutlined />
+          <strong>演示数据未保存源文件内容</strong>
+          <span>上传本地视频后可在此播放、暂停、拖动进度并使用全屏。</span>
+        </div>
+      )}
+      <div className="ai-video-preview__facts">
+        {[
+          ["视频名称", video.displayName || video.fileName],
+          ["数据属性", AI_VIDEO_CATEGORIES[video.dataCategory]],
+          ["数据来源", AI_VIDEO_SOURCES[video.sourceType]],
+          ["拍摄工位", workstation ? `${workstation.name} · ${workstation.code}` : "未记录"],
+          ["拍摄说明", video.note || "—"],
+          ["上传时间", video.uploadedAt || "—"],
+        ].map(([label, value]) => (
+          <span key={label}><small>{label}</small><strong>{value || "—"}</strong></span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiVideoManagement({ setModal }) {
+  const nav = useNavigate();
+  const location = useLocation();
+  const store = usePrototypeData();
+  const uploadRef = useRef(null);
+  const editRef = useRef(null);
+  const batchRef = useRef(null);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const capabilities = Array.isArray(store.data.aiCapabilities)
+    ? store.data.aiCapabilities
+    : [];
+  const allVideos = Array.isArray(store.data.aiSourceVideos)
+    ? store.data.aiSourceVideos
+    : [];
+  const selectedId = new URLSearchParams(location.search).get("capabilityId");
+  const capability = capabilities.find((item) => item.id === selectedId);
+  const videos = capability
+    ? allVideos.filter((item) => item.capabilityId === capability.id)
+    : [];
+  const visible = videos.filter(
+    (item) =>
+      (!query.trim() ||
+        [item.displayName, item.fileName].some((value) =>
+          String(value || "").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+        )) &&
+      (!categoryFilter || item.dataCategory === categoryFilter) &&
+      (!sourceFilter || item.sourceType === sourceFilter) &&
+      (!statusFilter || item.processingStatus === statusFilter),
+  );
+  const stats = videoStats(videos);
+  const workstationById = Object.fromEntries(
+    (store.data.workstations || []).map((item) => [item.id, item]),
+  );
+  useEffect(() => setSelectedIds([]), [selectedId]);
+
+  const openUpload = () => {
+    if (!capability) return;
+    setModal({
+      eyebrow: "原始视频",
+      title: "上传视频",
+      size: "large",
+      confirmText: "开始上传",
+      content: (
+        <AiVideoUploadForm
+          ref={uploadRef}
+          capability={capability}
+          workstations={store.data.workstations || []}
+          existingVideos={allVideos}
+        />
+      ),
+      onConfirm: () => {
+        const input = uploadRef.current?.getValue();
+        if (input?.reading) throw new Error("视频信息仍在读取，请稍后再试。");
+        const created = store.uploadAiSourceVideos({
+          ...input,
+          capabilityId: capability.id,
+        });
+        return `已上传 ${created.length} 个原始视频`;
+      },
+    });
+  };
+  const openPreview = (video) =>
+    setModal({
+      eyebrow: "视频预览",
+      title: video.displayName || video.fileName,
+      size: "large",
+      hideCancel: true,
+      dismissOnly: true,
+      confirmText: "关闭",
+      content: (
+        <AiVideoPreview
+          video={video}
+          workstation={workstationById[video.workstationId]}
+        />
+      ),
+    });
+  const openEdit = (video) =>
+    setModal({
+      eyebrow: "原始视频",
+      title: "编辑视频信息",
+      size: "large",
+      confirmText: "保存修改",
+      content: (
+        <AiVideoMetadataForm
+          ref={editRef}
+          video={video}
+          workstations={store.data.workstations || []}
+        />
+      ),
+      onConfirm: () => {
+        store.updateAiSourceVideo(video.id, editRef.current?.getValue());
+        return "视频信息已更新";
+      },
+    });
+  const requestDelete = (targets) => {
+    const protectedVideo = targets.find(
+      (item) => item.processingStatus === "derived",
+    );
+    if (protectedVideo) {
+      setModal({
+        title: "当前视频不可删除",
+        hideCancel: true,
+        dismissOnly: true,
+        content: (
+          <p>
+            “{protectedVideo.displayName || protectedVideo.fileName}”已生成后续训练数据，无法直接删除。请先清理该视频产生的派生数据后再操作。
+          </p>
+        ),
+      });
+      return;
+    }
+    setModal({
+      title: targets.length > 1 ? `删除 ${targets.length} 个原始视频` : "删除原始视频",
+      confirmText: "确认删除",
+      content: <p>删除后将永久移除所选原始视频，是否继续？</p>,
+      onConfirm: () => {
+        store.deleteAiSourceVideos(targets.map((item) => item.id));
+        setSelectedIds([]);
+        return `已删除 ${targets.length} 个原始视频`;
+      },
+    });
+  };
+  const openBatch = (mode) =>
+    setModal({
+      eyebrow: "批量操作",
+      title: mode === "category" ? "批量修改数据属性" : "批量修改数据来源",
+      confirmText: "保存修改",
+      content: <AiVideoBatchForm ref={batchRef} mode={mode} count={selectedIds.length} />,
+      onConfirm: () => {
+        store.batchUpdateAiSourceVideos(selectedIds, batchRef.current?.getValue());
+        setSelectedIds([]);
+        return `已更新 ${selectedIds.length} 个视频`;
+      },
+    });
+  const toggleSelected = (id) =>
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((item) => selectedIds.includes(item.id));
+
+  return (
+    <>
+      <PageHeader
+        title="视频管理"
+        subtitle="按AI能力独立维护原始视频，后续处理只生成派生数据。"
+        actions={
+          <>
+            {capability && (
+              <Button
+                onClick={() =>
+                  nav(`${AI_LIBRARY_PATH}/extraction?capabilityId=${encodeURIComponent(capability.id)}`)
+                }
+              >
+                {capability.type === "object_detection" ? "去抽帧" : "去切片"}
+              </Button>
+            )}
+            <Button type="primary" icon={<UploadOutlined />} onClick={openUpload} disabled={!capability}>
+              上传视频
+            </Button>
+          </>
+        }
+      />
+      <section className="panel ai-video-capability-context">
+        <label className="field">
+          当前AI能力
+          <select
+            aria-label="当前AI能力"
+            value={capability?.id || ""}
+            onChange={(event) =>
+              nav(
+                event.target.value
+                  ? `${AI_LIBRARY_PATH}/videos?capabilityId=${encodeURIComponent(event.target.value)}`
+                  : `${AI_LIBRARY_PATH}/videos`,
+              )
+            }
+          >
+            <option value="">请选择AI能力</option>
+            {capabilities.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {AI_CAPABILITY_TYPES[item.type] || "未知类型"} · {item.status}
+              </option>
+            ))}
+          </select>
+        </label>
+        {capability && (
+          <div className="ai-video-capability-meta">
+            <span><small>能力类型</small><strong>{AI_CAPABILITY_TYPES[capability.type]}</strong></span>
+            <span><small>当前状态</small><Status>{capability.status}</Status></span>
+          </div>
+        )}
+        {selectedId && !capability && (
+          <p className="form-error" role="alert">所选AI能力不存在，请重新选择。</p>
+        )}
+      </section>
+      {!capability ? (
+        <section className="panel empty-state ai-library-empty ai-entry-table">
+          <VideoCameraOutlined />
+          <h2>请先选择AI能力</h2>
+          <p>视频数据按AI能力独立管理。请选择一个AI能力后继续。</p>
+        </section>
+      ) : !videos.length ? (
+        <section className="panel empty-state ai-library-empty ai-entry-table">
+          <UploadOutlined />
+          <h2>暂无原始视频</h2>
+          <p>上传与当前AI能力相关的原始视频，后续可进行抽帧或视频切片。</p>
+          <Button type="primary" icon={<UploadOutlined />} onClick={openUpload}>上传视频</Button>
+        </section>
+      ) : (
+        <>
+          <div className="ai-video-stats">
+            {[
+              ["原始视频总数", stats.total],
+              ["正常视频", stats.normal],
+              ["错误视频", stats.error],
+              ["背景视频", stats.background],
+              ["未处理", stats.unprocessed],
+              ["已进入后续处理", stats.derived],
+            ].map(([label, value]) => (
+              <span key={label}><small>{label}</small><strong>{value}</strong></span>
+            ))}
+          </div>
+          <section className="panel panel--table ai-entry-table ai-video-list-panel">
+            <div className="list-toolbar ai-video-toolbar">
+              <label className="search">
+                <SearchOutlined aria-hidden="true" />
+                <input
+                  aria-label="搜索视频名称"
+                  placeholder="搜索视频名称"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+              <select aria-label="筛选数据属性" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                <option value="">全部属性</option>
+                {Object.entries(AI_VIDEO_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <select aria-label="筛选数据来源" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                <option value="">全部来源</option>
+                {Object.entries(AI_VIDEO_SOURCES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <select aria-label="筛选处理状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="">全部处理状态</option>
+                {Object.entries(AI_VIDEO_PROCESSING_STATUSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div>
+            {!!selectedIds.length && (
+              <div className="ai-video-batch-bar">
+                <strong>已选择 {selectedIds.length} 个视频</strong>
+                <Button onClick={() => openBatch("category")}>修改数据属性</Button>
+                <Button onClick={() => openBatch("source")}>修改数据来源</Button>
+                <Button onClick={() => requestDelete(videos.filter((item) => selectedIds.includes(item.id)))}>批量删除</Button>
+                <button className="table-action" onClick={() => setSelectedIds([])}>取消选择</button>
+              </div>
+            )}
+            <div className="table-wrap ai-video-table-wrap">
+              <table>
+                <thead><tr>
+                  <th><input aria-label="选择全部可见视频" type="checkbox" checked={allVisibleSelected} onChange={() => setSelectedIds((current) => allVisibleSelected ? current.filter((id) => !visible.some((item) => item.id === id)) : [...new Set([...current, ...visible.map((item) => item.id)])])} /></th>
+                  <th>视频名称</th><th>数据属性</th><th>数据来源</th><th>拍摄工位</th><th>时长</th><th>分辨率</th><th>文件大小</th><th>处理状态</th><th>上传人</th><th>上传时间</th><th>操作</th>
+                </tr></thead>
+                <tbody>
+                  {visible.map((video) => {
+                    const workstation = workstationById[video.workstationId];
+                    return <tr key={video.id}>
+                      <td><input aria-label={`选择 ${video.displayName || video.fileName}`} type="checkbox" checked={selectedIds.includes(video.id)} onChange={() => toggleSelected(video.id)} /></td>
+                      <td><strong>{video.displayName || video.fileName}</strong><small className="ai-video-file-name">{video.fileName}</small></td>
+                      <td>{AI_VIDEO_CATEGORIES[video.dataCategory] || "—"}</td>
+                      <td>{AI_VIDEO_SOURCES[video.sourceType] || "—"}</td>
+                      <td>{workstation ? workstation.name : "—"}</td>
+                      <td>{video.duration || "—"}</td>
+                      <td>{video.width && video.height ? `${video.width}×${video.height}` : "—"}</td>
+                      <td>{formatVideoFileSize(video.fileSize)}</td>
+                      <td><Status>{AI_VIDEO_PROCESSING_STATUSES[video.processingStatus] || "未处理"}</Status></td>
+                      <td>{video.uploadedBy || "—"}</td>
+                      <td>{video.uploadedAt || "—"}</td>
+                      <td><div className="ai-capability-row-actions">
+                        <button className="table-action" onClick={() => openPreview(video)}>预览</button>
+                        <button className="table-action" onClick={() => openEdit(video)}>编辑信息</button>
+                        <button className="table-action" onClick={() => requestDelete([video])}>删除</button>
+                      </div></td>
+                    </tr>;
+                  })}
+                  {!visible.length && <tr><td className="table-empty" colSpan={12}>没有符合筛选条件的视频</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
+    </>
+  );
+}
+
+function DerivedDataPreview({ item, sourceVideo, kind }) {
+  const clipStart = Number(item.startMs || 0) / 1000;
+  const clipEnd = Number(item.endMs || 0) / 1000;
+  const [unavailable, setUnavailable] = useState(!item.storageRef);
+  return (
+    <div className="ai-derived-preview">
+      {kind === "frames" ? (
+        <div className="ai-frame-preview-canvas">
+          <VideoCameraOutlined />
+          <strong>{formatDerivedTimecode(item.sourceTimeMs / 1000, true)}</strong>
+          <span>原始视频画面预览</span>
+        </div>
+      ) : !unavailable ? (
+        <video
+          controls
+          preload="metadata"
+          src={`${item.storageRef}#t=${clipStart},${clipEnd}`}
+          onError={() => setUnavailable(true)}
+        >
+          当前浏览器无法播放该视频片段。
+        </video>
+      ) : (
+        <div className="ai-frame-preview-canvas">
+          <PlayCircleFilled />
+          <strong>
+            {formatDerivedTimecode(clipStart)} – {formatDerivedTimecode(clipEnd)}
+          </strong>
+          <span>演示数据未保存原始视频内容</span>
+        </div>
+      )}
+      <div className="ai-video-preview__facts">
+        {[
+          [kind === "frames" ? "图片名称" : "片段ID", kind === "frames" ? item.fileName : item.id],
+          ["来源视频", sourceVideo?.displayName || sourceVideo?.fileName || "原始视频不存在"],
+          ["生成任务", item.taskId],
+          [kind === "frames" ? "源视频时间点" : "片段范围", kind === "frames" ? formatDerivedTimecode(item.sourceTimeMs / 1000, true) : `${formatDerivedTimecode(clipStart)} – ${formatDerivedTimecode(clipEnd)}`],
+          [kind === "frames" ? "分辨率" : "片段时长", kind === "frames" ? (item.width && item.height ? `${item.width}×${item.height}` : "—") : formatDerivedTimecode(item.durationMs / 1000)],
+          ["当前状态", DERIVED_DATA_STATUSES[item.processingStatus] || "待清洗"],
+        ].map(([label, value]) => (
+          <span key={label}><small>{label}</small><strong>{value}</strong></span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiExtractionPage({ setModal }) {
+  const nav = useNavigate();
+  const location = useLocation();
+  const store = usePrototypeData();
+  const videoRef = useRef(null);
+  const [selectedVideoIds, setSelectedVideoIds] = useState([]);
+  const [sourceStatusFilter, setSourceStatusFilter] = useState("");
+  const [selectedResultIds, setSelectedResultIds] = useState([]);
+  const [resultSourceFilter, setResultSourceFilter] = useState("");
+  const [resultTaskFilter, setResultTaskFilter] = useState("");
+  const [resultStatusFilter, setResultStatusFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [formError, setFormError] = useState("");
+  const [frameParams, setFrameParams] = useState({
+    samplingMode: "interval",
+    sampleValue: "0.5",
+    rangeMode: "entire",
+    startTime: "00:00",
+    endTime: "00:10",
+    maxFrames: "500",
+    outputResolution: "original",
+  });
+  const [clipMethod, setClipMethod] = useState("manual");
+  const [clipParams, setClipParams] = useState({
+    startTime: "00:00",
+    endTime: "00:05",
+    note: "",
+    clipLength: "5",
+    step: "5",
+  });
+  const capabilities = Array.isArray(store.data.aiCapabilities)
+    ? store.data.aiCapabilities
+    : [];
+  const selectedId = new URLSearchParams(location.search).get("capabilityId");
+  const capability = capabilities.find((item) => item.id === selectedId);
+  const mode = extractionModeForCapability(capability?.type);
+  const videos = (store.data.aiSourceVideos || []).filter(
+    (item) => item.capabilityId === capability?.id,
+  );
+  const tasks = (store.data.aiExtractionTasks || [])
+    .filter((item) => item.capabilityId === capability?.id)
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const frames = (store.data.aiFrames || []).filter(
+    (item) => item.capabilityId === capability?.id,
+  );
+  const clips = (store.data.aiClips || []).filter(
+    (item) => item.capabilityId === capability?.id,
+  );
+  const results = mode === "frames" ? frames : clips;
+  const sourceVideoById = Object.fromEntries(videos.map((item) => [item.id, item]));
+  const visibleVideos = videos.filter(
+    (item) => !sourceStatusFilter || item.processingStatus === sourceStatusFilter,
+  );
+  const visibleResults = results.filter(
+    (item) =>
+      (!resultSourceFilter || item.sourceVideoId === resultSourceFilter) &&
+      (!resultTaskFilter || item.taskId === resultTaskFilter) &&
+      (!resultStatusFilter || item.processingStatus === resultStatusFilter) &&
+      (!methodFilter || item.generationMethod === methodFilter),
+  );
+  const processedVideoCount = videos.filter((item) => item.processingStatus === "derived").length;
+  const pendingCleaningCount = results.filter((item) => item.processingStatus === "pending_cleaning").length;
+  const selectedVideos = videos.filter((item) => selectedVideoIds.includes(item.id));
+  let frameEstimate = null;
+  let frameEstimateError = "";
+  if (mode === "frames" && selectedVideos.length) {
+    try {
+      frameEstimate = estimateFrameExtraction(selectedVideos, {
+        ...frameParams,
+        sampleValue: Number(frameParams.sampleValue),
+        maxFrames: Number(frameParams.maxFrames),
+      });
+    } catch (reason) {
+      frameEstimateError = reason instanceof Error ? reason.message : "抽帧参数无效。";
+    }
+  }
+  useEffect(() => {
+    setSelectedVideoIds([]);
+    setSelectedResultIds([]);
+    setFormError("");
+  }, [selectedId]);
+  useEffect(() => {
+    if (clipMethod === "manual" && selectedVideoIds.length > 1)
+      setSelectedVideoIds(selectedVideoIds.slice(0, 1));
+  }, [clipMethod, selectedVideoIds]);
+
+  const toggleVideo = (id) => {
+    setFormError("");
+    setSelectedVideoIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (mode === "clips" && clipMethod === "manual") return [id];
+      return [...current, id];
+    });
+  };
+  const openFrameTask = () => {
+    if (!selectedVideos.length) {
+      setFormError("请至少选择一个未生成结果的原始视频。");
+      return;
+    }
+    if (frameEstimateError) {
+      setFormError(frameEstimateError);
+      return;
+    }
+    const parameters = {
+      ...frameParams,
+      sampleValue: Number(frameParams.sampleValue),
+      maxFrames: Number(frameParams.maxFrames),
+      rangeMode: selectedVideos.length > 1 ? "entire" : frameParams.rangeMode,
+    };
+    setModal({
+      eyebrow: "抽帧任务",
+      title: "确认开始抽帧",
+      confirmText: "开始抽帧",
+      content: (
+        <div className="ai-task-confirmation">
+          <p>已选择 <strong>{selectedVideos.length}</strong> 个原始视频，总处理时长约 <strong>{formatDerivedTimecode(frameEstimate.totalDuration)}</strong>。</p>
+          <p>预计生成 <strong>{frameEstimate.estimatedCount}</strong> 张图片{frameEstimate.reachedLimitCount ? `，其中 ${frameEstimate.reachedLimitCount} 个视频会达到数量上限` : ""}。</p>
+          <p className="hint">本步骤只生成图片帧，不执行去重、质量判断或标注。</p>
+        </div>
+      ),
+      onConfirm: () => {
+        const result = store.startFrameExtraction({
+          capabilityId: capability.id,
+          sourceVideoIds: selectedVideoIds,
+          parameters,
+        });
+        setSelectedVideoIds([]);
+        setFormError("");
+        return `抽帧完成，共生成 ${result.frames.length} 张图片`;
+      },
+    });
+  };
+  const openClipTask = () => {
+    if (!selectedVideos.length) {
+      setFormError("请至少选择一个原始视频。");
+      return;
+    }
+    const parameters =
+      clipMethod === "manual"
+        ? {
+            startTime: clipParams.startTime,
+            endTime: clipParams.endTime,
+            note: clipParams.note,
+          }
+        : {
+            clipLength: Number(clipParams.clipLength),
+            step: Number(clipParams.step),
+            startTime: selectedVideos.length === 1 ? clipParams.startTime : "",
+            endTime: selectedVideos.length === 1 ? clipParams.endTime : "",
+          };
+    if (clipMethod === "manual") {
+      const start = parseDerivedTimecode(parameters.startTime);
+      const end = parseDerivedTimecode(parameters.endTime);
+      const duration = parseDerivedTimecode(selectedVideos[0].duration);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        setFormError("无法读取视频时长，请返回视频管理检查原始视频。");
+        return;
+      }
+      if (!Number.isFinite(start) || start < 0) {
+        setFormError("开始时间无效。");
+        return;
+      }
+      if (!Number.isFinite(end) || end <= start) {
+        setFormError("结束时间必须大于开始时间。");
+        return;
+      }
+      if (end > duration) {
+        setFormError("结束时间不能超过原视频时长。");
+        return;
+      }
+    } else if (
+      !Number.isFinite(parameters.clipLength) ||
+      parameters.clipLength <= 0 ||
+      !Number.isFinite(parameters.step) ||
+      parameters.step <= 0
+    ) {
+      setFormError("片段长度和滑动步长必须大于0秒。");
+      return;
+    }
+    setModal({
+      eyebrow: "视频切片任务",
+      title: clipMethod === "manual" ? "确认生成手动片段" : "确认开始定长切片",
+      confirmText: clipMethod === "manual" ? "生成片段" : "开始切片",
+      content: (
+        <div className="ai-task-confirmation">
+          <p>将处理 <strong>{selectedVideos.length}</strong> 个原始视频。</p>
+          <p>生成方式：<strong>{CLIP_GENERATION_MODES[clipMethod]}</strong></p>
+          <p className="hint">生成结果不包含最终动作标签，后续统一进入清洗和数据标注。</p>
+        </div>
+      ),
+      onConfirm: () => {
+        const result = store.startVideoSlicing({
+          capabilityId: capability.id,
+          sourceVideoIds: selectedVideoIds,
+          method: clipMethod,
+          parameters,
+        });
+        setSelectedVideoIds([]);
+        setFormError("");
+        return `视频切片完成，共生成 ${result.clips.length} 个片段`;
+      },
+    });
+  };
+  const openResultPreview = (item) =>
+    setModal({
+      eyebrow: mode === "frames" ? "图片帧预览" : "视频片段预览",
+      title:
+        mode === "frames"
+          ? item.fileName
+          : `${formatDerivedTimecode(item.startMs / 1000)} – ${formatDerivedTimecode(item.endMs / 1000)}`,
+      size: "large",
+      hideCancel: true,
+      dismissOnly: true,
+      confirmText: "关闭",
+      content: (
+        <DerivedDataPreview
+          item={item}
+          sourceVideo={sourceVideoById[item.sourceVideoId]}
+          kind={mode}
+        />
+      ),
+    });
+  const requestDeleteResults = (targets) => {
+    if (targets.some((item) => item.processingStatus === "derived")) {
+      setModal({
+        title: "生成结果不可删除",
+        hideCancel: true,
+        dismissOnly: true,
+        content: <p>所选结果已进入后续数据处理，不能直接删除。请先清理相关后续数据后再操作。</p>,
+      });
+      return;
+    }
+    setModal({
+      title: `删除 ${targets.length} 条生成结果`,
+      confirmText: "确认删除",
+      content: <p>删除后可以重新从原始视频生成，是否继续？</p>,
+      onConfirm: () => {
+        store.deleteAiDerivedItems(mode, targets.map((item) => item.id));
+        setSelectedResultIds([]);
+        return `已删除 ${targets.length} 条生成结果`;
+      },
+    });
+  };
+  const retryTask = (task) =>
+    setModal({
+      eyebrow: "失败重试",
+      title: "重试失败视频",
+      confirmText: "开始重试",
+      content: (
+        <div className="ai-task-confirmation">
+          <p>仅重试本任务中失败的 {task.failures.length} 个视频，已成功结果不会重复生成。</p>
+          {task.failures.map((failure) => (
+            <p className="form-error" key={failure.sourceVideoId}>{sourceVideoById[failure.sourceVideoId]?.displayName || failure.sourceVideoId}：{failure.reason}</p>
+          ))}
+        </div>
+      ),
+      onConfirm: () => {
+        const result = store.retryExtractionTask(task.id);
+        return `重试完成，生成 ${result.task.generatedCount} 条结果`;
+      },
+    });
+  const selectedVideo = selectedVideos[0];
+  const selectedVideoHasFrames = (video) =>
+    mode === "frames" && frames.some((item) => item.sourceVideoId === video.id);
+  const selectedResults = results.filter((item) => selectedResultIds.includes(item.id));
+
+  return (
+    <>
+      <PageHeader
+        title={mode === "frames" ? "抽帧" : mode === "clips" ? "视频切片" : "抽帧/切片"}
+        subtitle={
+          mode === "frames"
+            ? "从原始视频中提取图片帧，供后续清洗和目标框标注使用。"
+            : mode === "clips"
+              ? "从原始视频中生成动作识别训练片段，后续再进行清洗和动作标签标注。"
+              : "抽帧和视频切片均基于某一个具体AI能力进行。"
+        }
+        actions={
+          capability && (
+            <Button onClick={() => nav(`${AI_LIBRARY_PATH}/videos?capabilityId=${encodeURIComponent(capability.id)}`)}>
+              返回视频管理
+            </Button>
+          )
+        }
+      />
+      <section className="panel ai-video-capability-context">
+        <label className="field">
+          当前AI能力
+          <select
+            aria-label="当前AI能力"
+            value={capability?.id || ""}
+            onChange={(event) =>
+              nav(
+                event.target.value
+                  ? `${AI_LIBRARY_PATH}/extraction?capabilityId=${encodeURIComponent(event.target.value)}`
+                  : `${AI_LIBRARY_PATH}/extraction`,
+              )
+            }
+          >
+            <option value="">请选择AI能力</option>
+            {capabilities.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {AI_CAPABILITY_TYPES[item.type] || "未知类型"} · {item.status}
+              </option>
+            ))}
+          </select>
+        </label>
+        {capability && (
+          <div className="ai-video-capability-meta">
+            <span><small>能力类型</small><strong>{AI_CAPABILITY_TYPES[capability.type]}</strong></span>
+            <span><small>当前模式</small><strong>{mode === "frames" ? "抽帧" : "视频切片"}</strong></span>
+          </div>
+        )}
+      </section>
+      {!capability ? (
+        <section className="panel empty-state ai-library-empty ai-entry-table">
+          <ScissorOutlined />
+          <h2>请先选择AI能力</h2>
+          <p>抽帧和视频切片均基于某一个具体AI能力进行。</p>
+        </section>
+      ) : !videos.length ? (
+        <section className="panel empty-state ai-library-empty ai-entry-table">
+          <VideoCameraOutlined />
+          <h2>暂无可处理视频</h2>
+          <p>请先前往“视频管理”上传原始视频。</p>
+          <Button type="primary" onClick={() => nav(`${AI_LIBRARY_PATH}/videos?capabilityId=${encodeURIComponent(capability.id)}`)}>去视频管理</Button>
+        </section>
+      ) : (
+        <>
+          <div className="ai-video-stats ai-extraction-stats">
+            {[
+              ["原始视频", videos.length],
+              ["已处理视频", processedVideoCount],
+              [mode === "frames" ? "已生成图片" : "已生成片段", results.length],
+              ["待清洗", pendingCleaningCount],
+            ].map(([label, value]) => (
+              <span key={label}><small>{label}</small><strong>{value}</strong></span>
+            ))}
+          </div>
+          <div className="ai-extraction-workspace">
+            <section className="panel ai-source-selection">
+              <PanelTitle
+                title="选择原始视频"
+                action={
+                  <select aria-label="筛选原始视频处理状态" value={sourceStatusFilter} onChange={(event) => setSourceStatusFilter(event.target.value)}>
+                    <option value="">全部视频</option>
+                    <option value="unprocessed">待处理视频</option>
+                    <option value="derived">已处理视频</option>
+                  </select>
+                }
+              />
+              <p className="hint">原始视频在本页面只读。如需修改属性或来源，请返回视频管理。</p>
+              <div className="ai-source-video-list">
+                {visibleVideos.map((video) => {
+                  const locked = selectedVideoHasFrames(video);
+                  return (
+                    <label className={`ai-source-video-option ${locked ? "is-locked" : ""}`} key={video.id}>
+                      <input
+                        type={mode === "clips" && clipMethod === "manual" ? "radio" : "checkbox"}
+                        name={mode === "clips" && clipMethod === "manual" ? "manual-source-video" : undefined}
+                        checked={selectedVideoIds.includes(video.id)}
+                        disabled={locked}
+                        onChange={() => toggleVideo(video.id)}
+                      />
+                      <span>
+                        <strong>{video.displayName || video.fileName}</strong>
+                        <small>{video.duration} · {AI_VIDEO_CATEGORIES[video.dataCategory] || "—"} · {video.width && video.height ? `${video.width}×${video.height}` : "分辨率未知"}</small>
+                      </span>
+                      <Status>{locked ? "已有结果" : AI_VIDEO_PROCESSING_STATUSES[video.processingStatus]}</Status>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="panel ai-processing-parameters">
+              <PanelTitle title={mode === "frames" ? "抽帧参数" : "切片参数"} />
+              {mode === "frames" ? (
+                <div className="form-stack">
+                  <div className="ai-mode-switch" role="group" aria-label="抽帧方式">
+                    {Object.entries(FRAME_SAMPLING_MODES).map(([value, label]) => (
+                      <button key={value} className={frameParams.samplingMode === value ? "active" : ""} onClick={() => setFrameParams((current) => ({ ...current, samplingMode: value }))}>{label}</button>
+                    ))}
+                  </div>
+                  <label className="field">
+                    {frameParams.samplingMode === "interval" ? "抽帧间隔（秒）" : "抽帧帧率（帧/秒）"}
+                    <input type="number" min="0.1" step="0.1" value={frameParams.sampleValue} onChange={(event) => setFrameParams((current) => ({ ...current, sampleValue: event.target.value }))} />
+                  </label>
+                  <label className="field">
+                    抽帧时间范围
+                    <select value={selectedVideos.length > 1 ? "entire" : frameParams.rangeMode} disabled={selectedVideos.length > 1} onChange={(event) => setFrameParams((current) => ({ ...current, rangeMode: event.target.value }))}>
+                      <option value="entire">整段视频</option>
+                      <option value="custom">指定时间范围</option>
+                    </select>
+                  </label>
+                  {selectedVideos.length === 1 && frameParams.rangeMode === "custom" && (
+                    <div className="form-row">
+                      <label className="field">开始时间<input value={frameParams.startTime} onChange={(event) => setFrameParams((current) => ({ ...current, startTime: event.target.value }))} /></label>
+                      <label className="field">结束时间<input value={frameParams.endTime} onChange={(event) => setFrameParams((current) => ({ ...current, endTime: event.target.value }))} /></label>
+                    </div>
+                  )}
+                  {selectedVideos.length > 1 && <p className="hint">批量抽帧统一使用每个视频的完整时长。</p>}
+                  <div className="form-row">
+                    <label className="field">单个视频最大抽帧数量<input type="number" min="1" max="5000" value={frameParams.maxFrames} onChange={(event) => setFrameParams((current) => ({ ...current, maxFrames: event.target.value }))} /></label>
+                    <label className="field">输出分辨率<select value="original" disabled><option value="original">保持原始分辨率</option></select></label>
+                  </div>
+                  {frameEstimate && (
+                    <div className="ai-processing-estimate">
+                      <span>已选择 <strong>{selectedVideos.length}</strong> 个视频</span>
+                      <span>总时长 <strong>{formatDerivedTimecode(frameEstimate.totalDuration)}</strong></span>
+                      <span>预计生成 <strong>约 {frameEstimate.estimatedCount} 张</strong></span>
+                      {!!frameEstimate.reachedLimitCount && <p>有 {frameEstimate.reachedLimitCount} 个视频将达到抽帧上限。</p>}
+                    </div>
+                  )}
+                  {frameEstimateError && <p className="form-error">{frameEstimateError}</p>}
+                  <Button type="primary" onClick={openFrameTask}>开始抽帧</Button>
+                </div>
+              ) : (
+                <div className="form-stack">
+                  <div className="ai-mode-switch" role="group" aria-label="视频切片方式">
+                    {Object.entries(CLIP_GENERATION_MODES).map(([value, label]) => (
+                      <button key={value} className={clipMethod === value ? "active" : ""} onClick={() => setClipMethod(value)}>{label}</button>
+                    ))}
+                  </div>
+                  {clipMethod === "manual" ? (
+                    <>
+                      <div className="ai-clip-player">
+                        {selectedVideo?.storageRef ? (
+                          <video ref={videoRef} controls preload="metadata" src={selectedVideo.storageRef} />
+                        ) : (
+                          <div><PlayCircleFilled /><span>{selectedVideo ? "演示数据未保存原始视频内容" : "选择一个视频后设置动作起止时间"}</span></div>
+                        )}
+                      </div>
+                      <div className="form-row">
+                        <label className="field">开始时间<input value={clipParams.startTime} onChange={(event) => setClipParams((current) => ({ ...current, startTime: event.target.value }))} /><button className="field-inline-action" onClick={() => setClipParams((current) => ({ ...current, startTime: formatDerivedTimecode(videoRef.current?.currentTime || 0, true) }))}>设为当前时间</button></label>
+                        <label className="field">结束时间<input value={clipParams.endTime} onChange={(event) => setClipParams((current) => ({ ...current, endTime: event.target.value }))} /><button className="field-inline-action" onClick={() => setClipParams((current) => ({ ...current, endTime: formatDerivedTimecode(videoRef.current?.currentTime || 0, true) }))}>设为当前时间</button></label>
+                      </div>
+                      <label className="field">片段说明（选填）<textarea rows={3} value={clipParams.note} onChange={(event) => setClipParams((current) => ({ ...current, note: event.target.value }))} /></label>
+                    </>
+                  ) : (
+                    <>
+                      <div className="form-row">
+                        <label className="field">片段长度（秒）<input type="number" min="0.1" step="0.1" value={clipParams.clipLength} onChange={(event) => setClipParams((current) => ({ ...current, clipLength: event.target.value }))} /></label>
+                        <label className="field">滑动步长（秒）<input type="number" min="0.1" step="0.1" value={clipParams.step} onChange={(event) => setClipParams((current) => ({ ...current, step: event.target.value }))} /></label>
+                      </div>
+                      {selectedVideos.length === 1 ? (
+                        <div className="form-row">
+                          <label className="field">开始时间<input value={clipParams.startTime} onChange={(event) => setClipParams((current) => ({ ...current, startTime: event.target.value }))} /></label>
+                          <label className="field">结束时间<input value={clipParams.endTime} onChange={(event) => setClipParams((current) => ({ ...current, endTime: event.target.value }))} /></label>
+                        </div>
+                      ) : <p className="hint">批量切片统一使用每个视频的完整时长，允许片段重叠。</p>}
+                    </>
+                  )}
+                  <Button type="primary" onClick={openClipTask}>{clipMethod === "manual" ? "生成片段" : "开始切片"}</Button>
+                </div>
+              )}
+              {formError && <p className="form-error" role="alert">{formError}</p>}
+            </section>
+          </div>
+          {!!tasks.length && (
+            <section className="panel ai-extraction-tasks">
+              <PanelTitle title="处理任务" />
+              <div className="ai-task-list">
+                {tasks.map((task) => (
+                  <article key={task.id}>
+                    <div><strong>{task.taskType === "frame_extraction" ? "抽帧任务" : "视频切片任务"}</strong><small>{task.createdAt} · {task.sourceVideoIds.length} 个视频</small></div>
+                    <Status>{EXTRACTION_TASK_STATUSES[task.status] || task.status}</Status>
+                    <span>{task.progress || 0}%</span>
+                    <span>已生成 {task.generatedCount || 0} 条</span>
+                    {!!task.failures?.length && task.retryStatus !== "resolved" && <button className="table-action" onClick={() => retryTask(task)}>重试失败项</button>}
+                    {!!task.failures?.length && task.retryStatus === "resolved" && <Status>已重试</Status>}
+                    {!!task.failures?.length && <div className="ai-task-failures">{task.failures.map((failure) => <p key={failure.sourceVideoId}>{sourceVideoById[failure.sourceVideoId]?.displayName || failure.sourceVideoId}：{failure.reason}</p>)}</div>}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+          <section className="panel ai-derived-results">
+            <PanelTitle title={mode === "frames" ? "图片帧结果" : "视频片段结果"} />
+            {results.length ? (
+              <>
+                <div className="ai-result-filters">
+                  <select aria-label="按来源视频筛选" value={resultSourceFilter} onChange={(event) => setResultSourceFilter(event.target.value)}><option value="">全部来源视频</option>{videos.map((video) => <option key={video.id} value={video.id}>{video.displayName || video.fileName}</option>)}</select>
+                  <select aria-label="按生成任务筛选" value={resultTaskFilter} onChange={(event) => setResultTaskFilter(event.target.value)}><option value="">全部生成任务</option>{tasks.map((task) => <option key={task.id} value={task.id}>{task.id}</option>)}</select>
+                  {mode === "clips" && <select aria-label="按生成方式筛选" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)}><option value="">全部生成方式</option>{Object.entries(CLIP_GENERATION_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>}
+                  <select aria-label="按后续状态筛选" value={resultStatusFilter} onChange={(event) => setResultStatusFilter(event.target.value)}><option value="">全部状态</option>{Object.entries(DERIVED_DATA_STATUSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                  {!!selectedResultIds.length && <Button onClick={() => requestDeleteResults(selectedResults)}>删除所选（{selectedResultIds.length}）</Button>}
+                </div>
+                {mode === "frames" ? (
+                  <div className="ai-frame-grid">
+                    {visibleResults.map((frame) => (
+                      <article key={frame.id}>
+                        <label><input type="checkbox" checked={selectedResultIds.includes(frame.id)} onChange={() => setSelectedResultIds((current) => current.includes(frame.id) ? current.filter((id) => id !== frame.id) : [...current, frame.id])} />选择</label>
+                        <button className="ai-frame-thumbnail" onClick={() => openResultPreview(frame)}><VideoCameraOutlined /><strong>{formatDerivedTimecode(frame.sourceTimeMs / 1000, true)}</strong></button>
+                        <strong>{sourceVideoById[frame.sourceVideoId]?.displayName || "原始视频不存在"}</strong>
+                        <small>{frame.fileName}</small>
+                        <div><Status>{DERIVED_DATA_STATUSES[frame.processingStatus]}</Status><button className="table-action" onClick={() => openResultPreview(frame)}>查看大图</button><button className="table-action" onClick={() => requestDeleteResults([frame])}>删除</button></div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="table-wrap"><table><thead><tr><th>选择</th><th>来源视频</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>生成方式</th><th>当前状态</th><th>操作</th></tr></thead><tbody>{visibleResults.map((clip) => <tr key={clip.id}><td><input aria-label={`选择片段 ${clip.id}`} type="checkbox" checked={selectedResultIds.includes(clip.id)} onChange={() => setSelectedResultIds((current) => current.includes(clip.id) ? current.filter((id) => id !== clip.id) : [...current, clip.id])} /></td><td>{sourceVideoById[clip.sourceVideoId]?.displayName || "原始视频不存在"}</td><td>{formatDerivedTimecode(clip.startMs / 1000)}</td><td>{formatDerivedTimecode(clip.endMs / 1000)}</td><td>{formatDerivedTimecode(clip.durationMs / 1000)}</td><td>{CLIP_GENERATION_MODES[clip.generationMethod]}</td><td><Status>{DERIVED_DATA_STATUSES[clip.processingStatus]}</Status></td><td><div className="ai-capability-row-actions"><button className="table-action" onClick={() => openResultPreview(clip)}>播放片段</button><button className="table-action" onClick={() => requestDeleteResults([clip])}>删除</button></div></td></tr>)}</tbody></table></div>
+                )}
+                {!visibleResults.length && <p className="table-empty">没有符合筛选条件的生成结果</p>}
+              </>
+            ) : (
+              <div className="empty-state ai-derived-empty">
+                <ScissorOutlined />
+                <h2>{mode === "frames" ? "尚未生成图片帧" : "尚未生成视频片段"}</h2>
+                <p>{mode === "frames" ? "选择原始视频并配置抽帧参数后开始抽帧。" : "选择原始视频后，可手动或定长生成训练片段。"}</p>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </>
+  );
+}
+
+function AiCapabilityLibrary({ setModal }) {
+  const nav = useNavigate();
+  const location = useLocation();
+  const { section: sectionPath } = useParams();
+  const { data } = usePrototypeData();
+  const section = AI_LIBRARY_SECTIONS.find((item) => item.path === sectionPath);
+  const selectedId = new URLSearchParams(location.search).get("capabilityId");
+  const capabilities = Array.isArray(data.aiCapabilities)
+    ? data.aiCapabilities
+    : [];
+  const selected = capabilities.find((item) => item.id === selectedId);
+  if (!section)
+    return (
+      <MissingState title="功能页面不存在" backTo={AI_CAPABILITIES_PATH} />
+    );
+  if (sectionPath === "capabilities")
+    return <AiCapabilityList setModal={setModal} />;
+  if (sectionPath === "videos")
+    return <AiVideoManagement setModal={setModal} />;
+  if (sectionPath === "extraction")
+    return <AiExtractionPage setModal={setModal} />;
+  return (
+    <>
+      <PageHeader title={section.title} subtitle={section.description} />
+      <section className="panel ai-capability-context">
+        <label className="field">
+          当前AI能力
+          <select
+            aria-label="当前AI能力"
+            value={selected?.id || ""}
+            onChange={(event) =>
+              nav(
+                event.target.value
+                  ? `${AI_LIBRARY_PATH}/${sectionPath}?capabilityId=${encodeURIComponent(event.target.value)}`
+                  : `${AI_LIBRARY_PATH}/${sectionPath}`,
+              )
+            }
+          >
+            <option value="">请选择</option>
+            {capabilities.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedId && !selected && (
+          <p className="form-error" role="alert">
+            所选AI能力不存在，请重新选择。
+          </p>
+        )}
+      </section>
+      <section className="panel ai-library-workspace ai-entry-table">
+        <div className="empty-state ai-library-empty">
+          <DatabaseOutlined />
+          <h2>{selected ? `${selected.name} · 暂无内容` : "请选择AI能力"}</h2>
+          <p>
+            {selected
+              ? `${section.title}的详细功能将在后续任务中开放。`
+              : "请先在“能力管理”中创建或选择一个AI能力。"}
+          </p>
+          {!selected && (
+            <Button onClick={() => nav(AI_CAPABILITIES_PATH)}>
+              前往能力管理
+            </Button>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+// 旧版AI评价管理暂时屏蔽：包含Mapping、Dataset、AI Package、
+// Workstation Profile和Compatibility等早期架构逻辑。
+// 一期正式入口为SOP标准 → AI能力配置 → AI能力库；旧实现仅保留历史兼容，
+// 不得继续作为一期正式业务入口扩展。
 function AiEvaluationList() {
   const nav = useNavigate();
   const store = usePrototypeData();
@@ -13652,7 +15686,7 @@ function RoutedApp() {
               <Route path="/teacher/sop" element={<SopList />} />
               <Route
                 path="/teacher/sop/learning"
-                element={<Navigate to="/admin/ai-evaluation" replace />}
+                element={<Navigate to="/teacher/sop" replace />}
               />
               <Route
                 path="/teacher/sop/new"
@@ -13773,6 +15807,37 @@ function RoutedApp() {
                 path="/admin/devices/:id"
                 element={<AdminDetail type="device" setModal={setModal} />}
               />
+              <Route
+                path={AI_CONFIG_PATH}
+                element={<AiCapabilityConfigList />}
+              />
+              <Route
+                path={`${AI_CONFIG_PATH}/:sopId`}
+                element={<AiCapabilityConfigDetail />}
+              />
+              <Route
+                path={AI_LIBRARY_PATH}
+                element={
+                  <Navigate to={`${AI_LIBRARY_PATH}/capabilities`} replace />
+                }
+              />
+              <Route
+                path={`${AI_CAPABILITIES_PATH}/new`}
+                element={<AiCapabilityForm />}
+              />
+              <Route
+                path={`${AI_CAPABILITIES_PATH}/:capabilityId/edit`}
+                element={<AiCapabilityForm />}
+              />
+              <Route
+                path={`${AI_CAPABILITIES_PATH}/:capabilityId`}
+                element={<AiCapabilityDetail setModal={setModal} />}
+              />
+              <Route
+                path={`${AI_LIBRARY_PATH}/:section`}
+                element={<AiCapabilityLibrary setModal={setModal} />}
+              />
+              {/* 旧AI评价管理调试路由保留；正式菜单入口已屏蔽。 */}
               <Route
                 path="/admin/ai-evaluation"
                 element={<AiEvaluationList />}
