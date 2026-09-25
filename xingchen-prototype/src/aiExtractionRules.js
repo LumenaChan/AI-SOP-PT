@@ -55,6 +55,10 @@ export function formatTimecode(seconds, milliseconds = false) {
     : prefix;
 }
 
+export function mockFrameStorageRef(sourceVideoId, sourceTimeMs) {
+  return `mock-frame://${encodeURIComponent(sourceVideoId)}/${Math.max(0, Math.round(Number(sourceTimeMs || 0)))}`;
+}
+
 function taskStatus(successCount, failureCount) {
   if (successCount && failureCount) return "partial_failed";
   if (failureCount) return "failed";
@@ -138,7 +142,7 @@ export function buildFrameExtractionTask(input, meta) {
           taskId: meta.taskId,
           sourceTimeMs: Math.round(time * 1000),
           fileName: `${video.id}_${formatTimecode(time, true).replaceAll(":", "m")}.jpg`,
-          storageRef: "",
+          storageRef: mockFrameStorageRef(video.id, Math.round(time * 1000)),
           width: video.width || 0,
           height: video.height || 0,
           generationStatus: "success",
@@ -276,7 +280,13 @@ export function buildVideoSlicingTask(input, meta) {
 export function assertDerivedItemsDeletable(items) {
   const selected = Array.isArray(items) ? items : [];
   if (!selected.length) throw new Error("请先选择生成结果。");
-  if (selected.some((item) => item.processingStatus === "derived"))
+  if (
+    selected.some(
+      (item) =>
+        item.processingStatus === "derived" ||
+        item.cleaningStatus === "auto_cleaned",
+    )
+  )
     throw new Error(
       "所选结果已进入后续数据处理，不能直接删除。请先清理相关后续数据后再操作。",
     );

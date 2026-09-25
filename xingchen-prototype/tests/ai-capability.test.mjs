@@ -138,6 +138,7 @@ test("reactivation requires an already published current model", () => {
     ...createCapability(detection, [], meta),
     status: "已停用",
     currentModelStatus: "已发布",
+    currentPublishedModel: { modelArtifactId: "published-model-1" },
   };
   assert.equal(
     reactivateCapability(stopped, "2026-09-24 13:00").status,

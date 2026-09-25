@@ -118,7 +118,13 @@ export function deactivateCapability(capability, now) {
 export function reactivateCapability(capability, now) {
   if (capability?.status !== "已停用")
     throw new Error("只有已停用的AI能力可以重新启用。");
-  if (capability.currentModelStatus !== "已发布")
+  if (
+    capability.currentModelStatus !== "已发布" ||
+    !capability.currentPublishedModel?.modelArtifactId ||
+    ["missing", "invalid"].includes(
+      capability.currentPublishedModel?.fileStatus,
+    )
+  )
     throw new Error("当前能力没有已发布模型，不能重新启用。");
   return { ...capability, status: "已发布", updatedAt: now };
 }

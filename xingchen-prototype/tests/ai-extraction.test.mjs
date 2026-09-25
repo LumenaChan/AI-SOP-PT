@@ -7,6 +7,7 @@ import {
   estimateFrameExtraction,
   extractionModeForCapability,
   formatTimecode,
+  mockFrameStorageRef,
   parseTimecode,
 } from "../src/aiExtractionRules.js";
 
@@ -104,7 +105,20 @@ test("batch extraction creates stable traceable frames and keeps sources unchang
   assert.ok(result.frames.every((frame) => frame.capabilityId === "cap-detect"));
   assert.ok(result.frames.every((frame) => ["video-a", "video-b"].includes(frame.sourceVideoId)));
   assert.ok(result.frames.every((frame) => frame.taskId === "frame-task-1"));
+  assert.ok(
+    result.frames.every((frame) =>
+      frame.storageRef.startsWith(`mock-frame://${frame.sourceVideoId}/`),
+    ),
+  );
   assert.deepEqual([videoA, videoB], sourceSnapshot);
+});
+
+test("each simulated frame receives an independent image storage reference", () => {
+  assert.equal(mockFrameStorageRef("video-a", 2500), "mock-frame://video-a/2500");
+  assert.notEqual(
+    mockFrameStorageRef("video-a", 2500),
+    mockFrameStorageRef("video-a", 3000),
+  );
 });
 
 test("one runtime failure yields a partial task without losing successful frames", () => {
@@ -177,6 +191,17 @@ test("derived results can be deleted only before downstream processing", () => {
   assert.doesNotThrow(() => assertDerivedItemsDeletable([pending]));
   assert.throws(
     () => assertDerivedItemsDeletable([pending, { id: "frame-2", processingStatus: "derived" }]),
+    /已进入后续数据处理/,
+  );
+  assert.throws(
+    () =>
+      assertDerivedItemsDeletable([
+        {
+          id: "frame-3",
+          processingStatus: "pending_cleaning",
+          cleaningStatus: "auto_cleaned",
+        },
+      ]),
     /已进入后续数据处理/,
   );
 });
