@@ -272,7 +272,7 @@ test("completing config enters pending validation without fabricating enabled wo
   assert.deepEqual(completed.workstationValidationStates, []);
 });
 
-test("editing a validated config resets it and marks existing workstations for revalidation", () => {
+test("editing a config resets its completion state without writing legacy validation state", () => {
   const changed = applyAiConfigMutation(
     {
       ...readyConfig(),
@@ -285,9 +285,60 @@ test("editing a validated config resets it and marks existing workstations for r
   );
   assert.equal(changed.status, "configuring");
   assert.equal(changed.completedAt, "");
+  assert.deepEqual(changed.workstationValidationStates, [
+    { workstationId: "w1", status: "enabled" },
+  ]);
+});
+
+test("teacher evaluation step accepts safety reminders only", () => {
+  const config = readyConfig();
+  const teacherSop = {
+    ...sop,
+    safetyRules: [
+      ...sop.safetyRules,
+      { id: "safety-2", stepId: "Step 02", name: "危险动作" },
+    ],
+  };
+  config.stepConfigs[1].safetyRuleTreatments = [
+    {
+      ruleId: "safety-2",
+      mode: "ai",
+      reason: "",
+      judgementItemId: "item-teacher-safety",
+    },
+  ];
+  config.judgementItems.push({
+    id: "item-teacher-safety",
+    stepId: "Step 02",
+    name: "危险动作提醒",
+    purposes: ["safety"],
+    scoreRuleIds: [],
+    safetyRuleIds: ["safety-2"],
+    combination: "all",
+    conditions: [
+      {
+        id: "condition-teacher-safety",
+        capabilityId: "cap-action",
+        operator: "recognized",
+        minOccurrences: 1,
+        withinCurrentStep: true,
+      },
+    ],
+  });
   assert.equal(
-    changed.workstationValidationStates[0].status,
-    "pending_revalidation",
+    evaluateAiCapabilityConfig({ sop: teacherSop, config, capabilities }).ready,
+    true,
+  );
+  config.judgementItems.at(-1).purposes = ["completion"];
+  const rejected = evaluateAiCapabilityConfig({
+    sop: teacherSop,
+    config,
+    capabilities,
+  });
+  assert.equal(rejected.ready, false);
+  assert.match(
+    rejected.issues.join("；"),
+    /教师评价步骤的AI判断项只能用于安全提醒/,
   );
 });
 

@@ -65,11 +65,11 @@ import {
 import {
   applyWorkstationAiBaseConfig,
   deriveWorkstationAiReadiness,
-  invalidateWorkstationValidationStates,
   isCameraDevice,
   normalizeWorkstationAiBaseConfig,
 } from "./workstationAiRules.js";
 import {
+  activeJudgementItems,
   checkSopWorkstationAiConfig,
   createDefaultValidationCases,
   createSopWorkstationAiConfig,
@@ -80,6 +80,14 @@ import {
   setJudgementCameraBinding,
   setLogicalAreaMapping,
 } from "./sopWorkstationAiRules.js";
+import {
+  createAiEvaluationSnapshot,
+  createOpenedAiSession,
+  deriveAiRuntimeGate,
+  deriveSopAiCapabilityStatus,
+  evaluationProfileFromGate,
+  startAiRuntimeSession,
+} from "./aiRuntimeRules.js";
 import {
   applyDefaultPassPolicy,
   advanceEvaluationClock,
@@ -350,13 +358,12 @@ function enrichStepEvidence(
   gate,
 ) {
   const lockedProfile = session.evaluationProfile;
+  const lockedSnapshot = session.evaluationSnapshot || {};
+  const aiConfigSnapshot = lockedSnapshot.aiCapabilityConfigSnapshot;
+  const workstationConfigSnapshot =
+    lockedSnapshot.sopWorkstationAiConfigSnapshot;
   const automaticEvaluationEnabled =
     lockedProfile?.automaticEvaluationEnabled ?? gate.enabled;
-  const lockedRoiVersion =
-    lockedProfile?.roiVersion || workstation?.implementation?.roiVersion;
-  const lockedCameraConfigVersion =
-    lockedProfile?.cameraConfigVersion ||
-    workstation?.implementation?.cameraConfigVersion;
   const incident = recording.incidents.find(
     (item) => item.affectedStepId === step.id,
   );
@@ -377,26 +384,14 @@ function enrichStepEvidence(
         : incident
           ? ["主视角"]
           : ["主视角", "辅助视角"],
-    sopVersion: arrangement.snapshot?.sopVersion || "未锁定",
-    mappingVersion:
-      lockedProfile?.mappingVersion ||
-      arrangement.snapshot?.mappingVersion ||
-      "未确认",
-    modelVersion: arrangement.snapshot?.modelVersion || "未启用",
-    aiPackageVersion:
-      lockedProfile?.aiPackageVersion ||
-      arrangement.snapshot?.aiPackageVersion ||
-      arrangement.snapshot?.modelVersion ||
-      "未启用",
-    workstationProfileVersion:
-      lockedProfile?.workstationProfileVersion || "未配置",
+    sopId: lockedSnapshot.sopId || arrangement.sopId,
+    aiCapabilityConfigId: aiConfigSnapshot?.id || "未配置",
+    sopWorkstationAiConfigId: workstationConfigSnapshot?.id || "未配置",
+    capabilityIds: (lockedSnapshot.capabilitySnapshots || []).map(
+      (item) => item.id,
+    ),
     validationId: lockedProfile?.validationId || "未验证",
-    compatibilityDecisionId:
-      lockedProfile?.compatibilityDecisionId ||
-      arrangement.snapshot?.compatibilityDecisionId ||
-      "未使用",
-    roiVersion: lockedRoiVersion || "未配置",
-    cameraConfigVersion: lockedCameraConfigVersion || "未配置",
+    lockedAt: lockedSnapshot.lockedAt || arrangement.snapshot?.lockedAt || "",
     systemAnomaly: Boolean(incident),
     scoringPolicy: incident
       ? step.result === "安全阻断" || step.redlineConfirmed
@@ -411,10 +406,22 @@ function enrichStepEvidence(
       ? false
       : !/未看到|丢失/.test(step.observation || ""),
     actionSufficient: ["pass", "blocked"].includes(step.state),
-    roiMatched: lockedProfile
-      ? lockedRoiVersion !== "未配置" && lockedCameraConfigVersion !== "未配置"
-      : Boolean(workstation?.implementation?.roiVersion) &&
-        workstation?.implementation?.cameraPosition === "已确认",
+    roiMatched: (() => {
+      const requiredAreaIds = new Set(
+        (aiConfigSnapshot?.judgementItems || []).flatMap((item) =>
+          (item.conditions || [])
+            .map((condition) => condition.logicalAreaId)
+            .filter(Boolean),
+        ),
+      );
+      if (!requiredAreaIds.size) return true;
+      const mappedIds = new Set(
+        (workstationConfigSnapshot?.logicalAreaMappings || []).map(
+          (item) => item.logicalAreaId,
+        ),
+      );
+      return [...requiredAreaIds].every((id) => mappedIds.has(id));
+    })(),
     evidenceContinuous: !incident && recording.status !== "不可用",
   };
   const diagnostic = {
@@ -3236,69 +3243,44 @@ function normalizePrototypeData(input) {
       const workstation = next.workstations.find(
         (item) => item.id === session.workstationId,
       );
-      const compatibilityDecision = (next.compatibilityDecisions || []).find(
-        (item) =>
-          item.toSopId === sop?.id &&
-          item.toVersion === sop?.version &&
-          ["compatible", "conditional"].includes(item.decision),
-      );
-      const model =
-        next.models?.find(
-          (item) => item.sopId === sop?.id && item.status === "已部署",
-        ) ||
-        next.models?.find(
-          (item) =>
-            item.sopId === compatibilityDecision?.fromSopId &&
-            item.sopVersion === compatibilityDecision?.fromVersion &&
-            item.status === "已部署",
-        );
-      const validation = (next.fieldValidations || []).find(
-        (item) =>
-          item.workstationId === session.workstationId &&
-          ((item.sopId === sop?.id && item.sopVersion === sop?.version) ||
-            (item.sopId === compatibilityDecision?.fromSopId &&
-              item.sopVersion === compatibilityDecision?.fromVersion)),
-      );
-      const workstationProfile = (next.workstationProfiles || []).find(
-        (item) => item.id === workstation?.currentProfileId,
-      );
-      const mappingStatus = getMappingStatusForSop({
-        sop,
-        mappings: next.evaluationMappings || [],
-      });
-      const gate = automaticEvaluationGate({
-        workstation,
-        workstationProfile,
-        sop,
-        model,
-        validation,
-        mapping: mappingStatus.mapping,
-        compatibilityDecision,
-        requireConfirmedMapping: true,
+      const gate = deriveAiRuntimeGate({
+        sopId: sop?.id,
+        workstationId: workstation?.id,
+        sops: next.sops,
+        aiCapabilityConfigs: next.aiCapabilityConfigs,
+        sopWorkstationAiConfigs: next.sopWorkstationAiConfigs,
+        aiCapabilities: next.aiCapabilities,
+        workstations: next.workstations,
+        devices: next.devices,
       });
       const recording = defaultSessionRecording(
         session,
         arrangement,
         next.systemSettings.current,
       );
+      const evaluationSnapshot =
+        session.evaluationSnapshot?.aiCapabilityConfigSnapshot ||
+        !gate.sop ||
+        !gate.workstation
+          ? session.evaluationSnapshot
+          : createAiEvaluationSnapshot(
+              gate,
+              session.evaluationSnapshot?.lockedAt ||
+                arrangement.snapshot?.lockedAt ||
+                session.startedAt ||
+                arrangement.startedAt ||
+                "历史记录",
+            );
       const evaluationProfile = {
-        automaticEvaluationEnabled: gate.enabled,
-        enabledStepCount: gate.enabledStepCount,
-        automaticStepCount: gate.automaticStepCount,
-        roiVersion: workstation?.implementation?.roiVersion || "未配置",
-        cameraConfigVersion:
-          workstation?.implementation?.cameraConfigVersion || "未配置",
-        validationId: validation?.id || "未验证",
-        validationStatus: validation?.status || "未验证",
-        workstationProfileId: workstationProfile?.id || "",
-        workstationProfileVersion: workstationProfile?.version || "未配置",
-        mappingVersion: mappingStatus.mapping?.version || "未确认",
-        aiPackageVersion: model?.version || "未启用",
-        compatibilityDecisionId: compatibilityDecision?.id || "",
-        fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
-        ...(session.evaluationProfile || {}),
+        ...evaluationProfileFromGate(gate),
+        automaticEvaluationEnabled:
+          evaluationSnapshot?.aiEnabled ?? gate.enabled,
       };
-      const sessionWithProfile = { ...session, evaluationProfile };
+      const sessionWithProfile = {
+        ...session,
+        evaluationProfile,
+        evaluationSnapshot,
+      };
       const normalizedSteps = (session.steps || []).map((step, index) => {
         const sopStep = sop?.steps.find((item) => item.id === step.id);
         return applyDefaultPassPolicy({ ...sopStep, ...step }, index);
@@ -3341,6 +3323,7 @@ function normalizePrototypeData(input) {
       });
       return {
         ...session,
+        evaluationSnapshot,
         steps,
         runtime,
         scoreEngine,
@@ -3366,7 +3349,19 @@ function normalizePrototypeData(input) {
         ),
       };
     });
-    return { ...arrangement, sessions };
+    const snapshot = arrangement.snapshot?.sopSnapshot
+      ? arrangement.snapshot
+      : sop
+        ? {
+            sopId: sop.id,
+            sopSnapshot: JSON.parse(JSON.stringify(sop)),
+            lockedAt:
+              arrangement.snapshot?.lockedAt ||
+              arrangement.startedAt ||
+              "历史记录",
+          }
+        : arrangement.snapshot;
+    return { ...arrangement, snapshot, sessions };
   });
   return next;
 }
@@ -3468,6 +3463,8 @@ function normalizeSessionRuntime(session = {}) {
     }),
     machineEvents: runtime.machineEvents || [],
     evaluationItemResults: runtime.evaluationItemResults || [],
+    aiObservations: runtime.aiObservations || [],
+    aiJudgementResults: runtime.aiJudgementResults || [],
     technicalIncidents: runtime.technicalIncidents || [],
     safetyCandidates: runtime.safetyCandidates || [],
     assistanceWarnings: runtime.assistanceWarnings || [],
@@ -4220,13 +4217,6 @@ export function PrototypeDataProvider({ children }) {
           now,
           updatedBy: "系统管理员",
         });
-        const previewInvalidation = applied.criticalChange
-          ? invalidateWorkstationValidationStates(
-              data.aiCapabilityConfigs,
-              id,
-              now,
-            )
-          : { affectedCount: 0 };
         const previewSopInvalidation = applied.criticalChange
           ? invalidateSopWorkstationConfigs(
               data.sopWorkstationAiConfigs,
@@ -4235,21 +4225,8 @@ export function PrototypeDataProvider({ children }) {
               "工位AI基础配置发生关键变化",
             )
           : { affectedCount: 0 };
-        const affectedCount = Math.max(
-          previewInvalidation.affectedCount,
-          previewSopInvalidation.affectedCount,
-        );
+        const affectedCount = previewSopInvalidation.affectedCount;
         setData((current) => {
-          const invalidated = applied.criticalChange
-            ? invalidateWorkstationValidationStates(
-                current.aiCapabilityConfigs,
-                id,
-                now,
-              )
-            : {
-                configs: current.aiCapabilityConfigs,
-                affectedCount: 0,
-              };
           const invalidatedSopConfigs = applied.criticalChange
             ? invalidateSopWorkstationConfigs(
                 current.sopWorkstationAiConfigs,
@@ -4268,7 +4245,6 @@ export function PrototypeDataProvider({ children }) {
             workstations: current.workstations.map((item) =>
               item.id === id ? updatedWorkstation : item,
             ),
-            aiCapabilityConfigs: invalidated.configs,
             sopWorkstationAiConfigs: invalidatedSopConfigs,
             auditLogs: [...current.auditLogs],
           };
@@ -4554,49 +4530,27 @@ export function PrototypeDataProvider({ children }) {
         return record;
       },
       getWorkstationEvaluationGate(workstationId, sopId) {
-        const workstation = data.workstations.find(
-          (item) => item.id === workstationId,
-        );
-        const sop = data.sops.find((item) => item.id === sopId);
-        const compatibilityDecision = (data.compatibilityDecisions || []).find(
-          (item) =>
-            item.toSopId === sopId &&
-            item.toVersion === sop?.version &&
-            ["compatible", "conditional"].includes(item.decision),
-        );
-        const model =
-          data.models.find(
-            (item) => item.sopId === sopId && item.status === "已部署",
-          ) ||
-          data.models.find(
-            (item) =>
-              item.sopId === compatibilityDecision?.fromSopId &&
-              item.sopVersion === compatibilityDecision?.fromVersion &&
-              item.status === "已部署",
-          );
-        const validation = (data.fieldValidations || []).find(
-          (item) =>
-            item.workstationId === workstationId &&
-            ((item.sopId === sopId && item.sopVersion === sop?.version) ||
-              (item.sopId === compatibilityDecision?.fromSopId &&
-                item.sopVersion === compatibilityDecision?.fromVersion)),
-        );
-        const workstationProfile = (data.workstationProfiles || []).find(
-          (item) => item.id === workstation?.currentProfileId,
-        );
-        const mappingStatus = getMappingStatusForSop({
-          sop,
-          mappings: data.evaluationMappings || [],
+        return deriveAiRuntimeGate({
+          sopId,
+          workstationId,
+          sops: data.sops,
+          aiCapabilityConfigs: data.aiCapabilityConfigs,
+          sopWorkstationAiConfigs: data.sopWorkstationAiConfigs,
+          aiCapabilities: data.aiCapabilities,
+          workstations: data.workstations,
+          devices: data.devices,
         });
-        return automaticEvaluationGate({
-          workstation,
-          workstationProfile,
-          sop,
-          model,
-          validation,
-          mapping: mappingStatus.mapping,
-          compatibilityDecision,
-          requireConfirmedMapping: true,
+      },
+      getSopAiCapabilityStatus(sopId, options = {}) {
+        return deriveSopAiCapabilityStatus({
+          sopId,
+          targetWorkstationIds: options.targetWorkstationIds,
+          sops: data.sops,
+          aiCapabilityConfigs: data.aiCapabilityConfigs,
+          sopWorkstationAiConfigs: data.sopWorkstationAiConfigs,
+          aiCapabilities: data.aiCapabilities,
+          workstations: data.workstations,
+          devices: data.devices,
         });
       },
       getSopMappingStatus(sopId) {
@@ -5226,23 +5180,6 @@ export function PrototypeDataProvider({ children }) {
             sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
               (item) => (item.id === relationId ? updated : item),
             ),
-            aiCapabilityConfigs: current.aiCapabilityConfigs.map((config) =>
-              config.id === context.aiConfig.id
-                ? {
-                    ...config,
-                    workstationValidationStates: [
-                      ...(config.workstationValidationStates || []).filter(
-                        (item) => item.workstationId !== context.workstation.id,
-                      ),
-                      {
-                        workstationId: context.workstation.id,
-                        status: result.passed ? "validated" : "failed",
-                        updatedAt: now,
-                      },
-                    ],
-                  }
-                : config,
-            ),
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -5279,16 +5216,6 @@ export function PrototypeDataProvider({ children }) {
                 ? {
                     ...config,
                     status: "enabled",
-                    workstationValidationStates: [
-                      ...(config.workstationValidationStates || []).filter(
-                        (item) => item.workstationId !== context.workstation.id,
-                      ),
-                      {
-                        workstationId: context.workstation.id,
-                        status: "enabled",
-                        updatedAt: updated.updatedAt,
-                      },
-                    ],
                   }
                 : config,
             ),
@@ -5328,16 +5255,6 @@ export function PrototypeDataProvider({ children }) {
                 ? {
                     ...config,
                     status: remainingEnabled ? "enabled" : "pending_validation",
-                    workstationValidationStates: [
-                      ...(config.workstationValidationStates || []).filter(
-                        (item) => item.workstationId !== context.workstation.id,
-                      ),
-                      {
-                        workstationId: context.workstation.id,
-                        status: "disabled",
-                        updatedAt: updated.updatedAt,
-                      },
-                    ],
                   }
                 : config,
             ),
@@ -5437,14 +5354,29 @@ export function PrototypeDataProvider({ children }) {
         );
         const updated = reactivateCapability(existing, timestamp());
         setData((current) => {
+          const now = timestamp();
+          const affectedConfigIds = capabilityConfigReferenceIds(
+            current.aiCapabilityConfigs || [],
+            id,
+          );
+          const invalidated = invalidateSopWorkstationConfigs(
+            current.sopWorkstationAiConfigs || [],
+            (item) => affectedConfigIds.includes(item.sopAiConfigId),
+            now,
+            "AI能力重新启用，需要重新完成现场验证",
+          );
           const next = {
             ...current,
             aiCapabilities: (current.aiCapabilities || []).map((item) =>
               item.id === id ? updated : item,
             ),
+            sopWorkstationAiConfigs: invalidated.configs,
             auditLogs: [...current.auditLogs],
           };
-          addAuditLog(next, "重新启用AI能力", updated.name);
+          addAuditLog(next, "重新启用AI能力", updated.name, "成功", {
+            affectedConfigIds,
+            affectedWorkstationCount: invalidated.affectedCount,
+          });
           return next;
         });
         return updated;
@@ -6610,17 +6542,9 @@ export function PrototypeDataProvider({ children }) {
           : [];
         setData((current) => {
           const now = timestamp();
-          let aiCapabilityConfigs = current.aiCapabilityConfigs;
           let sopWorkstationAiConfigs = current.sopWorkstationAiConfigs;
           let affectedCount = 0;
           for (const workstationId of affectedWorkstationIds) {
-            const invalidated = invalidateWorkstationValidationStates(
-              aiCapabilityConfigs,
-              workstationId,
-              now,
-            );
-            aiCapabilityConfigs = invalidated.configs;
-            affectedCount += invalidated.affectedCount;
             const invalidatedSopConfigs = invalidateSopWorkstationConfigs(
               sopWorkstationAiConfigs,
               (item) => item.workstationId === workstationId,
@@ -6628,10 +6552,7 @@ export function PrototypeDataProvider({ children }) {
               "工位摄像头或边缘设备关键信息发生变化",
             );
             sopWorkstationAiConfigs = invalidatedSopConfigs.configs;
-            affectedCount = Math.max(
-              affectedCount,
-              invalidatedSopConfigs.affectedCount,
-            );
+            affectedCount += invalidatedSopConfigs.affectedCount;
           }
           const next = {
             ...current,
@@ -6652,7 +6573,6 @@ export function PrototypeDataProvider({ children }) {
                   }
                 : workstation,
             ),
-            aiCapabilityConfigs,
             sopWorkstationAiConfigs,
             auditLogs: [...current.auditLogs],
           };
@@ -8123,115 +8043,38 @@ export function PrototypeDataProvider({ children }) {
         if (!checklist || Object.values(checklist).some((value) => !value))
           throw new Error("请逐项确认主辅画面、设备状态和本地缓存。");
         const sop = data.sops.find((item) => item.id === arrangement.sopId);
-        const mappingStatus = getMappingStatusForSop({
-          sop,
-          mappings: data.evaluationMappings || [],
-        });
-        const dataset = data.datasets.find(
-          (item) => item.sopId === sop.id && item.status === "已锁定",
-        );
-        const compatibilityDecision = (data.compatibilityDecisions || []).find(
-          (item) =>
-            item.toSopId === sop.id &&
-            item.toVersion === sop.version &&
-            ["compatible", "conditional"].includes(item.decision),
-        );
-        const model =
-          data.models.find(
-            (item) => item.sopId === sop.id && item.status === "已部署",
-          ) ||
-          data.models.find(
-            (item) =>
-              item.sopId === compatibilityDecision?.fromSopId &&
-              item.sopVersion === compatibilityDecision?.fromVersion &&
-              item.status === "已部署",
-          );
-        const snapshot = arrangement.snapshot || {
-          lockedAt: timestamp(),
-          sopVersion: sop.version,
-          mappingVersion: mappingStatus.mapping?.version || "未确认",
-          datasetVersion: dataset?.version || "未绑定",
-          modelVersion: model?.version || "未启用",
-          aiPackageVersion: model?.version || "未启用",
-          compatibilityDecisionId: compatibilityDecision?.id || "",
-        };
+        if (!sop) throw new Error("当前安排引用的SOP不存在或已失效。");
+        const lockedAt = timestamp();
+        const snapshot = arrangement.snapshot?.sopSnapshot
+          ? arrangement.snapshot
+          : {
+              sopId: sop.id,
+              sopSnapshot: JSON.parse(JSON.stringify(sop)),
+              lockedAt,
+            };
         const workstation = data.workstations.find(
           (item) => item.id === workstationId,
         );
-        const workstationProfile = (data.workstationProfiles || []).find(
-          (item) => item.id === workstation?.currentProfileId,
-        );
-        const validation = (data.fieldValidations || []).find(
-          (item) =>
-            item.workstationId === workstationId &&
-            ((item.sopId === sop.id && item.sopVersion === sop.version) ||
-              (item.sopId === compatibilityDecision?.fromSopId &&
-                item.sopVersion === compatibilityDecision?.fromVersion)),
-        );
-        const evaluationProfile = {
-          automaticEvaluationEnabled: readiness.gate.enabled,
-          enabledStepCount: readiness.gate.enabledStepCount,
-          automaticStepCount: readiness.gate.automaticStepCount,
-          roiVersion: workstation?.implementation?.roiVersion || "未配置",
-          cameraConfigVersion:
-            workstation?.implementation?.cameraConfigVersion || "未配置",
-          validationId: validation?.id || "未验证",
-          validationStatus: validation?.status || "未验证",
-          workstationProfileId: workstationProfile?.id || "",
-          workstationProfileVersion: workstationProfile?.version || "未配置",
-          mappingVersion: mappingStatus.mapping?.version || "未确认",
-          aiPackageVersion: model?.version || "未启用",
-          compatibilityDecisionId: compatibilityDecision?.id || "",
-          fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
-        };
         const assigned = new Set(
           arrangement.sessions.map((session) => session.studentId),
         );
         const studentId =
           arrangement.studentIds.find((id) => !assigned.has(id)) ||
           arrangement.studentIds[0];
-        const session = {
-          id: uid("session"),
+        const sessionId = uid("session");
+        const session = createOpenedAiSession({
+          id: sessionId,
           workstationId,
           studentId,
-          status: "可入场",
-          elapsed: "00:00:00",
-          currentStepId: "",
-          score: 0,
-          evaluationProfile,
-          evaluationSnapshot: {
-            sopVersion: sop.version,
-            mappingVersion: evaluationProfile.mappingVersion,
-            aiPackageVersion: evaluationProfile.aiPackageVersion,
-            workstationProfileVersion:
-              evaluationProfile.workstationProfileVersion,
-            validationId: evaluationProfile.validationId,
-            compatibilityDecisionId: evaluationProfile.compatibilityDecisionId,
-            lockedAt: timestamp(),
-          },
+          gate: readiness.gate,
+          lockedAt,
           recording: defaultSessionRecording(
-            { id: "new-session", status: "可入场" },
+            { id: sessionId, status: "可入场" },
             arrangement,
             data.systemSettings.current,
           ),
           steps: createSessionStepsFromSop(sop.steps),
-          runtime: normalizeSessionRuntime({
-            id: "new-session",
-            studentId,
-            status: "可入场",
-            elapsed: "00:00:00",
-          }),
-          events: [
-            {
-              time: timestamp().slice(-5),
-              level: "blue",
-              title: "工位检查通过",
-              detail: readiness.gate.enabled
-                ? `锁定 SOP ${snapshot.sopVersion} 与本次AI能力快照，自动评价已启用`
-                : `锁定 SOP ${snapshot.sopVersion}，自动评价降级为默认通过`,
-            },
-          ],
-        };
+        });
         setData((current) => {
           const updatedArrangement = {
             ...arrangement,
@@ -8270,7 +8113,7 @@ export function PrototypeDataProvider({ children }) {
           };
           addAuditLog(
             next,
-            arrangement.snapshot ? "新增开放工位" : "锁定版本并开放工位",
+            arrangement.snapshot ? "新增开放工位" : "锁定运行快照并开放工位",
             `${workstation?.name || workstationId} / ${arrangement.name}`,
           );
           return next;
@@ -8284,52 +8127,10 @@ export function PrototypeDataProvider({ children }) {
           throw new Error("当前安排已开始或已结束，不能重复开始。");
         if (!arrangement.snapshot || !arrangement.openWorkstationIds.length)
           throw new Error("至少检查并开放一个工位后才能开始安排。");
+        const startedAt = timestamp();
         const sessions = arrangement.sessions.map((session, index) => {
-          const firstStep =
-            session.steps.find((step) => step.state === "pending") ||
-            session.steps[0];
           return session.status === "可入场" && index === 0
-            ? {
-                ...session,
-                status: "进行中",
-                currentStepId: firstStep?.id || "",
-                steps: session.steps.map((step) =>
-                  step.id === firstStep?.id
-                    ? {
-                        ...step,
-                        state: "active",
-                        executionState: "active",
-                        observationWindow: {
-                          status: "open",
-                          openedAt: timestamp(),
-                          closedAt: "",
-                          closeReason: "",
-                        },
-                        result: "进行中",
-                        duration: "00:00",
-                        observation: "已进入当前步骤，等待连续动作判定",
-                      }
-                    : step,
-                ),
-                runtime: {
-                  ...normalizeSessionRuntime(session),
-                  actorBinding: {
-                    ...normalizeSessionRuntime(session).actorBinding,
-                    status: "confirmed",
-                    trackId: `track-${session.id}`,
-                  },
-                  evaluationClock: createEvaluationClock({ status: "running" }),
-                },
-                events: [
-                  {
-                    time: timestamp().slice(-5),
-                    level: "green",
-                    title: "学生已入场",
-                    detail: "会话计时与自动评价已开始",
-                  },
-                  ...session.events,
-                ],
-              }
+            ? startAiRuntimeSession(session, startedAt)
             : session.status === "可入场"
               ? { ...session, status: "待开始" }
               : session;
@@ -8338,9 +8139,9 @@ export function PrototypeDataProvider({ children }) {
           ...arrangement,
           status: "进行中",
           paused: false,
-          startedAt: arrangement.startedAt || timestamp(),
+          startedAt: arrangement.startedAt || startedAt,
           sessions,
-          updatedAt: timestamp(),
+          updatedAt: startedAt,
         };
         setData((current) => {
           const next = {
@@ -8354,7 +8155,7 @@ export function PrototypeDataProvider({ children }) {
                     ...item,
                     status: "使用中",
                     currentArrangement: arrangement.name,
-                    updatedAt: timestamp(),
+                    updatedAt: startedAt,
                   }
                 : item,
             ),
@@ -8498,73 +8299,8 @@ export function PrototypeDataProvider({ children }) {
           throw new Error("教师尚未开始安排或当前安排已暂停，暂不能开始。");
         if (!["待开始", "可入场"].includes(session.status))
           throw new Error("当前会话已经开始或结束，不能重复开始。");
-        const firstStep = session.steps.find(
-          (step) => step.state === "pending",
-        );
         const startedAt = timestamp();
-        const updatedSession = {
-          ...session,
-          status: "进行中",
-          currentStepId: firstStep?.id || session.steps[0]?.id || "",
-          steps: session.steps.map((step) =>
-            step.id === firstStep?.id
-              ? {
-                  ...step,
-                  state: "active",
-                  executionState: "active",
-                  observationWindow: {
-                    status: "open",
-                    openedAt: startedAt,
-                    closedAt: "",
-                    closeReason: "",
-                  },
-                  result: "进行中",
-                  duration: "00:00",
-                  observation: "已进入当前步骤，等待连续动作判定",
-                }
-              : step,
-          ),
-          runtime: {
-            ...normalizeSessionRuntime(session),
-            actorBinding: {
-              ...normalizeSessionRuntime(session).actorBinding,
-              status: "confirmed",
-              primaryActorId: session.studentId,
-              trackId: `track-${session.id}`,
-              history: [
-                ...(normalizeSessionRuntime(session).actorBinding.history ||
-                  []),
-                { status: "confirmed", at: startedAt, note: "学生确认并开始" },
-              ],
-            },
-            evaluationClock: createEvaluationClock({ status: "running" }),
-          },
-          startedAt: session.startedAt || startedAt,
-          lastActiveAt: startedAt,
-          recording: {
-            ...session.recording,
-            status: "完整",
-            coveragePercent: 100,
-            mainCamera: "正常",
-            assistCamera: "正常",
-            startedAt:
-              session.recording?.startedAt === "尚未开始"
-                ? startedAt
-                : session.recording?.startedAt || startedAt,
-            lastSegmentAt: "持续写入中",
-            fullVideoAvailable: true,
-            incidents: [],
-          },
-          events: [
-            {
-              time: startedAt.slice(-5),
-              level: "green",
-              title: "学生确认并开始",
-              detail: "身份、任务和工位已确认，会话计时与评价开始",
-            },
-            ...(session.events || []),
-          ],
-        };
+        const updatedSession = startAiRuntimeSession(session, startedAt);
         setData((current) => {
           const next = {
             ...current,
@@ -8763,6 +8499,266 @@ export function PrototypeDataProvider({ children }) {
         });
         return updatedSession;
       },
+      simulateAiCondition(
+        arrangementId,
+        workstationId,
+        judgementItemId,
+        conditionId,
+      ) {
+        const arrangement = data.arrangements.find(
+          (item) => item.id === arrangementId,
+        );
+        const session = arrangement?.sessions.find(
+          (item) => item.workstationId === workstationId,
+        );
+        const aiConfig =
+          session?.evaluationSnapshot?.aiCapabilityConfigSnapshot;
+        const capabilities =
+          session?.evaluationSnapshot?.capabilitySnapshots || [];
+        const currentStep = session?.steps.find(
+          (item) => item.id === session.currentStepId,
+        );
+        const judgementItems = activeJudgementItems(aiConfig || {}).filter(
+          (item) => item.stepId === currentStep?.id,
+        );
+        const judgementItem = judgementItems.find(
+          (item) => item.id === judgementItemId,
+        );
+        const condition = (judgementItem?.conditions || []).find(
+          (item) => item.id === conditionId,
+        );
+        if (!session || !currentStep || !judgementItem || !condition)
+          throw new Error("当前步骤没有可模拟的AI判断条件。");
+        if (!session.evaluationProfile?.automaticEvaluationEnabled)
+          throw new Error("当前Session未启用AI评价，只能按安全降级流程运行。");
+        if (session.status !== "进行中")
+          throw new Error("会话未运行，不能产生AI识别观察。");
+        const runtime = normalizeSessionRuntime(session);
+        if (runtime.actorBinding.status !== "confirmed")
+          throw new Error("主操作人未确认，AI观察不能用于当前学生评价。");
+        if (currentStep.observationWindow?.status !== "open")
+          throw new Error("当前步骤观察窗口未开启。");
+        const when = timestamp();
+        const capability = capabilities.find(
+          (item) => item.id === condition.capabilityId,
+        );
+        const observation = {
+          id: uid("ai-observation"),
+          judgementItemId,
+          conditionId,
+          capabilityId: condition.capabilityId,
+          capabilityName: capability?.name || condition.capabilityId,
+          stepId: currentStep.id,
+          actorId: session.studentId,
+          result: "observed",
+          occurrenceCount: 1,
+          observedDurationSeconds: Number(condition.minDurationSeconds || 0),
+          observedAt: when,
+        };
+        const aiObservations = [...runtime.aiObservations, observation];
+        const conditionSatisfied = (candidate) =>
+          aiObservations.filter(
+            (item) =>
+              item.stepId === currentStep.id &&
+              item.judgementItemId === judgementItem.id &&
+              item.conditionId === candidate.id,
+          ).length >= Math.max(1, Number(candidate.minOccurrences || 1));
+        const conditions = judgementItem.conditions || [];
+        const allSatisfied = conditions.every(conditionSatisfied);
+        const anySatisfied = conditions.some(conditionSatisfied);
+        const observedOrder = aiObservations
+          .filter(
+            (item) =>
+              item.stepId === currentStep.id &&
+              item.judgementItemId === judgementItem.id,
+          )
+          .map((item) => item.conditionId);
+        const firstIndexes = conditions.map((item) =>
+          observedOrder.indexOf(item.id),
+        );
+        const sequenceSatisfied =
+          allSatisfied &&
+          firstIndexes.every(
+            (index, position) =>
+              index >= 0 &&
+              (position === 0 || index > firstIndexes[position - 1]),
+          );
+        const confirmed =
+          judgementItem.combination === "any"
+            ? anySatisfied
+            : judgementItem.combination === "sequence"
+              ? sequenceSatisfied
+              : allSatisfied;
+        const aiJudgementResults = [
+          ...runtime.aiJudgementResults.filter(
+            (item) =>
+              !(
+                item.stepId === currentStep.id &&
+                item.judgementItemId === judgementItem.id
+              ),
+          ),
+          {
+            id: uid("ai-judgement-result"),
+            judgementItemId: judgementItem.id,
+            judgementItemName: judgementItem.name,
+            stepId: currentStep.id,
+            purposes: [...(judgementItem.purposes || [])],
+            result: confirmed ? "confirmed" : "observing",
+            satisfiedConditionIds: conditions
+              .filter(conditionSatisfied)
+              .map((item) => item.id),
+            observedAt: when,
+          },
+        ];
+        const completionItems = judgementItems.filter((item) =>
+          (item.purposes || []).includes("completion"),
+        );
+        const completed =
+          completionItems.length > 0 &&
+          completionItems.every((item) =>
+            aiJudgementResults.some(
+              (result) =>
+                result.judgementItemId === item.id &&
+                result.result === "confirmed",
+            ),
+          );
+        const newSafetyCandidates = confirmed
+          ? (judgementItem.safetyRuleIds || [])
+              .filter(
+                (ruleId) =>
+                  !runtime.safetyCandidates.some(
+                    (candidate) =>
+                      candidate.safetyRuleId === ruleId &&
+                      candidate.stepId === currentStep.id &&
+                      candidate.status === "pending",
+                  ),
+              )
+              .map((ruleId) => ({
+                id: uid("safety-candidate"),
+                safetyRuleId: ruleId,
+                stepId: currentStep.id,
+                status: "pending",
+                sourceJudgementItemId: judgementItem.id,
+                createdAt: when,
+              }))
+          : [];
+        let steps = session.steps;
+        let currentStepId = session.currentStepId;
+        if (completed) {
+          const currentIndex = session.steps.findIndex(
+            (item) => item.id === currentStep.id,
+          );
+          const nextStep = session.steps[currentIndex + 1];
+          steps = session.steps.map((step) =>
+            step.id === currentStep.id
+              ? {
+                  ...step,
+                  state: "pass",
+                  executionState: "closed",
+                  completionResult: "complete",
+                  result: "通过",
+                  rawScore: Number(step.maxScore || 0),
+                  effectiveScore: Number(step.maxScore || 0),
+                  score: Number(step.maxScore || 0),
+                  observationWindow: {
+                    ...step.observationWindow,
+                    status: "closed",
+                    closedAt: when,
+                    closeReason: "AI判断项完成条件成立",
+                  },
+                  observation: "AI判断项完成条件成立",
+                }
+              : step.id === nextStep?.id
+                ? {
+                    ...step,
+                    state: "active",
+                    executionState: "active",
+                    result: "进行中",
+                    observationWindow: {
+                      status: "open",
+                      openedAt: when,
+                      closedAt: "",
+                      closeReason: "",
+                    },
+                  }
+                : step,
+          );
+          currentStepId = nextStep?.id || currentStep.id;
+        }
+        const safetyBlocked = newSafetyCandidates.length > 0;
+        const updatedSession = {
+          ...session,
+          status: safetyBlocked ? "已暂停" : session.status,
+          currentStepId: safetyBlocked ? currentStep.id : currentStepId,
+          steps: safetyBlocked
+            ? steps.map((step) =>
+                step.id === currentStep.id
+                  ? { ...step, executionState: "safety_blocked" }
+                  : step,
+              )
+            : steps,
+          runtime: {
+            ...runtime,
+            aiObservations,
+            aiJudgementResults,
+            safetyCandidates: [
+              ...runtime.safetyCandidates,
+              ...newSafetyCandidates,
+            ],
+            evaluationClock: safetyBlocked
+              ? setEvaluationClockPaused(runtime.evaluationClock, true, {
+                  reason: "安全候选等待教师确认",
+                  at: when,
+                })
+              : runtime.evaluationClock,
+          },
+          events: [
+            {
+              time: when.slice(-5),
+              level: newSafetyCandidates.length
+                ? "danger"
+                : confirmed
+                  ? "green"
+                  : "blue",
+              title: confirmed ? "AI判断项成立" : "AI判断条件已观察",
+              detail: `${judgementItem.name} · ${capability?.name || "AI能力"}`,
+            },
+            ...(session.events || []),
+          ],
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            arrangements: current.arrangements.map((item) =>
+              item.id === arrangementId
+                ? {
+                    ...item,
+                    sessions: item.sessions.map((entry) =>
+                      entry.workstationId === workstationId
+                        ? updatedSession
+                        : entry,
+                    ),
+                    updatedAt: when,
+                  }
+                : item,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "模拟AI判断条件",
+            `${arrangement.name} / ${judgementItem.name}`,
+          );
+          return next;
+        });
+        return {
+          confirmed,
+          completed,
+          observation,
+          judgementResult: aiJudgementResults.at(-1),
+        };
+      },
+      // 旧版运行模拟保留给遗留AI评价页面；一期正式运行不再调用。
       simulateMachineEvent(arrangementId, workstationId, machineEventId) {
         const arrangement = data.arrangements.find(
           (item) => item.id === arrangementId,
@@ -9955,7 +9951,8 @@ export function PrototypeDataProvider({ children }) {
             "成功",
             {
               reason: note,
-              businessVersion: `${arrangement.snapshot?.sopVersion || "未锁定"} / ${arrangement.snapshot?.modelVersion || "未启用"}`,
+              sopId: arrangement.snapshot?.sopId || arrangement.sopId,
+              snapshotLockedAt: arrangement.snapshot?.lockedAt || "未锁定",
               evidence: step.evidenceSources || [],
             },
           );

@@ -77,6 +77,8 @@ function categoryUsageCount(categoryId, frames, clips) {
 export function updateAnnotationCategory(categories, input, context) {
   const existing = categories.find((item) => item.id === input.id);
   if (!existing) throw new Error("标注类别不存在或已失效。");
+  if (existing.isDefault)
+    throw new Error("系统默认类别来自AI能力定义，不能单独修改。");
   if (categoryUsageCount(existing.id, context.frames, context.clips) > 0)
     throw new Error("当前类别已有标注，请先清理相关标注后再修改。");
   const name = validateCategoryName(
@@ -93,6 +95,8 @@ export function updateAnnotationCategory(categories, input, context) {
 export function deleteAnnotationCategory(categories, categoryId, context) {
   const existing = categories.find((item) => item.id === categoryId);
   if (!existing) throw new Error("标注类别不存在或已失效。");
+  if (existing.isDefault)
+    throw new Error("系统默认类别是当前AI能力的基础类别，不能删除。");
   if (existing.isBackground)
     throw new Error("“背景/非目标动作”是动作识别必需类别，不能删除。");
   const used = categoryUsageCount(categoryId, context.frames, context.clips);

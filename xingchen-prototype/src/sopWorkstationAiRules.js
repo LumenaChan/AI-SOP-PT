@@ -38,18 +38,22 @@ export function isWorkstationSelectable(workstation) {
 }
 
 export function activeJudgementItems(aiConfig = {}) {
-  const enabledStepIds = new Set(
-    (aiConfig.stepConfigs || [])
-      .filter((step) =>
-        ["visual_auto", "visual_assist_default_pass"].includes(
-          step.actualEvaluationMode,
-        ),
-      )
-      .map((step) => step.stepId),
+  const modesByStepId = new Map(
+    (aiConfig.stepConfigs || []).map((step) => [
+      step.stepId,
+      step.actualEvaluationMode,
+    ]),
   );
-  return (aiConfig.judgementItems || []).filter((item) =>
-    enabledStepIds.has(item.stepId),
-  );
+  return (aiConfig.judgementItems || []).filter((item) => {
+    const mode = modesByStepId.get(item.stepId);
+    if (["visual_auto", "visual_assist_default_pass"].includes(mode))
+      return true;
+    return (
+      mode === "default_pass_manual_deduction" &&
+      Array.isArray(item.purposes) &&
+      item.purposes.includes("safety")
+    );
+  });
 }
 
 export function requiredLogicalAreas(aiConfig = {}) {

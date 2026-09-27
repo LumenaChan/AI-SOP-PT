@@ -248,6 +248,34 @@ test("categories are isolated, unique, editable only before use and background i
       }),
     /不能删除/,
   );
+  const defaultPrimary = categories.find(
+    (item) => item.capabilityId === "cap-object" && item.isDefault,
+  );
+  assert.throws(
+    () =>
+      updateAnnotationCategory(
+        categories,
+        { id: defaultPrimary.id, name: "新主类别" },
+        { frames: [], clips: [], now: meta.now },
+      ),
+    /不能单独修改/,
+  );
+  assert.throws(
+    () =>
+      deleteAnnotationCategory(categories, defaultPrimary.id, {
+        frames: [],
+        clips: [],
+      }),
+    /不能删除/,
+  );
+  categories = deleteAnnotationCategory(categories, "category-goggles", {
+    frames: [],
+    clips: [],
+  });
+  assert.equal(
+    categories.some((item) => item.id === "category-goggles"),
+    false,
+  );
 });
 
 test("annotation summary has no review state", () => {

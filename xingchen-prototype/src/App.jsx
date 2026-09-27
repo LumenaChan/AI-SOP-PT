@@ -159,6 +159,7 @@ import {
   normalizeWorkstationAiBaseConfig,
 } from "./workstationAiRules.js";
 import {
+  activeJudgementItems,
   buildValidationCoverage as buildSopWorkstationValidationCoverage,
   checkSopWorkstationAiConfig,
   deriveSopWorkstationRuntimeStatus,
@@ -1189,11 +1190,11 @@ function Dashboard() {
   );
   const publishedSops = data.sops.filter((item) => item.status === "已发布");
   const availableAiSops = publishedSops.filter(
-    (item) => store.getSopAiEvaluationStatus(item.id).status === "可用",
+    (item) => store.getSopAiCapabilityStatus(item.id).status === "已启用",
   );
   const partialAiSops = publishedSops.filter((item) =>
-    ["配置中", "部分可用"].includes(
-      store.getSopAiEvaluationStatus(item.id).status,
+    ["配置中", "待验证"].includes(
+      store.getSopAiCapabilityStatus(item.id).status,
     ),
   );
   const scoredSessions = activeArrangements.flatMap((item) =>
@@ -1494,9 +1495,9 @@ function MonitorPage({ exam = false, setModal }) {
         subtitle={
           <span>
             <Status>{arrangement.status}</Status>　开始时间{" "}
-            {arrangement.startedAt || "尚未开始"} · 快照 SOP{" "}
-            {arrangement.snapshot?.sopVersion} · AI评价可用工位 {aiEnabledCount}
-            /{sessions.length}
+            {arrangement.startedAt || "尚未开始"} · 本次SOP快照{" "}
+            {arrangement.snapshot?.sopSnapshot?.name || sop?.name || "未锁定"}
+            {" · "}AI评价可用工位 {aiEnabledCount}/{sessions.length}
           </span>
         }
         actions={
@@ -1853,7 +1854,7 @@ function WorkstationPage() {
         <div className="workstation-confirm-copy">
           <p>
             将以 <strong>{student.name}</strong> 的身份在{workstation.name}
-            开始，使用已锁定的 SOP {arrangement.snapshot?.sopVersion}。
+            开始，使用本次会话已锁定的SOP标准。
           </p>
           <p>开始后刷新页面会自动恢复同一个 Session，不会重复创建记录。</p>
         </div>
@@ -1958,9 +1959,7 @@ function WorkstationPage() {
                 </div>
                 <div>
                   <dt>标准</dt>
-                  <dd>
-                    {sop.name} · {arrangement.snapshot?.sopVersion}
-                  </dd>
+                  <dd>{sop.name}</dd>
                 </div>
               </dl>
               <label className="workstation-check">
@@ -2303,21 +2302,38 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
   const currentStep = session.steps.find(
     (step) => step.id === session.currentStepId,
   );
-  const mapping = (store.data.evaluationMappings || []).find(
-    (item) =>
-      item.status === "confirmed" &&
-      item.authoredFor?.sopId === sop?.id &&
-      item.authoredFor?.sopVersion === sop?.version,
-  );
-  const evaluationItems = (mapping?.evaluationItems || []).filter(
+  const evaluationSnapshot = session.evaluationSnapshot || {};
+  const aiConfig = evaluationSnapshot.aiCapabilityConfigSnapshot || {};
+  const capabilities = evaluationSnapshot.capabilitySnapshots || [];
+  const judgementItems = activeJudgementItems(aiConfig).filter(
     (item) => item.stepId === currentStep?.id,
   );
-  const eventIds = new Set(
-    evaluationItems.flatMap((item) => item.machineEventIds || []),
-  );
-  const machineEvents = (mapping?.machineEvents || []).filter((item) =>
-    eventIds.has(item.id),
-  );
+  const areas = aiConfig.logicalAreas || [];
+  const purposeLabels = {
+    completion: "完成判断",
+    scoring: "评分依据",
+    safety: "安全提醒",
+  };
+  const conditionDescription = (condition) => {
+    const capability = capabilities.find(
+      (item) => item.id === condition.capabilityId,
+    );
+    const area = areas.find((item) => item.id === condition.logicalAreaId);
+    const operator =
+      OBJECT_DETECTION_OPERATORS[condition.operator] ||
+      ACTION_RECOGNITION_OPERATORS[condition.operator] ||
+      condition.operator;
+    const details = [operator];
+    if (area) details.push(area.name);
+    if (Number(condition.minDurationSeconds) > 0)
+      details.push(`持续≥${condition.minDurationSeconds}秒`);
+    if (Number(condition.minOccurrences) > 1)
+      details.push(`至少${condition.minOccurrences}次`);
+    return {
+      capabilityName: capability?.name || condition.capabilityId || "能力失效",
+      text: details.filter(Boolean).join(" · "),
+    };
+  };
   const scoreRules = (sop?.scoreRules || []).filter(
     (item) => item.stepId === currentStep?.id,
   );
@@ -2368,7 +2384,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
     <section className="panel runtime-simulator">
       <PanelTitle
         title="运行状态模拟（原型）"
-        action={<span>第三批运行闭环验证</span>}
+        action={<span>Session AI配置快照</span>}
       />
       <p className="hint">
         用于演示真实业务状态变化。AI观察事实必须经判断条件形成AI判断项结果后才影响步骤；安全候选与技术异常均不直接自动处罚。
@@ -2432,36 +2448,76 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
             第二人员持续介入
           </Button>
         </div>
-        <div>
-          <b>机器事实</b>
-          {machineEvents.length ? (
-            machineEvents.map((event) => (
-              <Button
-                key={event.id}
-                disabled={session.status !== "进行中"}
-                onClick={() =>
-                  confirmAction(
-                    "模拟AI观察事实",
-                    `${event.name}：${event.factDefinition}`,
-                    "确认产生事实",
-                    () => {
-                      const result = store.simulateMachineEvent(
-                        arrangement.id,
-                        session.workstationId,
-                        event.id,
+        <div className="runtime-judgement-group">
+          <b>AI判断项与判断条件</b>
+          {judgementItems.length ? (
+            judgementItems.map((item) => {
+              const result = (runtime.aiJudgementResults || []).find(
+                (entry) =>
+                  entry.stepId === currentStep?.id &&
+                  entry.judgementItemId === item.id,
+              );
+              return (
+                <article key={item.id} className="runtime-judgement-item">
+                  <header>
+                    <strong>{item.name}</strong>
+                    <Status
+                      tone={
+                        result?.result === "confirmed" ? "success" : "warning"
+                      }
+                    >
+                      {result?.result === "confirmed" ? "成立" : "观察中"}
+                    </Status>
+                  </header>
+                  <small>
+                    {(item.purposes || [])
+                      .map((purpose) => purposeLabels[purpose] || purpose)
+                      .join("、")}
+                    {" · "}
+                    {AI_CONDITION_COMBINATIONS[item.combination] || "全部满足"}
+                  </small>
+                  <div className="inline-actions">
+                    {(item.conditions || []).map((condition) => {
+                      const description = conditionDescription(condition);
+                      return (
+                        <Button
+                          key={condition.id}
+                          disabled={
+                            session.status !== "进行中" ||
+                            !session.evaluationProfile
+                              ?.automaticEvaluationEnabled
+                          }
+                          onClick={() =>
+                            confirmAction(
+                              "模拟AI识别观察",
+                              `${description.capabilityName}：${description.text}`,
+                              "确认产生观察",
+                              () => {
+                                const outcome = store.simulateAiCondition(
+                                  arrangement.id,
+                                  session.workstationId,
+                                  item.id,
+                                  condition.id,
+                                );
+                                return outcome.completed
+                                  ? "完成判断项已成立，步骤已关闭"
+                                  : outcome.confirmed
+                                    ? "AI判断项已成立"
+                                    : "识别观察已记录，继续等待其他条件";
+                              },
+                            )
+                          }
+                        >
+                          {description.capabilityName} · {description.text}
+                        </Button>
                       );
-                      return result.completed
-                        ? "完成条件已满足，步骤已关闭"
-                        : "机器事实已记录并映射";
-                    },
-                  )
-                }
-              >
-                {event.name}
-              </Button>
-            ))
+                    })}
+                  </div>
+                </article>
+              );
+            })
           ) : (
-            <span className="hint">当前步骤没有可模拟的AI观察事实</span>
+            <span className="hint">当前步骤没有启用的AI判断项</span>
           )}
         </div>
         <div>
@@ -2583,10 +2639,10 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
       </div>
       <div className="runtime-ledger">
         <span>
-          AI观察事实 <b>{runtime.machineEvents?.length || 0}</b>
+          AI识别观察 <b>{runtime.aiObservations?.length || 0}</b>
         </span>
         <span>
-          AI判断项结果 <b>{runtime.evaluationItemResults?.length || 0}</b>
+          AI判断项结果 <b>{runtime.aiJudgementResults?.length || 0}</b>
         </span>
         <span>
           技术异常 <b>{runtime.technicalIncidents?.length || 0}</b>
@@ -2728,7 +2784,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 </span>
                 <strong>{camera === "main" ? "主视角" : "辅助视角"}</strong>
                 <small>
-                  SOP {arrangement.snapshot?.sopVersion} ·{" "}
+                  本次SOP快照 ·{" "}
                   {session.evaluationProfile?.automaticEvaluationEnabled
                     ? `自动评价 ${session.evaluationProfile.enabledStepCount}/${session.evaluationProfile.automaticStepCount}`
                     : "默认通过模式"}
@@ -2951,7 +3007,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
                   </div>
                   <b>→</b>
                   <div>
-                    <small>SOP {arrangement.snapshot?.sopVersion}</small>
+                    <small>SOP业务标准</small>
                     <strong>{currentStep?.name}</strong>
                     <span>教师冻结标准</span>
                   </div>
@@ -6030,7 +6086,7 @@ function ArrangementForm({ exam = false, setModal }) {
         : [...draft[key], value],
     );
   const selectedSop = store.data.sops.find((item) => item.id === draft.sopId);
-  const selectedAiStatus = store.getSopAiEvaluationStatus(
+  const selectedAiStatus = store.getSopAiCapabilityStatus(
     selectedSop?.id,
     draft.workstationIds.length
       ? { targetWorkstationIds: draft.workstationIds }
@@ -6131,19 +6187,21 @@ function ArrangementForm({ exam = false, setModal }) {
             <span>
               <strong>{selectedSop?.name || "未选择 SOP"}</strong>
               <small>
-                自动评价目标 {selectedAiStatus.automaticTargetCount} 步 ·
-                当前已适配 {selectedAiStatus.modelReadyCount} 步
+                AI判断项 {selectedAiStatus.judgementItemCount} 项 · 引用AI能力{" "}
+                {selectedAiStatus.capabilityCount} 个
               </small>
               <small>
-                工位能力 {selectedAiStatus.validatedWorkstationCount} /{" "}
-                {selectedAiStatus.targetWorkstationCount}{" "}
-                已通过；具体工位将在准备阶段确认。
+                可运行工位 {selectedAiStatus.runnableWorkstationCount} /{" "}
+                {selectedAiStatus.targetWorkstationCount} · 已启用{" "}
+                {selectedAiStatus.enabledWorkstationCount} 个
               </small>
             </span>
             <Status
-              tone={selectedAiStatus.status === "可用" ? "success" : "warning"}
+              tone={
+                selectedAiStatus.status === "已启用" ? "success" : "warning"
+              }
             >
-              AI评价：{selectedAiStatus.status}
+              AI能力配置：{selectedAiStatus.status}
             </Status>
           </div>
           <p className="arrangement-ai-note">
@@ -6360,17 +6418,12 @@ function PrepPage({ exam = false, setModal }) {
           <PanelTitle title="本次运行快照" action={<LockOutlined />} />
           <div className="version-binding">
             <span>
-              <small>AI能力配置</small>
-              <b>{arrangement.snapshot.mappingVersion ? "已锁定" : "未配置"}</b>
+              <small>SOP标准</small>
+              <b>{arrangement.snapshot.sopSnapshot?.name || "已锁定"}</b>
             </span>
             <span>
-              <small>当前已发布模型</small>
-              <b>
-                {arrangement.snapshot.aiPackageVersion ||
-                arrangement.snapshot.modelVersion
-                  ? "已锁定"
-                  : "未启用"}
-              </b>
+              <small>SOP ID</small>
+              <b>{arrangement.snapshot.sopId || arrangement.sopId}</b>
             </span>
             <span>
               <small>快照时间</small>
@@ -6802,7 +6855,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       `${arrangement.name} / ${arrangement.id}`,
       {
         reason: "管理员跨教师只读查看",
-        businessVersion: arrangement.snapshot?.sopVersion || "尚未锁定快照",
+        sopId: arrangement.snapshot?.sopId || arrangement.sopId,
+        snapshotLockedAt: arrangement.snapshot?.lockedAt || "尚未锁定快照",
       },
     );
   }, [adminReadOnly, arrangement?.id]);
@@ -14899,7 +14953,8 @@ function AnnotationCategoryManager({ capability, categories, items, store }) {
       <div className="annotation-category-list">
         {categories.map((category) => {
           const used = usageCount(category.id);
-          const locked = used > 0 || category.isBackground;
+          const locked =
+            used > 0 || category.isDefault || category.isBackground;
           return (
             <article key={category.id}>
               {editingId === category.id ? (
@@ -21572,16 +21627,11 @@ const WorkstationAiBaseConfigForm = forwardRef(
         device.status !== "停用",
     );
     const criticalChange = isCriticalWorkstationAiChange(initial, form);
-    const affectedCount = data.aiCapabilityConfigs.reduce(
-      (count, config) =>
-        count +
-        (config.workstationValidationStates || []).filter(
-          (state) =>
-            state.workstationId === workstation.id &&
-            ["enabled", "validated", "passed"].includes(state.status),
-        ).length,
-      0,
-    );
+    const affectedCount = (data.sopWorkstationAiConfigs || []).filter(
+      (config) =>
+        config.workstationId === workstation.id &&
+        ["passed", "validating"].includes(config.validationStatus),
+    ).length;
     const selectedDevices = [
       ["主摄像头", form.primaryCameraId],
       ["备用摄像头", form.fallbackCameraId],
@@ -21971,16 +22021,11 @@ function AdminDetail({ type, setModal }) {
       : null;
   const affectedAiValidationCount =
     type === "workstation"
-      ? data.aiCapabilityConfigs.reduce(
-          (count, aiConfig) =>
-            count +
-            (aiConfig.workstationValidationStates || []).filter(
-              (state) =>
-                state.workstationId === item.id &&
-                ["enabled", "validated", "passed"].includes(state.status),
-            ).length,
-          0,
-        )
+      ? (data.sopWorkstationAiConfigs || []).filter(
+          (config) =>
+            config.workstationId === item.id &&
+            ["passed", "validating"].includes(config.validationStatus),
+        ).length
       : 0;
   const openWorkstationAiConfig = () =>
     setModal({
@@ -22574,18 +22619,19 @@ function SessionDiagnosticPanel({ record, store }) {
           ["SOP", record.sopId || "随安排锁定"],
           [
             "AI能力配置",
-            selectedStep.evidenceMetadata?.mappingVersion
-              ? "随会话锁定"
-              : "未配置",
+            selectedStep.evidenceMetadata?.aiCapabilityConfigId || "未配置",
           ],
           [
-            "当前已发布模型",
-            selectedStep.evidenceMetadata?.aiPackageVersion ||
-            selectedStep.evidenceMetadata?.modelVersion
-              ? "随会话锁定"
+            "已锁定AI能力",
+            selectedStep.evidenceMetadata?.capabilityIds?.length
+              ? `${selectedStep.evidenceMetadata.capabilityIds.length} 个`
               : "未启用",
           ],
-          ["工位AI配置", selectedSession.workstationId],
+          [
+            "工位AI配置",
+            selectedStep.evidenceMetadata?.sopWorkstationAiConfigId ||
+              selectedSession.workstationId,
+          ],
           ["现场验证", selectedStep.evidenceMetadata?.validationId],
         ].map(([label, value]) => (
           <span key={label}>
@@ -22667,7 +22713,8 @@ function AdminRecordDetail({ exam = false }) {
     accessLogged.current = true;
     store.recordAuditAccess("查看教学记录", `${record.name} / ${record.id}`, {
       reason: "管理员跨教师只读查看",
-      businessVersion: record.snapshot?.sopVersion || "尚未锁定快照",
+      sopId: record.snapshot?.sopId || record.sopId,
+      snapshotLockedAt: record.snapshot?.lockedAt || "尚未锁定快照",
     });
   }, [record?.id]);
   if (!record)
@@ -22683,7 +22730,7 @@ function AdminRecordDetail({ exam = false }) {
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}记录 · ${record.name}`}
-        subtitle={`状态 ${record.status} · 结束时间 ${record.endedAt || "尚未结束"} · 快照 SOP ${record.snapshot?.sopVersion || "—"}`}
+        subtitle={`状态 ${record.status} · 结束时间 ${record.endedAt || "尚未结束"} · 本次SOP快照已锁定`}
       />
       <p className="readonly-note readonly-note--prominent">
         <EyeOutlined />{" "}
@@ -22694,7 +22741,9 @@ function AdminRecordDetail({ exam = false }) {
           ["负责教师", record.teacherName || "王老师"],
           [
             "SOP标准",
-            `${store.data.sops.find((item) => item.id === record.sopId)?.name || "标准已失效"} ${record.snapshot?.sopVersion || "尚未锁定"}`,
+            record.snapshot?.sopSnapshot?.name ||
+              store.data.sops.find((item) => item.id === record.sopId)?.name ||
+              "标准已失效",
           ],
           ["参与人数", `${record.studentIds.length}人`],
           ["状态", record.status],

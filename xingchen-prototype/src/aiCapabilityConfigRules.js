@@ -299,6 +299,13 @@ export function evaluateAiCapabilityConfig({
       !items.length
     )
       issues.push("AI辅助评价步骤至少需要一个AI判断项提供辅助证据");
+    if (
+      stepConfig?.actualEvaluationMode === "default_pass_manual_deduction" &&
+      items.some((item) =>
+        (item.purposes || []).some((purpose) => purpose !== "safety"),
+      )
+    )
+      issues.push("教师评价步骤的AI判断项只能用于安全提醒");
     issues.push(
       ...validateRuleTreatments({
         rules: stepRules(sop, step.id, "scoreRules"),
@@ -400,20 +407,11 @@ export function completeAiCapabilityConfig({ sop, config, capabilities, now }) {
 
 export function applyAiConfigMutation(config, patch, now) {
   const current = normalizeAiCapabilityConfig(config);
-  const hadValidation = ["pending_validation", "enabled"].includes(
-    current.status,
-  );
   return {
     ...current,
     ...patch,
     status: "configuring",
-    completedAt: hadValidation ? "" : current.completedAt || "",
-    workstationValidationStates: current.workstationValidationStates.map(
-      (entry) =>
-        hadValidation
-          ? { ...entry, status: "pending_revalidation", updatedAt: now }
-          : entry,
-    ),
+    completedAt: "",
     updatedAt: now || current.updatedAt,
   };
 }

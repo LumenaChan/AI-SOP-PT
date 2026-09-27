@@ -248,3 +248,48 @@ test("能力、SOP逻辑或工位关键变化只使有效验证失效并保留�
   assert.equal(result.configs[0].enableStatus, "enabled");
   assert.equal(result.configs[0].logicalAreaMappings.length, 1);
 });
+
+test("教师评价步骤的安全提醒仍参与摄像头、区域和现场验证", () => {
+  const teacherConfig = {
+    ...aiConfig,
+    stepConfigs: [
+      {
+        stepId: "step-1",
+        actualEvaluationMode: "default_pass_manual_deduction",
+      },
+    ],
+    judgementItems: [
+      {
+        ...aiConfig.judgementItems[0],
+        purposes: ["safety"],
+      },
+      {
+        id: "item-non-safety",
+        stepId: "step-1",
+        name: "教师评分辅助",
+        purposes: ["scoring"],
+        conditions: [{ capabilityId: "cap-1", logicalAreaId: "area-1" }],
+      },
+    ],
+  };
+  const relation = createSopWorkstationAiConfig({
+    id: "sw-teacher",
+    aiConfig: teacherConfig,
+    workstation,
+    now: "2026-09-27 13:00",
+  });
+  assert.deepEqual(
+    relation.judgementCameraBindings.map((item) => item.judgementItemId),
+    ["item-1"],
+  );
+  const checks = checkSopWorkstationAiConfig({
+    config: relation,
+    aiConfig: teacherConfig,
+    aiConfigReady: true,
+    workstation,
+    devices,
+    capabilities,
+  });
+  assert.equal(checks.ready, false);
+  assert.match(checks.issues.join("；"), /验电区域尚未配置/);
+});

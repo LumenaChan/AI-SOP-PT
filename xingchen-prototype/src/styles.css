@@ -3963,6 +3963,33 @@ select:focus-visible {
   width: 108px;
 }
 
+.runtime-action-groups > .runtime-judgement-group {
+  align-items: stretch;
+}
+
+.runtime-judgement-item {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.runtime-judgement-item header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.runtime-judgement-item small {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
 .runtime-ledger {
   display: flex;
   flex-wrap: wrap;
