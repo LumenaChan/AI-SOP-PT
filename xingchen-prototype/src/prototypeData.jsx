@@ -53,6 +53,34 @@ import {
 } from "./aiModelTrainingRules.js";
 import { publishCandidateModel } from "./aiModelPublishingRules.js";
 import {
+  applyAiConfigMutation,
+  capabilityConfigReferenceIds,
+  completeAiCapabilityConfig,
+  createDefaultStepConfig,
+  createEmptyAiCapabilityConfig,
+  evaluateAiCapabilityConfig,
+  normalizeAiCapabilityConfig,
+  validateAiJudgementItem,
+} from "./aiCapabilityConfigRules.js";
+import {
+  applyWorkstationAiBaseConfig,
+  deriveWorkstationAiReadiness,
+  invalidateWorkstationValidationStates,
+  isCameraDevice,
+  normalizeWorkstationAiBaseConfig,
+} from "./workstationAiRules.js";
+import {
+  checkSopWorkstationAiConfig,
+  createDefaultValidationCases,
+  createSopWorkstationAiConfig,
+  deriveSopWorkstationRuntimeStatus,
+  evaluateValidationCompletion,
+  invalidateSopWorkstationConfigs,
+  normalizeSopWorkstationAiConfig,
+  setJudgementCameraBinding,
+  setLogicalAreaMapping,
+} from "./sopWorkstationAiRules.js";
+import {
   applyDefaultPassPolicy,
   advanceEvaluationClock,
   automaticEvaluationGate,
@@ -91,8 +119,11 @@ import {
   validateSystemSettings,
 } from "./domainRules.js";
 
-const STORAGE_KEY = "xingchen-prototype-data-v19";
+const STORAGE_KEY = "xingchen-prototype-data-v22";
 const LEGACY_STORAGE_KEYS = [
+  "xingchen-prototype-data-v21",
+  "xingchen-prototype-data-v20",
+  "xingchen-prototype-data-v19",
   "xingchen-prototype-data-v18",
   "xingchen-prototype-data-v17",
   "xingchen-prototype-data-v16",
@@ -415,7 +446,7 @@ function enrichStepEvidence(
 }
 
 const seedData = {
-  version: 17,
+  version: 19,
   classes: [
     {
       id: "class-nev-2401",
@@ -583,6 +614,16 @@ const seedData = {
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:18",
       notes: "边缘推理服务异常，评价受控暂停",
+      aiBaseConfig: {
+        workstationId: "w1",
+        primaryCameraId: "d2",
+        fallbackCameraId: "d3",
+        edgeDeviceId: "d1",
+        lastCheckedAt: "2026-09-18 10:18",
+        updatedAt: "2026-09-18 10:18",
+        updatedBy: "系统管理员",
+        lastAiCriticalChangeAt: "2026-09-12 16:20",
+      },
     },
     {
       id: "w2",
@@ -594,6 +635,16 @@ const seedData = {
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:12",
       notes: "",
+      aiBaseConfig: {
+        workstationId: "w2",
+        primaryCameraId: "d10",
+        fallbackCameraId: "",
+        edgeDeviceId: "d11",
+        lastCheckedAt: "2026-09-18 10:12",
+        updatedAt: "2026-09-18 10:12",
+        updatedBy: "系统管理员",
+        lastAiCriticalChangeAt: "2026-09-09 15:40",
+      },
     },
     {
       id: "w3",
@@ -605,6 +656,16 @@ const seedData = {
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:06",
       notes: "教师人工暂停",
+      aiBaseConfig: {
+        workstationId: "w3",
+        primaryCameraId: "d5",
+        fallbackCameraId: "",
+        edgeDeviceId: "d6",
+        lastCheckedAt: "2026-09-18 10:06",
+        updatedAt: "2026-09-18 10:06",
+        updatedBy: "系统管理员",
+        lastAiCriticalChangeAt: "2026-09-10 14:30",
+      },
     },
     {
       id: "w4",
@@ -616,6 +677,16 @@ const seedData = {
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 09:58",
       notes: "",
+      aiBaseConfig: {
+        workstationId: "w4",
+        primaryCameraId: "d7",
+        fallbackCameraId: "",
+        edgeDeviceId: "",
+        lastCheckedAt: "2026-09-18 09:58",
+        updatedAt: "2026-09-18 09:58",
+        updatedBy: "系统管理员",
+        lastAiCriticalChangeAt: "2026-09-18 09:58",
+      },
     },
     {
       id: "w5",
@@ -627,6 +698,16 @@ const seedData = {
       currentArrangement: "无",
       updatedAt: "2026-09-18 09:56",
       notes: "",
+      aiBaseConfig: {
+        workstationId: "w5",
+        primaryCameraId: "d8",
+        fallbackCameraId: "",
+        edgeDeviceId: "d9",
+        lastCheckedAt: "2026-09-18 09:56",
+        updatedAt: "2026-09-18 09:56",
+        updatedBy: "系统管理员",
+        lastAiCriticalChangeAt: "2026-09-11 11:10",
+      },
     },
     {
       id: "w6",
@@ -664,6 +745,8 @@ const seedData = {
       workstationId: "w1",
       address: "rtsp://10.20.1.21/main",
       version: "FW 2.4",
+      streamStatus: "可用",
+      resolution: "1920 × 1080",
       lastHeartbeat: "2026-09-18 10:24",
       lastTestAt: "2026-09-17 16:20",
       updatedAt: "2026-09-18 10:24",
@@ -678,6 +761,8 @@ const seedData = {
       workstationId: "w1",
       address: "rtsp://10.20.1.22/main",
       version: "FW 2.4",
+      streamStatus: "可用",
+      resolution: "1920 × 1080",
       lastHeartbeat: "2026-09-18 10:24",
       lastTestAt: "2026-09-17 16:20",
       updatedAt: "2026-09-18 10:24",
@@ -697,6 +782,197 @@ const seedData = {
       updatedAt: "2026-09-18 10:23",
       notes: "",
     },
+    {
+      id: "d5",
+      name: "CAM-003-A",
+      serial: "CAM-SN-003-A",
+      type: "全景摄像头",
+      status: "在线",
+      workstationId: "w3",
+      address: "rtsp://10.20.3.21/main",
+      version: "FW 2.4",
+      streamStatus: "可用",
+      resolution: "1920 × 1080",
+      lastHeartbeat: "2026-09-18 10:22",
+      lastTestAt: "2026-09-18 10:06",
+      updatedAt: "2026-09-18 10:22",
+      notes: "",
+    },
+    {
+      id: "d10",
+      name: "CAM-002-A",
+      serial: "CAM-SN-002-A",
+      type: "全景摄像头",
+      status: "在线",
+      workstationId: "w2",
+      address: "rtsp://10.20.2.21/main",
+      version: "FW 2.4",
+      streamStatus: "可用",
+      resolution: "1920 × 1080",
+      lastHeartbeat: "2026-09-18 10:23",
+      lastTestAt: "2026-09-18 10:12",
+      updatedAt: "2026-09-18 10:23",
+      notes: "",
+    },
+    {
+      id: "d11",
+      name: "EDGE-002",
+      serial: "EDGE-SN-002",
+      type: "边缘工作站",
+      status: "在线",
+      workstationId: "w2",
+      address: "10.20.2.11",
+      version: "Agent 3.2.1",
+      lastHeartbeat: "2026-09-18 10:23",
+      lastTestAt: "2026-09-18 10:12",
+      updatedAt: "2026-09-18 10:23",
+      notes: "",
+    },
+    {
+      id: "d6",
+      name: "EDGE-003",
+      serial: "EDGE-SN-003",
+      type: "边缘工作站",
+      status: "在线",
+      workstationId: "w3",
+      address: "10.20.3.11",
+      version: "Agent 3.2.1",
+      lastHeartbeat: "2026-09-18 10:22",
+      lastTestAt: "2026-09-18 10:06",
+      updatedAt: "2026-09-18 10:22",
+      notes: "",
+    },
+    {
+      id: "d7",
+      name: "CAM-004-A",
+      serial: "CAM-SN-004-A",
+      type: "全景摄像头",
+      status: "在线",
+      workstationId: "w4",
+      address: "rtsp://10.20.4.21/main",
+      version: "FW 2.4",
+      streamStatus: "可用",
+      resolution: "2560 × 1440",
+      lastHeartbeat: "2026-09-18 10:20",
+      lastTestAt: "2026-09-18 09:58",
+      updatedAt: "2026-09-18 10:20",
+      notes: "等待配置边缘设备",
+    },
+    {
+      id: "d8",
+      name: "CAM-005-A",
+      serial: "CAM-SN-005-A",
+      type: "全景摄像头",
+      status: "离线",
+      workstationId: "w5",
+      address: "rtsp://10.20.5.21/main",
+      version: "FW 2.3",
+      streamStatus: "不可用",
+      resolution: "1920 × 1080",
+      lastHeartbeat: "2026-09-18 08:42",
+      lastTestAt: "2026-09-18 09:56",
+      updatedAt: "2026-09-18 09:56",
+      notes: "等待检查网络连接",
+    },
+    {
+      id: "d9",
+      name: "EDGE-005",
+      serial: "EDGE-SN-005",
+      type: "边缘工作站",
+      status: "在线",
+      workstationId: "w5",
+      address: "10.20.5.11",
+      version: "Agent 3.2.1",
+      lastHeartbeat: "2026-09-18 10:19",
+      lastTestAt: "2026-09-18 09:56",
+      updatedAt: "2026-09-18 10:19",
+      notes: "",
+    },
+  ],
+  aiCapabilityConfigs: [
+    {
+      id: "ai-config-s1",
+      sopId: "s1",
+      status: "pending_validation",
+      stepConfigs: [
+        {
+          stepId: "Step 01",
+          actualEvaluationMode: "visual_auto",
+          downgradeReason: "",
+          scoreRuleTreatments: [],
+          safetyRuleTreatments: [],
+        },
+        ...["Step 02", "Step 03", "Step 04", "Step 05", "Step 06"].map(
+          (stepId) => ({
+            stepId,
+            actualEvaluationMode: "default_pass_manual_deduction",
+            downgradeReason:
+              "当前示例仅对作业前绝缘手套进行AI判断，其余步骤由教师评价。",
+            scoreRuleTreatments: [],
+            safetyRuleTreatments: [],
+          }),
+        ),
+      ],
+      judgementItems: [
+        {
+          id: "ai-judgement-s1-step1-gloves",
+          stepId: "Step 01",
+          name: "确认绝缘手套已佩戴",
+          purposes: ["completion"],
+          scoreRuleIds: [],
+          safetyRuleIds: [],
+          combination: "all",
+          conditions: [
+            {
+              id: "ai-condition-s1-step1-gloves",
+              capabilityId: "cap-insulating-gloves",
+              operator: "in_area",
+              logicalAreaId: "logical-area-s1-safety-check",
+              minTargetCount: 2,
+              minDurationSeconds: 1,
+              minOccurrences: 1,
+            },
+          ],
+          fallback:
+            "AI结果不可靠、摄像头异常或证据不足时，标记为不确定并转人工确认，不直接形成学生负向结果。",
+        },
+      ],
+      logicalAreas: [
+        {
+          id: "logical-area-s1-safety-check",
+          name: "作业检查区域",
+          description: "学生进入工位后进行绝缘防护用品检查的固定画面区域。",
+          createdAt: "2026-09-24 10:00",
+        },
+      ],
+      workstationValidationStates: [],
+      createdBy: "系统管理员",
+      createdAt: "2026-09-24 10:00",
+      updatedAt: "2026-09-24 10:00",
+      completedAt: "2026-09-24 10:00",
+    },
+  ],
+  sopWorkstationAiConfigs: [
+    {
+      id: "sop-workstation-ai-s1-w2",
+      sopAiConfigId: "ai-config-s1",
+      workstationId: "w2",
+      judgementCameraBindings: [
+        {
+          judgementItemId: "ai-judgement-s1-step1-gloves",
+          cameraId: "d10",
+          source: "primary",
+        },
+      ],
+      logicalAreaMappings: [],
+      validationStatus: "unvalidated",
+      enableStatus: "not_enabled",
+      validationCases: [],
+      validationRecords: [],
+      createdAt: "2026-09-24 10:10",
+      updatedAt: "2026-09-24 10:10",
+      lastCriticalConfigChangeAt: "2026-09-24 10:10",
+    },
   ],
   aiCapabilities: [
     {
@@ -707,8 +983,8 @@ const seedData = {
       targetName: "绝缘手套",
       status: "已发布",
       currentModelStatus: "已发布",
-      referenceCount: 2,
-      referencingConfigIds: ["ai-config-s1", "ai-config-s3"],
+      referenceCount: 1,
+      referencingConfigIds: ["ai-config-s1"],
       currentPublishedModel: {
         trainingTaskId: "ai-training-gloves-published",
         modelArtifactId: "model-gloves-current",
@@ -2510,11 +2786,37 @@ function cloneSeed() {
 
 function normalizePrototypeData(input) {
   const next = input;
+  const sourceVersion = Number(next.version || 0);
   const hasAiExtractionData =
     Array.isArray(next.aiExtractionTasks) ||
     Array.isArray(next.aiFrames) ||
     Array.isArray(next.aiClips);
   next.version = seedData.version;
+  const storedDevices = Array.isArray(next.devices)
+    ? next.devices.filter((item) => item?.id)
+    : [];
+  const storedDeviceIds = new Set(storedDevices.map((item) => item.id));
+  next.devices = [
+    ...storedDevices,
+    ...(sourceVersion < 18
+      ? JSON.parse(JSON.stringify(seedData.devices || [])).filter(
+          (item) => !storedDeviceIds.has(item.id),
+        )
+      : []),
+  ].map((device) => {
+    if (!isCameraDevice(device)) return device;
+    const seeded = (seedData.devices || []).find(
+      (item) => item.id === device.id,
+    );
+    return {
+      ...device,
+      streamStatus:
+        device.streamStatus ||
+        seeded?.streamStatus ||
+        (device.status === "在线" ? "可用" : "不可用"),
+      resolution: device.resolution || seeded?.resolution || "1920 × 1080",
+    };
+  });
   next.aiCapabilities = Array.isArray(next.aiCapabilities)
     ? next.aiCapabilities
         .filter((item) => item?.id)
@@ -2647,16 +2949,75 @@ function normalizePrototypeData(input) {
         (item) => item?.id && item?.capabilityId && item?.type,
       )
     : [];
-  next.workstations = (next.workstations || []).map((workstation) => ({
-    ...workstation,
-    implementation: {
-      ...defaultWorkstationImplementation(workstation),
-      ...(workstation.implementation || {}),
-      rois:
-        workstation.implementation?.rois ||
-        defaultWorkstationImplementation(workstation).rois,
-    },
-  }));
+  next.aiCapabilityConfigs = Array.isArray(next.aiCapabilityConfigs)
+    ? next.aiCapabilityConfigs
+        .filter((item) => item?.id && item?.sopId)
+        .map(normalizeAiCapabilityConfig)
+        .filter(
+          (item, index, entries) =>
+            entries.findIndex((candidate) => candidate.sopId === item.sopId) ===
+            index,
+        )
+    : JSON.parse(JSON.stringify(seedData.aiCapabilityConfigs || [])).map(
+        normalizeAiCapabilityConfig,
+      );
+  next.aiCapabilities = next.aiCapabilities.map((capability) => {
+    const referencingConfigIds = capabilityConfigReferenceIds(
+      next.aiCapabilityConfigs,
+      capability.id,
+    );
+    return {
+      ...capability,
+      referencingConfigIds,
+      referenceCount: referencingConfigIds.length,
+    };
+  });
+  next.workstations = (next.workstations || []).map((workstation) => {
+    const seeded = (seedData.workstations || []).find(
+      (item) => item.id === workstation.id,
+    );
+    const aiBaseSource = workstation.aiBaseConfig || seeded?.aiBaseConfig || {};
+    return {
+      ...workstation,
+      aiBaseConfig: normalizeWorkstationAiBaseConfig({
+        ...workstation,
+        aiBaseConfig: aiBaseSource,
+      }),
+      implementation: {
+        ...defaultWorkstationImplementation(workstation),
+        ...(workstation.implementation || {}),
+        rois:
+          workstation.implementation?.rois ||
+          defaultWorkstationImplementation(workstation).rois,
+      },
+    };
+  });
+  next.sopWorkstationAiConfigs = (
+    Array.isArray(next.sopWorkstationAiConfigs)
+      ? next.sopWorkstationAiConfigs
+      : JSON.parse(JSON.stringify(seedData.sopWorkstationAiConfigs || []))
+  )
+    .filter(
+      (item) =>
+        item?.id &&
+        item?.sopAiConfigId &&
+        item?.workstationId &&
+        next.aiCapabilityConfigs.some(
+          (config) => config.id === item.sopAiConfigId,
+        ) &&
+        next.workstations.some(
+          (workstation) => workstation.id === item.workstationId,
+        ),
+    )
+    .map(normalizeSopWorkstationAiConfig)
+    .filter(
+      (item, index, entries) =>
+        entries.findIndex(
+          (candidate) =>
+            candidate.sopAiConfigId === item.sopAiConfigId &&
+            candidate.workstationId === item.workstationId,
+        ) === index,
+    );
   const sourceProfiles = Array.isArray(next.workstationProfiles)
     ? next.workstationProfiles.map(normalizeWorkstationProfile)
     : [];
@@ -3024,6 +3385,41 @@ function timestamp() {
     .replaceAll("/", "-");
 }
 
+function refreshAiCapabilityReferences(source) {
+  const configs = Array.isArray(source.aiCapabilityConfigs)
+    ? source.aiCapabilityConfigs
+    : [];
+  const activeConfigIds = new Set(configs.map((config) => config.id));
+  let workstationConfigs = (source.sopWorkstationAiConfigs || []).filter(
+    (config) => activeConfigIds.has(config.sopAiConfigId),
+  );
+  configs
+    .filter((config) => config.status === "configuring")
+    .forEach((config) => {
+      workstationConfigs = invalidateSopWorkstationConfigs(
+        workstationConfigs,
+        (item) => item.sopAiConfigId === config.id,
+        config.updatedAt || timestamp(),
+        "SOP AI判断逻辑发生变化",
+      ).configs;
+    });
+  return {
+    ...source,
+    sopWorkstationAiConfigs: workstationConfigs,
+    aiCapabilities: (source.aiCapabilities || []).map((capability) => {
+      const referencingConfigIds = capabilityConfigReferenceIds(
+        configs,
+        capability.id,
+      );
+      return {
+        ...capability,
+        referencingConfigIds,
+        referenceCount: referencingConfigIds.length,
+      };
+    }),
+  };
+}
+
 function uid(prefix) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -3101,7 +3497,7 @@ function mergeLegacy(legacy) {
   const next = cloneSeed();
   if (
     !legacy ||
-    ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(
+    ![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(
       legacy.version,
     )
   )
@@ -3123,7 +3519,9 @@ function mergeLegacy(legacy) {
     ];
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(
+      legacy.version,
+    ) &&
     Array.isArray(legacy.arrangements)
   ) {
     const legacyIds = new Set(legacy.arrangements.map((item) => item.id));
@@ -3202,13 +3600,34 @@ function mergeLegacy(legacy) {
         workstationIdMap[session.workstationId] || session.workstationId,
     })),
   }));
-  if ([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version)) {
+  if (
+    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(
+      legacy.version,
+    )
+  ) {
     for (const key of ["sops", "datasets", "models", "learningSamples"]) {
       if (legacy[key]?.length) next[key] = legacy[key];
     }
   }
   if (Array.isArray(legacy.evaluationMappings))
     next.evaluationMappings = legacy.evaluationMappings;
+  for (const key of [
+    "aiCapabilityConfigs",
+    "sopWorkstationAiConfigs",
+    "aiCapabilities",
+    "aiSourceVideos",
+    "aiExtractionTasks",
+    "aiCleaningTasks",
+    "aiAnnotationCategories",
+    "aiTrainingDataConfigs",
+    "aiTrainingTasks",
+    "aiModelPublicationRecords",
+    "aiCapabilityModelEvents",
+    "aiFrames",
+    "aiClips",
+  ]) {
+    if (Array.isArray(legacy[key])) next[key] = legacy[key];
+  }
   for (const key of [
     "workstationProfiles",
     "aiImpactAssessments",
@@ -3227,7 +3646,9 @@ function mergeLegacy(legacy) {
     );
   }
   if (
-    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(legacy.version) &&
+    [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(
+      legacy.version,
+    ) &&
     Array.isArray(legacy.exportJobs)
   )
     next.exportJobs = legacy.exportJobs;
@@ -3359,6 +3780,52 @@ export function PrototypeDataProvider({ children }) {
         config,
       });
       return { capability, config, groups, readiness, ...result };
+    };
+    const getSopWorkstationContext = (relationId, configOverride) => {
+      const relation = normalizeSopWorkstationAiConfig(
+        configOverride ||
+          (data.sopWorkstationAiConfigs || []).find(
+            (item) => item.id === relationId,
+          ) ||
+          {},
+      );
+      if (!relation.id) throw new Error("SOP工位AI配置不存在或已失效。");
+      const aiConfig = (data.aiCapabilityConfigs || []).find(
+        (item) => item.id === relation.sopAiConfigId,
+      );
+      const sop = (data.sops || []).find((item) => item.id === aiConfig?.sopId);
+      const workstation = (data.workstations || []).find(
+        (item) => item.id === relation.workstationId,
+      );
+      if (!aiConfig || !sop || !workstation)
+        throw new Error("SOP、AI配置或工位引用已失效。");
+      const evaluation = evaluateAiCapabilityConfig({
+        sop,
+        config: aiConfig,
+        capabilities: data.aiCapabilities || [],
+      });
+      const checks = checkSopWorkstationAiConfig({
+        config: relation,
+        aiConfig,
+        aiConfigReady: evaluation.ready,
+        workstation,
+        devices: data.devices || [],
+        capabilities: data.aiCapabilities || [],
+      });
+      const runtimeStatus = deriveSopWorkstationRuntimeStatus({
+        config: relation,
+        checks,
+        readiness: checks.readiness,
+      });
+      return {
+        relation,
+        aiConfig,
+        sop,
+        workstation,
+        evaluation,
+        checks,
+        runtimeStatus,
+      };
     };
     const updateStatus = (collection, id, status, action, label) => {
       const existing = data[collection].find((item) => item.id === id);
@@ -3696,6 +4163,7 @@ export function PrototypeDataProvider({ children }) {
           updatedAt: timestamp(),
         };
         created.implementation = defaultWorkstationImplementation(created);
+        created.aiBaseConfig = normalizeWorkstationAiBaseConfig(created);
         setData((current) => {
           const next = {
             ...current,
@@ -3731,6 +4199,105 @@ export function PrototypeDataProvider({ children }) {
           return next;
         });
         return updated;
+      },
+      getWorkstationAiReadiness(id) {
+        const workstation = data.workstations.find((item) => item.id === id);
+        return deriveWorkstationAiReadiness({
+          workstation,
+          devices: data.devices,
+          edgeRequired: true,
+        });
+      },
+      saveWorkstationAiBaseConfig(id, input) {
+        const workstation = data.workstations.find((item) => item.id === id);
+        if (!workstation)
+          throw new Error("工位不存在或已失效，请返回列表刷新。");
+        const now = timestamp();
+        const applied = applyWorkstationAiBaseConfig({
+          workstation,
+          input,
+          devices: data.devices,
+          now,
+          updatedBy: "系统管理员",
+        });
+        const previewInvalidation = applied.criticalChange
+          ? invalidateWorkstationValidationStates(
+              data.aiCapabilityConfigs,
+              id,
+              now,
+            )
+          : { affectedCount: 0 };
+        const previewSopInvalidation = applied.criticalChange
+          ? invalidateSopWorkstationConfigs(
+              data.sopWorkstationAiConfigs,
+              (item) => item.workstationId === id,
+              now,
+              "工位AI基础配置发生关键变化",
+            )
+          : { affectedCount: 0 };
+        const affectedCount = Math.max(
+          previewInvalidation.affectedCount,
+          previewSopInvalidation.affectedCount,
+        );
+        setData((current) => {
+          const invalidated = applied.criticalChange
+            ? invalidateWorkstationValidationStates(
+                current.aiCapabilityConfigs,
+                id,
+                now,
+              )
+            : {
+                configs: current.aiCapabilityConfigs,
+                affectedCount: 0,
+              };
+          const invalidatedSopConfigs = applied.criticalChange
+            ? invalidateSopWorkstationConfigs(
+                current.sopWorkstationAiConfigs,
+                (item) => item.workstationId === id,
+                now,
+                "工位AI基础配置发生关键变化",
+              ).configs
+            : current.sopWorkstationAiConfigs;
+          const updatedWorkstation = {
+            ...workstation,
+            aiBaseConfig: applied.config,
+            updatedAt: now,
+          };
+          const next = {
+            ...current,
+            workstations: current.workstations.map((item) =>
+              item.id === id ? updatedWorkstation : item,
+            ),
+            aiCapabilityConfigs: invalidated.configs,
+            sopWorkstationAiConfigs: invalidatedSopConfigs,
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            applied.criticalChange
+              ? "变更工位AI基础配置"
+              : "检查工位AI基础配置",
+            `${workstation.name} / ${workstation.code}`,
+            "成功",
+            { affectedAiConfigCount: affectedCount },
+          );
+          return next;
+        });
+        const updatedWorkstation = {
+          ...workstation,
+          aiBaseConfig: applied.config,
+          updatedAt: now,
+        };
+        return {
+          workstation: updatedWorkstation,
+          readiness: deriveWorkstationAiReadiness({
+            workstation: updatedWorkstation,
+            devices: data.devices,
+            edgeRequired: true,
+          }),
+          criticalChange: applied.criticalChange,
+          affectedCount,
+        };
       },
       setWorkstationStatus(id, status) {
         return updateStatus(
@@ -4052,6 +4619,757 @@ export function PrototypeDataProvider({ children }) {
           compatibilityDecisions: data.compatibilityDecisions || [],
           targetWorkstationIds: options.targetWorkstationIds,
         });
+      },
+
+      saveAiStepConfig(sopId, input) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || !isSopAvailableForNewArrangement(sop))
+          throw new Error("只能为已发布且未停用的SOP配置AI能力。");
+        const step = (sop.steps || []).find(
+          (item) => item.id === input?.stepId,
+        );
+        if (!step) throw new Error("所选SOP步骤不存在，请刷新后重试。");
+        const when = timestamp();
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        const base = existing
+          ? normalizeAiCapabilityConfig(existing)
+          : createEmptyAiCapabilityConfig(sopId, {
+              id: uid("ai-config"),
+              now: when,
+              actor: "系统管理员",
+            });
+        const currentStep =
+          base.stepConfigs.find((item) => item.stepId === step.id) ||
+          createDefaultStepConfig(step.id);
+        const updatedStep = {
+          ...currentStep,
+          actualEvaluationMode: input.actualEvaluationMode || "",
+          downgradeReason: String(input.downgradeReason || "").trim(),
+        };
+        const updated = applyAiConfigMutation(
+          base,
+          {
+            stepConfigs: [
+              ...base.stepConfigs.filter((item) => item.stepId !== step.id),
+              updatedStep,
+            ],
+          },
+          when,
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (item) => item.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "保存AI步骤评价方式", `${sop.name} / ${step.name}`);
+          return refreshAiCapabilityReferences(next);
+        });
+        return updated;
+      },
+      saveAiRuleTreatment(sopId, input) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || !isSopAvailableForNewArrangement(sop))
+          throw new Error("当前SOP不可配置。");
+        const kind = input?.kind === "safety" ? "safety" : "score";
+        const rules =
+          kind === "score" ? sop.scoreRules || [] : sop.safetyRules || [];
+        const rule = rules.find(
+          (item) => item.id === input?.ruleId && item.stepId === input?.stepId,
+        );
+        if (!rule) throw new Error("教师规则不存在或不属于当前步骤。");
+        if (!["ai", "teacher"].includes(input?.mode))
+          throw new Error("请选择规则处理方式。");
+        const when = timestamp();
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        const base = existing
+          ? normalizeAiCapabilityConfig(existing)
+          : createEmptyAiCapabilityConfig(sopId, {
+              id: uid("ai-config"),
+              now: when,
+              actor: "系统管理员",
+            });
+        const currentStep =
+          base.stepConfigs.find((item) => item.stepId === input.stepId) ||
+          createDefaultStepConfig(input.stepId);
+        const field =
+          kind === "score" ? "scoreRuleTreatments" : "safetyRuleTreatments";
+        const treatment = {
+          ruleId: rule.id,
+          mode: input.mode,
+          reason: String(input.reason || "").trim(),
+          judgementItemId: input.judgementItemId || "",
+        };
+        const updatedStep = {
+          ...currentStep,
+          [field]: [
+            ...(currentStep[field] || []).filter(
+              (item) => item.ruleId !== rule.id,
+            ),
+            treatment,
+          ],
+        };
+        const updated = applyAiConfigMutation(
+          base,
+          {
+            stepConfigs: [
+              ...base.stepConfigs.filter(
+                (item) => item.stepId !== input.stepId,
+              ),
+              updatedStep,
+            ],
+          },
+          when,
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (item) => item.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "保存AI规则处理", `${sop.name} / ${rule.name}`);
+          return refreshAiCapabilityReferences(next);
+        });
+        return updated;
+      },
+      createAiLogicalArea(sopId, input) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || !isSopAvailableForNewArrangement(sop))
+          throw new Error("当前SOP不可配置。");
+        const name = String(input?.name || "").trim();
+        if (!name) throw new Error("请填写逻辑区域名称。");
+        const when = timestamp();
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        const base = existing
+          ? normalizeAiCapabilityConfig(existing)
+          : createEmptyAiCapabilityConfig(sopId, {
+              id: uid("ai-config"),
+              now: when,
+              actor: "系统管理员",
+            });
+        if (
+          base.logicalAreas.some(
+            (item) =>
+              item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+          )
+        )
+          throw new Error("逻辑区域名称已存在。");
+        const area = {
+          id: uid("logical-area"),
+          name,
+          description: String(input?.description || "").trim(),
+          createdAt: when,
+        };
+        const updated = applyAiConfigMutation(
+          base,
+          { logicalAreas: [...base.logicalAreas, area] },
+          when,
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (item) => item.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "新增AI逻辑区域", `${sopId} / ${name}`);
+          return refreshAiCapabilityReferences(next);
+        });
+        return area;
+      },
+      deleteAiLogicalArea(sopId, areaId) {
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        if (!existing) throw new Error("AI能力配置不存在。");
+        const base = normalizeAiCapabilityConfig(existing);
+        const area = base.logicalAreas.find((item) => item.id === areaId);
+        if (!area) throw new Error("逻辑区域不存在。");
+        if (
+          base.judgementItems.some((item) =>
+            (item.conditions || []).some(
+              (condition) => condition.logicalAreaId === areaId,
+            ),
+          )
+        )
+          throw new Error("该逻辑区域正在被判断条件引用，无法删除。");
+        const updated = applyAiConfigMutation(
+          base,
+          {
+            logicalAreas: base.logicalAreas.filter(
+              (item) => item.id !== areaId,
+            ),
+          },
+          timestamp(),
+        );
+        setData((current) =>
+          refreshAiCapabilityReferences({
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (item) => item.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          }),
+        );
+        return area;
+      },
+      saveAiJudgementItem(sopId, input) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        if (!sop || !isSopAvailableForNewArrangement(sop))
+          throw new Error("当前SOP不可配置。");
+        const when = timestamp();
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        const base = existing
+          ? normalizeAiCapabilityConfig(existing)
+          : createEmptyAiCapabilityConfig(sopId, {
+              id: uid("ai-config"),
+              now: when,
+              actor: "系统管理员",
+            });
+        const item = {
+          ...input,
+          id: input?.id || uid("ai-judgement"),
+          name: String(input?.name || "").trim(),
+          purposes: [...new Set(input?.purposes || [])],
+          scoreRuleIds: [...new Set(input?.scoreRuleIds || [])],
+          safetyRuleIds: [...new Set(input?.safetyRuleIds || [])],
+          combination: input?.combination || "all",
+          conditions: (input?.conditions || []).map((condition) => ({
+            ...condition,
+            id: condition.id || uid("ai-condition"),
+            minTargetCount: Math.max(1, Number(condition.minTargetCount || 1)),
+            minDurationSeconds: Math.max(
+              0,
+              Number(condition.minDurationSeconds || 0),
+            ),
+            minOccurrences: Math.max(1, Number(condition.minOccurrences || 1)),
+          })),
+          fallback:
+            "AI结果不可靠、摄像头异常或证据不足时，标记为不确定并转人工确认，不直接形成学生负向结果。",
+          updatedAt: when,
+        };
+        const issues = validateAiJudgementItem({
+          item,
+          sop,
+          capabilities: data.aiCapabilities || [],
+          logicalAreas: base.logicalAreas,
+        });
+        if (issues.length) throw new Error(issues[0]);
+        const updated = applyAiConfigMutation(
+          base,
+          {
+            judgementItems: [
+              ...base.judgementItems.filter((entry) => entry.id !== item.id),
+              item,
+            ],
+          },
+          when,
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (entry) => entry.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            input?.id ? "编辑AI判断项" : "新增AI判断项",
+            item.name,
+          );
+          return refreshAiCapabilityReferences(next);
+        });
+        return item;
+      },
+      deleteAiJudgementItem(sopId, itemId) {
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        if (!existing) throw new Error("AI能力配置不存在。");
+        const base = normalizeAiCapabilityConfig(existing);
+        const item = base.judgementItems.find((entry) => entry.id === itemId);
+        if (!item) throw new Error("AI判断项不存在。");
+        const stepConfigs = base.stepConfigs.map((step) => ({
+          ...step,
+          scoreRuleTreatments: (step.scoreRuleTreatments || []).map((entry) =>
+            entry.judgementItemId === itemId
+              ? { ...entry, judgementItemId: "" }
+              : entry,
+          ),
+          safetyRuleTreatments: (step.safetyRuleTreatments || []).map(
+            (entry) =>
+              entry.judgementItemId === itemId
+                ? { ...entry, judgementItemId: "" }
+                : entry,
+          ),
+        }));
+        const updated = applyAiConfigMutation(
+          base,
+          {
+            stepConfigs,
+            judgementItems: base.judgementItems.filter(
+              (entry) => entry.id !== itemId,
+            ),
+          },
+          timestamp(),
+        );
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (entry) => entry.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "删除AI判断项", item.name);
+          return refreshAiCapabilityReferences(next);
+        });
+        return item;
+      },
+      completeAiCapabilityConfig(sopId) {
+        const sop = data.sops.find((item) => item.id === sopId);
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        if (!sop || !existing) throw new Error("AI能力配置尚未开始。");
+        const updated = completeAiCapabilityConfig({
+          sop,
+          config: existing,
+          capabilities: data.aiCapabilities || [],
+          now: timestamp(),
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: [
+              updated,
+              ...(current.aiCapabilityConfigs || []).filter(
+                (item) => item.sopId !== sopId,
+              ),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "完成AI能力配置", sop.name);
+          return refreshAiCapabilityReferences(next);
+        });
+        return updated;
+      },
+      getSopWorkstationAiState(relationId) {
+        return getSopWorkstationContext(relationId);
+      },
+      addSopWorkstationAiConfig(sopId, workstationId) {
+        const aiConfig = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        const sop = (data.sops || []).find((item) => item.id === sopId);
+        const workstation = (data.workstations || []).find(
+          (item) => item.id === workstationId,
+        );
+        if (!aiConfig || !sop) throw new Error("请先完成当前SOP的AI能力配置。");
+        const evaluation = evaluateAiCapabilityConfig({
+          sop,
+          config: aiConfig,
+          capabilities: data.aiCapabilities || [],
+        });
+        if (!evaluation.ready || aiConfig.status === "configuring")
+          throw new Error("当前SOP的AI能力配置尚未完成。");
+        if (!workstation) throw new Error("所选工位不存在或已失效。");
+        if (
+          (data.sopWorkstationAiConfigs || []).some(
+            (item) =>
+              item.sopAiConfigId === aiConfig.id &&
+              item.workstationId === workstation.id,
+          )
+        )
+          throw new Error("当前SOP已经添加该工位。");
+        const now = timestamp();
+        const created = createSopWorkstationAiConfig({
+          id: uid("sop-workstation-ai"),
+          aiConfig,
+          workstation,
+          now,
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: [
+              created,
+              ...(current.sopWorkstationAiConfigs || []),
+            ],
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "添加SOP工位AI配置",
+            `${sop.name} / ${workstation.name}`,
+          );
+          return next;
+        });
+        return created;
+      },
+      saveSopWorkstationCameraBinding(relationId, judgementItemId, cameraId) {
+        const context = getSopWorkstationContext(relationId);
+        const updated = setJudgementCameraBinding({
+          config: context.relation,
+          judgementItemId,
+          cameraId,
+          workstation: context.workstation,
+          now: timestamp(),
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "调整判断项摄像头",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      saveSopWorkstationAreaMapping(relationId, input) {
+        const context = getSopWorkstationContext(relationId);
+        if (
+          !context.aiConfig.logicalAreas.some(
+            (area) => area.id === input?.logicalAreaId,
+          )
+        )
+          throw new Error("逻辑区域不存在或已删除。");
+        const updated = setLogicalAreaMapping({
+          config: context.relation,
+          logicalAreaId: input.logicalAreaId,
+          cameraId: input.cameraId,
+          rectangle: input.rectangle,
+          workstation: context.workstation,
+          now: timestamp(),
+        });
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "配置工位实际区域",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      startSopWorkstationValidation(relationId, environment) {
+        const context = getSopWorkstationContext(relationId);
+        if (!context.checks.ready)
+          throw new Error(context.checks.issues[0] || "工位配置检查尚未通过。");
+        const now = timestamp();
+        const cases = createDefaultValidationCases(
+          context.aiConfig,
+          (scenario) => uid(`validation-${scenario}`),
+        );
+        const updated = {
+          ...context.relation,
+          validationStatus: "validating",
+          validationStartedAt: now,
+          validationCases: cases,
+          validationEnvironment: {
+            lighting: String(environment?.lighting || "正常").trim(),
+            occlusion: String(environment?.occlusion || "无遮挡").trim(),
+            tester: String(environment?.tester || "系统管理员").trim(),
+            tools: String(environment?.tools || "").trim(),
+            note: String(environment?.note || "").trim(),
+          },
+          validationInvalidationReason: "",
+          updatedAt: now,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "开始工位现场验证",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      saveSopWorkstationValidationCase(relationId, caseId, input) {
+        const context = getSopWorkstationContext(relationId);
+        if (context.relation.validationStatus !== "validating")
+          throw new Error("当前不在现场验证执行中。");
+        const existingCase = context.relation.validationCases.find(
+          (item) => item.id === caseId,
+        );
+        if (!existingCase) throw new Error("验证案例不存在。");
+        if (!String(input?.actualResult || "").trim())
+          throw new Error("请记录系统实际结果。");
+        if (!["passed", "failed"].includes(input?.result))
+          throw new Error("请选择案例通过或不通过。");
+        const validItemIds = new Set(
+          context.checks.activeJudgementItems.map((item) => item.id),
+        );
+        const judgementItemIds = [
+          ...new Set(input.judgementItemIds || []),
+        ].filter((id) => validItemIds.has(id));
+        if (!judgementItemIds.length)
+          throw new Error("验证案例至少覆盖一个AI判断项。");
+        const updatedCase = {
+          ...existingCase,
+          judgementItemIds,
+          actualResult: String(input.actualResult).trim(),
+          result: input.result,
+          note: String(input.note || "").trim(),
+          executedAt: timestamp(),
+        };
+        const updated = {
+          ...context.relation,
+          validationCases: context.relation.validationCases.map((item) =>
+            item.id === caseId ? updatedCase : item,
+          ),
+          updatedAt: timestamp(),
+        };
+        setData((current) => ({
+          ...current,
+          sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+            (item) => (item.id === relationId ? updated : item),
+          ),
+        }));
+        return updatedCase;
+      },
+      completeSopWorkstationValidation(relationId) {
+        const context = getSopWorkstationContext(relationId);
+        if (context.relation.validationStatus !== "validating")
+          throw new Error("请先开始现场验证并执行验证案例。");
+        const result = evaluateValidationCompletion({
+          aiConfig: context.aiConfig,
+          cases: context.relation.validationCases,
+          checks: context.checks,
+        });
+        const now = timestamp();
+        const record = {
+          id: uid("validation-record"),
+          sopWorkstationConfigId: relationId,
+          validatedBy:
+            context.relation.validationEnvironment.tester || "系统管理员",
+          startedAt: context.relation.validationStartedAt || now,
+          completedAt: now,
+          overallResult: result.passed ? "passed" : "failed",
+          environment: { ...context.relation.validationEnvironment },
+          cases: context.relation.validationCases.map((item) => ({ ...item })),
+          coverage: result.coverage,
+          summary: {
+            caseCount: context.relation.validationCases.length,
+            passedCount: result.passedCount,
+            failedCount: result.failedCount,
+          },
+        };
+        const updated = {
+          ...context.relation,
+          validationStatus: result.passed ? "passed" : "failed",
+          lastValidatedAt: now,
+          lastValidatedBy: record.validatedBy,
+          validationRecords: [
+            record,
+            ...(context.relation.validationRecords || []),
+          ],
+          updatedAt: now,
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            aiCapabilityConfigs: current.aiCapabilityConfigs.map((config) =>
+              config.id === context.aiConfig.id
+                ? {
+                    ...config,
+                    workstationValidationStates: [
+                      ...(config.workstationValidationStates || []).filter(
+                        (item) => item.workstationId !== context.workstation.id,
+                      ),
+                      {
+                        workstationId: context.workstation.id,
+                        status: result.passed ? "validated" : "failed",
+                        updatedAt: now,
+                      },
+                    ],
+                  }
+                : config,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            result.passed ? "工位现场验证通过" : "工位现场验证不通过",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        if (!result.passed)
+          throw new Error(result.issues[0] || "现场验证未通过。");
+        return { updated, record, result };
+      },
+      enableSopWorkstationAi(relationId) {
+        const context = getSopWorkstationContext(relationId);
+        if (context.relation.validationStatus !== "passed")
+          throw new Error("只有现场验证通过后才能启用AI评价。");
+        if (!context.checks.ready)
+          throw new Error(context.checks.issues[0] || "当前配置不可启用。");
+        const updated = {
+          ...context.relation,
+          enableStatus: "enabled",
+          enabledAt: timestamp(),
+          updatedAt: timestamp(),
+        };
+        setData((current) => {
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            aiCapabilityConfigs: current.aiCapabilityConfigs.map((config) =>
+              config.id === context.aiConfig.id
+                ? {
+                    ...config,
+                    status: "enabled",
+                    workstationValidationStates: [
+                      ...(config.workstationValidationStates || []).filter(
+                        (item) => item.workstationId !== context.workstation.id,
+                      ),
+                      {
+                        workstationId: context.workstation.id,
+                        status: "enabled",
+                        updatedAt: updated.updatedAt,
+                      },
+                    ],
+                  }
+                : config,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "启用工位AI评价",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      disableSopWorkstationAi(relationId) {
+        const context = getSopWorkstationContext(relationId);
+        const updated = {
+          ...context.relation,
+          enableStatus: "disabled",
+          disabledAt: timestamp(),
+          updatedAt: timestamp(),
+        };
+        setData((current) => {
+          const remainingEnabled = current.sopWorkstationAiConfigs.some(
+            (item) =>
+              item.id !== relationId &&
+              item.sopAiConfigId === context.aiConfig.id &&
+              item.enableStatus === "enabled",
+          );
+          const next = {
+            ...current,
+            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
+              (item) => (item.id === relationId ? updated : item),
+            ),
+            aiCapabilityConfigs: current.aiCapabilityConfigs.map((config) =>
+              config.id === context.aiConfig.id
+                ? {
+                    ...config,
+                    status: remainingEnabled ? "enabled" : "pending_validation",
+                    workstationValidationStates: [
+                      ...(config.workstationValidationStates || []).filter(
+                        (item) => item.workstationId !== context.workstation.id,
+                      ),
+                      {
+                        workstationId: context.workstation.id,
+                        status: "disabled",
+                        updatedAt: updated.updatedAt,
+                      },
+                    ],
+                  }
+                : config,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(
+            next,
+            "停用工位AI评价",
+            `${context.sop.name} / ${context.workstation.name}`,
+          );
+          return next;
+        });
+        return updated;
+      },
+      clearAiCapabilityConfig(sopId) {
+        const existing = (data.aiCapabilityConfigs || []).find(
+          (item) => item.sopId === sopId,
+        );
+        if (!existing) throw new Error("当前SOP尚未创建AI能力配置。");
+        const sop = data.sops.find((item) => item.id === sopId);
+        setData((current) => {
+          const next = {
+            ...current,
+            aiCapabilityConfigs: (current.aiCapabilityConfigs || []).filter(
+              (item) => item.sopId !== sopId,
+            ),
+            auditLogs: [...current.auditLogs],
+          };
+          addAuditLog(next, "清空AI能力配置", sop?.name || sopId);
+          return refreshAiCapabilityReferences(next);
+        });
+        return existing;
       },
 
       createAiCapability(input) {
@@ -5161,6 +6479,14 @@ export function PrototypeDataProvider({ children }) {
           },
         );
         setData((current) => {
+          const invalidatedWorkstations = published.record.replacedExistingModel
+            ? invalidateSopWorkstationConfigs(
+                current.sopWorkstationAiConfigs,
+                (item) => affectedConfigIds.includes(item.sopAiConfigId),
+                now,
+                `引用的AI能力“${capability.name}”已重新发布当前模型`,
+              )
+            : { configs: current.sopWorkstationAiConfigs };
           const next = {
             ...current,
             aiCapabilities: (current.aiCapabilities || []).map((item) =>
@@ -5177,6 +6503,7 @@ export function PrototypeDataProvider({ children }) {
               published.event,
               ...(current.aiCapabilityModelEvents || []),
             ],
+            sopWorkstationAiConfigs: invalidatedWorkstations.configs,
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -5222,6 +6549,10 @@ export function PrototypeDataProvider({ children }) {
           lastTestAt: "未检测",
           updatedAt: timestamp(),
         };
+        if (isCameraDevice(created)) {
+          created.streamStatus = "不可用";
+          created.resolution = input.resolution || "1920 × 1080";
+        }
         setData((current) => {
           const next = {
             ...current,
@@ -5258,15 +6589,82 @@ export function PrototypeDataProvider({ children }) {
           serial,
           updatedAt: timestamp(),
         };
+        const criticalDeviceChange = [
+          "serial",
+          "type",
+          "workstationId",
+          "address",
+          "resolution",
+        ].some((key) => (existing[key] || "") !== (updated[key] || ""));
+        const affectedWorkstationIds = criticalDeviceChange
+          ? data.workstations
+              .filter((workstation) => {
+                const config = normalizeWorkstationAiBaseConfig(workstation);
+                return [
+                  config.primaryCameraId,
+                  config.fallbackCameraId,
+                  config.edgeDeviceId,
+                ].includes(existing.id);
+              })
+              .map((workstation) => workstation.id)
+          : [];
         setData((current) => {
+          const now = timestamp();
+          let aiCapabilityConfigs = current.aiCapabilityConfigs;
+          let sopWorkstationAiConfigs = current.sopWorkstationAiConfigs;
+          let affectedCount = 0;
+          for (const workstationId of affectedWorkstationIds) {
+            const invalidated = invalidateWorkstationValidationStates(
+              aiCapabilityConfigs,
+              workstationId,
+              now,
+            );
+            aiCapabilityConfigs = invalidated.configs;
+            affectedCount += invalidated.affectedCount;
+            const invalidatedSopConfigs = invalidateSopWorkstationConfigs(
+              sopWorkstationAiConfigs,
+              (item) => item.workstationId === workstationId,
+              now,
+              "工位摄像头或边缘设备关键信息发生变化",
+            );
+            sopWorkstationAiConfigs = invalidatedSopConfigs.configs;
+            affectedCount = Math.max(
+              affectedCount,
+              invalidatedSopConfigs.affectedCount,
+            );
+          }
           const next = {
             ...current,
             devices: current.devices.map((item) =>
               item.id === id ? updated : item,
             ),
+            workstations: current.workstations.map((workstation) =>
+              affectedWorkstationIds.includes(workstation.id)
+                ? {
+                    ...workstation,
+                    aiBaseConfig: {
+                      ...normalizeWorkstationAiBaseConfig(workstation),
+                      lastCheckedAt: now,
+                      updatedAt: now,
+                      lastAiCriticalChangeAt: now,
+                    },
+                    updatedAt: now,
+                  }
+                : workstation,
+            ),
+            aiCapabilityConfigs,
+            sopWorkstationAiConfigs,
             auditLogs: [...current.auditLogs],
           };
-          addAuditLog(next, "编辑设备", `${updated.name} / ${updated.type}`);
+          addAuditLog(
+            next,
+            affectedWorkstationIds.length
+              ? "编辑设备并触发工位复核"
+              : "编辑设备",
+            `${updated.name} / ${updated.type}`,
+            "成功",
+            { affectedWorkstationIds, affectedAiConfigCount: affectedCount },
+          );
           return next;
         });
         return updated;
@@ -5292,6 +6690,7 @@ export function PrototypeDataProvider({ children }) {
                 ? {
                     ...item,
                     status: "在线",
+                    ...(isCameraDevice(item) ? { streamStatus: "可用" } : {}),
                     lastHeartbeat: when,
                     lastTestAt: when,
                     updatedAt: when,

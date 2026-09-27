@@ -5,6 +5,7 @@ import {
   AI_CONFIG_PATH,
   AI_LIBRARY_PATH,
   AI_LIBRARY_SECTIONS,
+  deriveSopAiConfigurationSummary,
   getConfigurableSops,
 } from "../src/aiEntry.js";
 
@@ -89,4 +90,147 @@ test("capability detail and edit routes retain a real capability ID in later wor
     appSource,
     /\?capabilityId=\$\{encodeURIComponent\(capability\.id\)\}/,
   );
+});
+
+function summaryFixture() {
+  const sop = {
+    id: "sop-1",
+    status: "已发布",
+    steps: [
+      {
+        id: "step-1",
+        expectedJudgementMode: "visual_auto",
+        completionCondition: "确认手套已佩戴",
+      },
+    ],
+    scoreRules: [],
+    safetyRules: [],
+  };
+  const capability = {
+    id: "cap-1",
+    type: "object_detection",
+    status: "已发布",
+    currentModelStatus: "已发布",
+    currentPublishedModel: { modelArtifactId: "artifact-1" },
+  };
+  const config = {
+    id: "config-1",
+    sopId: sop.id,
+    status: "pending_validation",
+    logicalAreas: [],
+    stepConfigs: [{ stepId: "step-1", actualEvaluationMode: "visual_auto" }],
+    judgementItems: [
+      {
+        id: "item-1",
+        stepId: "step-1",
+        name: "手套佩戴成立",
+        purposes: ["completion"],
+        scoreRuleIds: [],
+        safetyRuleIds: [],
+        combination: "all",
+        conditions: [
+          {
+            id: "condition-1",
+            capabilityId: capability.id,
+            operator: "appears",
+            logicalAreaId: "",
+            minTargetCount: 1,
+            minDurationSeconds: 1,
+            minOccurrences: 1,
+          },
+        ],
+      },
+    ],
+  };
+  const workstation = {
+    id: "w1",
+    status: "可入场",
+    aiBaseConfig: { primaryCameraId: "cam-1", edgeDeviceId: "edge-1" },
+  };
+  const devices = [
+    {
+      id: "cam-1",
+      workstationId: "w1",
+      type: "全景摄像头",
+      status: "在线",
+      streamStatus: "可用",
+    },
+    {
+      id: "edge-1",
+      workstationId: "w1",
+      type: "边缘工作站",
+      status: "在线",
+    },
+  ];
+  const relation = {
+    id: "relation-1",
+    sopAiConfigId: config.id,
+    workstationId: workstation.id,
+    judgementCameraBindings: [{ judgementItemId: "item-1", cameraId: "cam-1" }],
+    logicalAreaMappings: [],
+    validationStatus: "passed",
+    enableStatus: "enabled",
+  };
+  return { sop, capability, config, workstation, devices, relation };
+}
+
+test("teacher SOP AI status derives from new config and workstation validation IDs", () => {
+  const { sop, capability, config, workstation, devices, relation } =
+    summaryFixture();
+  const enabled = deriveSopAiConfigurationSummary({
+    sop,
+    config,
+    workstationConfigs: [relation],
+    workstations: [workstation],
+    devices,
+    capabilities: [capability],
+  });
+  assert.equal(enabled.status, "已启用");
+  assert.equal(enabled.judgementItemCount, 1);
+  assert.equal(enabled.capabilityCount, 1);
+  assert.equal(enabled.runnableWorkstationCount, 1);
+
+  const pending = deriveSopAiConfigurationSummary({
+    sop,
+    config,
+    workstationConfigs: [
+      { ...relation, validationStatus: "pending_revalidation" },
+    ],
+    workstations: [workstation],
+    devices,
+    capabilities: [capability],
+  });
+  assert.equal(pending.status, "待验证");
+  assert.equal(pending.runnableWorkstationCount, 0);
+});
+
+test("teacher SOP AI status is defensive for drafts, missing config and invalid references", () => {
+  const { sop, capability, config, devices, relation } = summaryFixture();
+  assert.equal(
+    deriveSopAiConfigurationSummary({ sop: { ...sop, status: "草稿" } }).status,
+    "—",
+  );
+  assert.equal(deriveSopAiConfigurationSummary({ sop }).status, "未配置");
+  const missingWorkstation = deriveSopAiConfigurationSummary({
+    sop,
+    config,
+    workstationConfigs: [relation],
+    workstations: [],
+    devices,
+    capabilities: [capability],
+  });
+  assert.equal(missingWorkstation.status, "待验证");
+  assert.equal(missingWorkstation.runtimeStates[0].runtime.label, "工位异常");
+});
+
+test("formal teacher SOP pages no longer read or link the legacy mapping model", () => {
+  const formalTeacherPages = appSource
+    .split("function SopList()")[1]
+    ?.split("function SopEditor(")[0];
+  assert.ok(formalTeacherPages);
+  assert.match(formalTeacherPages, /getSopAiConfigurationSummary/);
+  assert.match(formalTeacherPages, /judgementItems/);
+  assert.doesNotMatch(formalTeacherPages, /getSopAiEvaluationStatus/);
+  assert.doesNotMatch(formalTeacherPages, /evaluationMappings/);
+  assert.doesNotMatch(formalTeacherPages, /\/ai-mapping\//);
 });

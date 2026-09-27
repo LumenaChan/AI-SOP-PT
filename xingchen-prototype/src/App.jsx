@@ -1,4 +1,5 @@
 import {
+  createRef,
   Fragment,
   forwardRef,
   useEffect,
@@ -68,6 +69,7 @@ import {
   AI_CONFIG_PATH,
   AI_LIBRARY_PATH,
   AI_LIBRARY_SECTIONS,
+  deriveSopAiConfigurationSummary,
   getConfigurableSops,
 } from "./aiEntry.js";
 import {
@@ -135,7 +137,38 @@ import {
   buildPublicationReadiness,
   canReactivateCapabilityModel,
   getCurrentCandidateTask,
+  isCapabilityAvailableForConfiguration,
 } from "./aiModelPublishingRules.js";
+import {
+  ACTION_RECOGNITION_OPERATORS,
+  AI_ACTUAL_EVALUATION_MODES,
+  AI_CONDITION_COMBINATIONS,
+  AI_JUDGEMENT_PURPOSES,
+  allowedActualEvaluationModes,
+  evaluateAiCapabilityConfig,
+  FIXED_AI_FALLBACK,
+  isEvaluationModeDowngraded,
+  normalizeAiCapabilityConfig,
+  OBJECT_DETECTION_OPERATORS,
+} from "./aiCapabilityConfigRules.js";
+import {
+  deriveWorkstationAiReadiness,
+  isCameraDevice,
+  isCriticalWorkstationAiChange,
+  isEdgeDevice,
+  normalizeWorkstationAiBaseConfig,
+} from "./workstationAiRules.js";
+import {
+  buildValidationCoverage as buildSopWorkstationValidationCoverage,
+  checkSopWorkstationAiConfig,
+  deriveSopWorkstationRuntimeStatus,
+  isWorkstationSelectable,
+  normalizeSopWorkstationAiConfig,
+  requiredLogicalAreas,
+  VALIDATION_SCENARIOS,
+  WORKSTATION_ENABLE_STATUSES,
+  WORKSTATION_VALIDATION_STATUSES,
+} from "./sopWorkstationAiRules.js";
 import {
   automaticEvaluationGate,
   ACTOR_BINDING_STATUSES,
@@ -155,7 +188,6 @@ import {
   FIELD_VALIDATION_SCENARIOS,
   getAiPackageCreationReadiness,
   getExamPublishGate,
-  getStepAiCapabilityDisplay,
   isSopAvailableForNewArrangement,
   INCOMPLETE_POLICIES,
   JUDGEMENT_MODES,
@@ -198,6 +230,20 @@ const adminNav = [
   ["备份与恢复", "/admin/backups", <DatabaseOutlined />],
   ["操作日志", "/admin/logs", <HistoryOutlined />],
 ];
+
+function getSopAiConfigurationSummary(data, sop) {
+  const config = (data.aiCapabilityConfigs || []).find(
+    (item) => item.sopId === sop?.id,
+  );
+  return deriveSopAiConfigurationSummary({
+    sop,
+    config,
+    workstationConfigs: data.sopWorkstationAiConfigs,
+    workstations: data.workstations,
+    devices: data.devices,
+    capabilities: data.aiCapabilities,
+  });
+}
 
 const stations = [
   {
@@ -2232,7 +2278,7 @@ const RuntimeIncidentForm = forwardRef(function RuntimeIncidentForm(_, ref) {
           checked={affectsContinuation}
           onChange={(event) => setAffectsContinuation(event.target.checked)}
         />
-        异常阻碍学生继续操作，需要暂停Session与Evaluation Clock
+        异常阻碍学生继续操作，需要暂停当前会话与评价计时
       </label>
       <label className="field">
         现场说明
@@ -2289,9 +2335,9 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
     setModal({ title, content: <p>{content}</p>, confirmText, onConfirm });
   const setActor = (status) =>
     confirmAction(
-      "更新Primary Actor绑定",
+      "更新主操作人绑定",
       status === "confirmed"
-        ? "确认当前学生重新成为唯一Primary Actor，并恢复因重新绑定导致的暂停。"
+        ? "确认当前学生重新成为唯一主操作人，并恢复因重新绑定导致的暂停。"
         : "该状态会阻止新的负向自动评价；丢失时同时暂停会话并生成技术异常。",
       "确认更新",
       () => {
@@ -2299,14 +2345,14 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
           arrangement.id,
           session.workstationId,
           status,
-          "Runtime Simulator操作",
+          "运行模拟操作",
         );
         return `人员绑定已更新为${ACTOR_BINDING_STATUSES[status]}`;
       },
     );
   const openIncident = () =>
     setModal({
-      title: "记录Technical Incident",
+      title: "记录技术异常",
       content: <RuntimeIncidentForm ref={incidentRef} />,
       confirmText: "记录异常",
       onConfirm: () => {
@@ -2321,23 +2367,22 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
   return (
     <section className="panel runtime-simulator">
       <PanelTitle
-        title="Runtime Simulator（原型）"
+        title="运行状态模拟（原型）"
         action={<span>第三批运行闭环验证</span>}
       />
       <p className="hint">
-        用于演示真实业务状态变化。Machine Event只形成机器事实，必须经Evaluation
-        Item映射后才影响步骤；安全候选与技术异常均不直接自动处罚。
+        用于演示真实业务状态变化。AI观察事实必须经判断条件形成AI判断项结果后才影响步骤；安全候选与技术异常均不直接自动处罚。
       </p>
       <div className="runtime-status-grid">
         <article>
-          <small>Primary Actor</small>
+          <small>主操作人</small>
           <strong>
             {ACTOR_BINDING_STATUSES[actor.status] || actor.status || "未建立"}
           </strong>
           <span>{actor.trackId || "无有效Track"}</span>
         </article>
         <article>
-          <small>Evaluation Clock</small>
+          <small>评价计时</small>
           <strong>{session.elapsed}</strong>
           <span>
             墙钟 {Math.floor(Number(clock.wallSeconds || 0) / 60)}分 · 暂停{" "}
@@ -2345,14 +2390,14 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
           </span>
         </article>
         <article>
-          <small>Step Execution</small>
+          <small>步骤执行</small>
           <strong>
             {STEP_EXECUTION_STATES[currentStep?.executionState] || "无活动步骤"}
           </strong>
           <span>窗口 {currentStep?.observationWindow?.status || "—"}</span>
         </article>
         <article>
-          <small>Completion Result</small>
+          <small>完成结果</small>
           <strong>
             {COMPLETION_RESULTS[currentStep?.completionResult] || "尚未形成"}
           </strong>
@@ -2396,7 +2441,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
                 disabled={session.status !== "进行中"}
                 onClick={() =>
                   confirmAction(
-                    "模拟Machine Event",
+                    "模拟AI观察事实",
                     `${event.name}：${event.factDefinition}`,
                     "确认产生事实",
                     () => {
@@ -2416,7 +2461,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
               </Button>
             ))
           ) : (
-            <span className="hint">当前步骤无已确认Mapping事件</span>
+            <span className="hint">当前步骤没有可模拟的AI观察事实</span>
           )}
         </div>
         <div>
@@ -2426,7 +2471,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
             onClick={() =>
               confirmAction(
                 "模拟规则违规",
-                "开启Correction Context；后续纠正动作不会被当作普通重复操作再次处罚。",
+                "开启纠正过程；后续纠正动作不会被当作普通重复操作再次处罚。",
                 "进入纠正",
                 () => {
                   store.setCorrectionContext(
@@ -2447,7 +2492,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
             onClick={() =>
               confirmAction(
                 "完成纠正",
-                "按教师预先定义的纠正后处理计算，不在Runtime中自创扣分。",
+                "按教师预先定义的纠正后处理计算，不在运行阶段自创扣分。",
                 "确认纠正",
                 () => {
                   store.setCorrectionContext(
@@ -2455,7 +2500,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
                     session.workstationId,
                     "complete",
                   );
-                  return "纠正结果已按Score Rule处理";
+                  return "纠正结果已按教师评分规则处理";
                 },
               )
             }
@@ -2497,7 +2542,7 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
                 onClick={() =>
                   confirmAction(
                     "确认安全违规",
-                    "确认后仅按教师已定义的Safety Rule处理成绩与Session，不因暂停本身处罚。",
+                    "确认后仅按教师已定义的安全规则处理成绩与会话，不因暂停本身处罚。",
                     "确认违规",
                     () => {
                       store.resolveSafetyCandidate(
@@ -2538,20 +2583,19 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
       </div>
       <div className="runtime-ledger">
         <span>
-          Machine Events <b>{runtime.machineEvents?.length || 0}</b>
+          AI观察事实 <b>{runtime.machineEvents?.length || 0}</b>
         </span>
         <span>
-          Evaluation Item Results{" "}
-          <b>{runtime.evaluationItemResults?.length || 0}</b>
+          AI判断项结果 <b>{runtime.evaluationItemResults?.length || 0}</b>
         </span>
         <span>
-          Technical Incidents <b>{runtime.technicalIncidents?.length || 0}</b>
+          技术异常 <b>{runtime.technicalIncidents?.length || 0}</b>
         </span>
         <span>
-          Safety Candidates <b>{runtime.safetyCandidates?.length || 0}</b>
+          安全候选 <b>{runtime.safetyCandidates?.length || 0}</b>
         </span>
         <span>
-          Assistance Warnings <b>{runtime.assistanceWarnings?.length || 0}</b>
+          协助提醒 <b>{runtime.assistanceWarnings?.length || 0}</b>
         </span>
       </div>
     </section>
@@ -3529,7 +3573,7 @@ function SopList() {
     [statusFilter, setStatusFilter] = useState("全部"),
     [aiFilter, setAiFilter] = useState("全部");
   const visible = data.sops.filter((sop) => {
-    const aiStatus = store.getSopAiEvaluationStatus(sop.id).status;
+    const aiStatus = getSopAiConfigurationSummary(data, sop).status;
     return (
       (tab === "school" || sop.owner === "王老师") &&
       (statusFilter === "全部" || sop.status === statusFilter) &&
@@ -3545,7 +3589,7 @@ function SopList() {
     sop.owner,
     sop.status,
     `${(sop.steps || []).length} 步`,
-    store.getSopAiEvaluationStatus(sop.id).status,
+    getSopAiConfigurationSummary(data, sop).status,
     sop.updatedAt,
   ]);
   return (
@@ -3611,7 +3655,7 @@ function SopList() {
               value={aiFilter}
               onChange={(event) => setAiFilter(event.target.value)}
             >
-              {["全部", "—", "未配置", "配置中", "部分可用", "可用"].map(
+              {["全部", "—", "未配置", "配置中", "待验证", "已启用"].map(
                 (item) => (
                   <option key={item}>{item}</option>
                 ),
@@ -3816,10 +3860,8 @@ function SopDetail({ setModal }) {
     { id } = useParams(),
     store = usePrototypeData();
   const sop = store.data.sops.find((item) => item.id === id);
-  const aiStatus = store.getSopAiEvaluationStatus(sop?.id);
-  const mappingStatus =
-    aiStatus.mappingStatus || store.getSopMappingStatus(sop?.id);
-  const mapping = mappingStatus.mapping;
+  const aiSummary = getSopAiConfigurationSummary(store.data, sop);
+  const aiConfig = aiSummary.config;
   const [tab, setTab] = useState("overview");
   const [selectedStep, setSelectedStep] = useState(0);
   const activeStep = sop?.steps[selectedStep] || sop?.steps[0];
@@ -3958,10 +4000,10 @@ function SopDetail({ setModal }) {
         />
         <Metric
           label="AI评价"
-          value={aiStatus.status}
+          value={aiSummary.status}
           hint="与SOP发布相互独立"
           icon={<VideoCameraOutlined />}
-          tone={aiStatus.status === "可用" ? "success" : "warning"}
+          tone={aiSummary.status === "已启用" ? "success" : "warning"}
         />
       </div>
       <div className="tabs sop-detail-tabs" role="tablist" aria-label="SOP详情">
@@ -4112,42 +4154,34 @@ function SopDetail({ setModal }) {
           <div className="ai-capability-hero">
             <div>
               <small>当前实际 AI评价能力</small>
-              <h2>{aiStatus.status}</h2>
+              <h2>{aiSummary.status}</h2>
               <p>
                 当前 {sop.steps.length} 个步骤中，
                 {judgementCounts.visual_auto || 0} 个期望自动评价，
                 {judgementCounts.visual_assist_default_pass || 0}{" "}
                 个期望AI辅助评价，
                 {judgementCounts.default_pass_manual_deduction || 0}{" "}
-                个由教师评价。教师选择表示业务期望，不代表系统已经具备能力。
+                个由教师评价。教师选择表示业务期望；具体AI判断由管理员在AI能力配置中完成。
               </p>
             </div>
             <div className="inline-actions">
-              <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>
-                {aiStatus.status}
+              <Status
+                tone={aiSummary.status === "已启用" ? "success" : "warning"}
+              >
+                {aiSummary.status}
               </Status>
-              {mapping?.status === "pending_teacher_confirmation" && (
-                <Button
-                  type="primary"
-                  onClick={() =>
-                    nav(`/teacher/sop/${sop.id}/ai-mapping/${mapping.id}`)
-                  }
-                >
-                  确认AI业务口径
-                </Button>
-              )}
             </div>
           </div>
           <div className="definition-list ai-capability-summary">
             <span>
-              <small>业务口径状态</small>
-              <strong>{mappingStatus.status}</strong>
+              <small>AI能力配置</small>
+              <strong>{aiSummary.status}</strong>
             </span>
             <span>
               <small>完成判断项</small>
               <strong>
-                {mapping?.evaluationItems?.filter((item) =>
-                  item.roles?.includes("completion"),
+                {aiConfig?.judgementItems?.filter((item) =>
+                  item.purposes?.includes("completion"),
                 ).length || 0}{" "}
                 项
               </strong>
@@ -4155,8 +4189,8 @@ function SopDetail({ setModal }) {
             <span>
               <small>评分依据项</small>
               <strong>
-                {mapping?.evaluationItems?.filter((item) =>
-                  item.roles?.includes("scoring"),
+                {aiConfig?.judgementItems?.filter((item) =>
+                  item.purposes?.includes("scoring"),
                 ).length || 0}{" "}
                 项
               </strong>
@@ -4164,10 +4198,21 @@ function SopDetail({ setModal }) {
             <span>
               <small>安全提醒项</small>
               <strong>
-                {mapping?.evaluationItems?.filter((item) =>
-                  item.roles?.includes("safety"),
+                {aiConfig?.judgementItems?.filter((item) =>
+                  item.purposes?.includes("safety"),
                 ).length || 0}{" "}
                 项
+              </strong>
+            </span>
+            <span>
+              <small>引用AI能力</small>
+              <strong>{aiSummary.capabilityCount} 个</strong>
+            </span>
+            <span>
+              <small>工位运行</small>
+              <strong>
+                {aiSummary.runnableWorkstationCount}/
+                {aiSummary.workstationCount} 个可运行
               </strong>
             </span>
           </div>
@@ -4177,14 +4222,31 @@ function SopDetail({ setModal }) {
             rows={sop.steps.map((step) => {
               const expectedMode =
                 step.expectedJudgementMode || step.judgementMode;
-              const configured =
-                JUDGEMENT_MODES[expectedMode]?.label || "未配置";
-              const { actual, reason } = getStepAiCapabilityDisplay({
-                expectedMode,
-                aiStatus: aiStatus.status,
-                mappingConfirmed: mappingStatus.status === "已确认",
-              });
-              return [`${step.id} · ${step.name}`, configured, actual, reason];
+              const expected = JUDGEMENT_MODES[expectedMode]?.label || "未配置";
+              const stepConfig = aiConfig?.stepConfigs?.find(
+                (item) => item.stepId === step.id,
+              );
+              const items = (aiConfig?.judgementItems || []).filter(
+                (item) => item.stepId === step.id,
+              );
+              const capabilityCount = new Set(
+                items.flatMap((item) =>
+                  (item.conditions || [])
+                    .map((condition) => condition.capabilityId)
+                    .filter(Boolean),
+                ),
+              ).size;
+              const actual = stepConfig?.actualEvaluationMode
+                ? AI_ACTUAL_EVALUATION_MODES[stepConfig.actualEvaluationMode] ||
+                  "未配置"
+                : "未配置";
+              const reason = items.length
+                ? `${items.length} 个AI判断项 · 引用 ${capabilityCount} 个AI能力`
+                : stepConfig?.actualEvaluationMode ===
+                    "default_pass_manual_deduction"
+                  ? stepConfig.downgradeReason || "由教师依据SOP标准评价"
+                  : "尚未形成可用的AI判断配置";
+              return [`${step.id} · ${step.name}`, expected, actual, reason];
             })}
           />
         </section>
@@ -6295,28 +6357,28 @@ function PrepPage({ exam = false, setModal }) {
       </div>
       {arrangement.snapshot && (
         <section className="panel evaluation-snapshot-panel">
-          <PanelTitle title="Evaluation Snapshot" action={<LockOutlined />} />
+          <PanelTitle title="本次运行快照" action={<LockOutlined />} />
           <div className="version-binding">
             <span>
-              <small>Mapping</small>
-              <b>{arrangement.snapshot.mappingVersion || "未确认"}</b>
+              <small>AI能力配置</small>
+              <b>{arrangement.snapshot.mappingVersion ? "已锁定" : "未配置"}</b>
             </span>
             <span>
-              <small>AI Package</small>
+              <small>当前已发布模型</small>
               <b>
                 {arrangement.snapshot.aiPackageVersion ||
-                  arrangement.snapshot.modelVersion ||
-                  "未启用"}
+                arrangement.snapshot.modelVersion
+                  ? "已锁定"
+                  : "未启用"}
               </b>
             </span>
             <span>
-              <small>Compatibility Decision</small>
-              <b>{arrangement.snapshot.compatibilityDecisionId || "未使用"}</b>
+              <small>快照时间</small>
+              <b>{arrangement.snapshot.lockedAt || "已锁定"}</b>
             </span>
           </div>
           <p className="hint">
-            每个已开放工位还会独立锁定 Workstation Profile
-            与现场验证记录；后续调整不追溯改写本次运行证据。
+            每个已开放工位还会独立锁定当前工位AI配置与现场验证记录；后续调整不追溯改写本次运行证据。
           </p>
         </section>
       )}
@@ -8071,34 +8133,975 @@ function TeacherMappingReview({ setModal }) {
   );
 }
 
+const AI_CONFIG_STEP_STATUSES = {
+  unconfigured: "未配置",
+  configuring: "配置中",
+  complete: "已完成",
+  no_ai: "无需AI",
+};
+
+const AI_CONFIG_FLOW_TREATMENTS = {
+  allow: "允许继续",
+  teacher_review: "转教师确认",
+  record_only: "仅记录",
+  terminate: "终止本次评价",
+};
+
+function aiExpectedModeLabel(step) {
+  return (
+    AI_ACTUAL_EVALUATION_MODES[
+      step?.expectedJudgementMode || step?.judgementMode
+    ] || "未设置"
+  );
+}
+
+const AiLogicalAreaForm = forwardRef(function AiLogicalAreaForm(_, ref) {
+  const [form, setForm] = useState({ name: "", description: "" });
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  return (
+    <div className="form-stack">
+      <label className="field">
+        区域名称 <b className="required">必填</b>
+        <input
+          value={form.name}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, name: event.target.value }))
+          }
+          placeholder="例如：工具放置区"
+        />
+      </label>
+      <label className="field">
+        区域说明
+        <textarea
+          value={form.description}
+          onChange={(event) =>
+            setForm((current) => ({
+              ...current,
+              description: event.target.value,
+            }))
+          }
+          placeholder="说明该区域在业务中的用途。本轮不配置摄像头坐标。"
+        />
+      </label>
+    </div>
+  );
+});
+
+function defaultAiCondition(capability) {
+  return {
+    id: "",
+    capabilityId: capability?.id || "",
+    operator:
+      capability?.type === "action_recognition" ? "recognized" : "appears",
+    logicalAreaId: "",
+    minTargetCount: 1,
+    minDurationSeconds: 0,
+    minOccurrences: 1,
+    withinCurrentStep: true,
+  };
+}
+
+const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
+  { initial, step, capabilities, logicalAreas },
+  ref,
+) {
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const firstCapability = capabilities[0];
+  const [form, setForm] = useState(() =>
+    initial
+      ? JSON.parse(JSON.stringify(initial))
+      : {
+          id: "",
+          stepId: step.id,
+          name: "",
+          purposes: ["completion"],
+          scoreRuleIds: [],
+          safetyRuleIds: [],
+          combination: "all",
+          conditions: firstCapability
+            ? [defaultAiCondition(firstCapability)]
+            : [],
+        },
+  );
+  useImperativeHandle(ref, () => ({ getValue: () => form }));
+  const update = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const toggle = (key, value) =>
+    update(
+      key,
+      (form[key] || []).includes(value)
+        ? form[key].filter((item) => item !== value)
+        : [...(form[key] || []), value],
+    );
+  const visibleCapabilities = capabilities.filter(
+    (capability) =>
+      (!query.trim() ||
+        `${capability.name} ${capability.targetName} ${capability.description}`
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase())) &&
+      (!typeFilter || capability.type === typeFilter),
+  );
+  const updateCondition = (index, patchValue) =>
+    update(
+      "conditions",
+      form.conditions.map((condition, currentIndex) =>
+        currentIndex === index ? { ...condition, ...patchValue } : condition,
+      ),
+    );
+  const scoreRules = (step.scoreRules || []).filter(Boolean);
+  const safetyRules = (step.safetyRules || []).filter(Boolean);
+  return (
+    <div className="form-stack ai-judgement-form">
+      <label className="field">
+        判断项名称 <b className="required">必填</b>
+        <input
+          value={form.name}
+          onChange={(event) => update("name", event.target.value)}
+          placeholder="例如：确认绝缘手套已佩戴"
+        />
+      </label>
+      <div className="ai-config-purpose-picker">
+        <small>判断用途（可多选）</small>
+        {Object.entries(AI_JUDGEMENT_PURPOSES).map(([value, label]) => (
+          <label key={value}>
+            <input
+              type="checkbox"
+              checked={form.purposes.includes(value)}
+              onChange={() => toggle("purposes", value)}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      {form.purposes.includes("completion") && (
+        <div className="ai-config-readonly-value">
+          <small>关联完成条件</small>
+          <strong>{step.completionCondition || "教师未填写"}</strong>
+        </div>
+      )}
+      {form.purposes.includes("scoring") && (
+        <div className="ai-config-reference-picker">
+          <small>关联教师评分规则</small>
+          {scoreRules.map((rule) => (
+            <label key={rule.id}>
+              <input
+                type="checkbox"
+                checked={form.scoreRuleIds.includes(rule.id)}
+                onChange={() => toggle("scoreRuleIds", rule.id)}
+              />
+              {rule.name || rule.id}
+            </label>
+          ))}
+          {!scoreRules.length && (
+            <p className="hint">本步骤没有教师评分规则。</p>
+          )}
+        </div>
+      )}
+      {form.purposes.includes("safety") && (
+        <div className="ai-config-reference-picker">
+          <small>关联教师安全规则</small>
+          {safetyRules.map((rule) => (
+            <label key={rule.id}>
+              <input
+                type="checkbox"
+                checked={form.safetyRuleIds.includes(rule.id)}
+                onChange={() => toggle("safetyRuleIds", rule.id)}
+              />
+              {rule.name || rule.id}
+            </label>
+          ))}
+          {!safetyRules.length && (
+            <p className="hint">本步骤没有教师安全规则。</p>
+          )}
+        </div>
+      )}
+      <div className="ai-config-condition-heading">
+        <div>
+          <strong>AI能力与判断条件</strong>
+          <small>只可引用已有当前发布模型的AI能力。</small>
+        </div>
+        <Button
+          icon={<PlusOutlined />}
+          disabled={!capabilities.length}
+          onClick={() =>
+            update("conditions", [
+              ...form.conditions,
+              defaultAiCondition(firstCapability),
+            ])
+          }
+        >
+          添加条件
+        </Button>
+      </div>
+      {!!capabilities.length && (
+        <div className="form-row ai-capability-filter-row">
+          <label className="field">
+            搜索能力
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="名称、识别对象或说明"
+            />
+          </label>
+          <label className="field">
+            能力类型
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+            >
+              <option value="">全部类型</option>
+              {Object.entries(AI_CAPABILITY_TYPES).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {!capabilities.length && (
+        <div className="evaluation-notice evaluation-notice--warning">
+          <AlertOutlined />
+          <span>
+            当前没有可引用的已发布AI能力，请先到AI能力库完成模型发布。
+          </span>
+        </div>
+      )}
+      <div className="ai-config-condition-list">
+        {form.conditions.map((condition, index) => {
+          const selected = capabilities.find(
+            (item) => item.id === condition.capabilityId,
+          );
+          const options = selected
+            ? [
+                selected,
+                ...visibleCapabilities.filter(
+                  (item) => item.id !== selected.id,
+                ),
+              ]
+            : visibleCapabilities;
+          const isObject = selected?.type === "object_detection";
+          return (
+            <article key={condition.id || `condition-${index}`}>
+              <header>
+                <strong>条件 {index + 1}</strong>
+                <button
+                  type="button"
+                  className="table-action table-action--danger"
+                  onClick={() =>
+                    update(
+                      "conditions",
+                      form.conditions.filter(
+                        (_, itemIndex) => itemIndex !== index,
+                      ),
+                    )
+                  }
+                >
+                  删除
+                </button>
+              </header>
+              <label className="field">
+                引用AI能力
+                <select
+                  value={condition.capabilityId}
+                  onChange={(event) => {
+                    const nextCapability = capabilities.find(
+                      (item) => item.id === event.target.value,
+                    );
+                    updateCondition(index, {
+                      ...defaultAiCondition(nextCapability),
+                      id: condition.id,
+                    });
+                  }}
+                >
+                  <option value="">请选择</option>
+                  {options.map((capability) => (
+                    <option key={capability.id} value={capability.id}>
+                      {capability.name} · {AI_CAPABILITY_TYPES[capability.type]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selected && (
+                <div className="ai-config-capability-meta">
+                  <span>{AI_CAPABILITY_TYPES[selected.type]}</span>
+                  <span>识别目标：{selected.targetName || "—"}</span>
+                  <span>
+                    最近发布：
+                    {selected.currentPublishedModel?.publishedAt || "—"}
+                  </span>
+                  <p>{selected.description || "暂无能力说明"}</p>
+                </div>
+              )}
+              {selected && (
+                <div className="form-row">
+                  <label className="field">
+                    判断条件
+                    <select
+                      value={condition.operator}
+                      onChange={(event) =>
+                        updateCondition(index, { operator: event.target.value })
+                      }
+                    >
+                      {Object.entries(
+                        isObject
+                          ? OBJECT_DETECTION_OPERATORS
+                          : ACTION_RECOGNITION_OPERATORS,
+                      ).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    最少出现次数
+                    <input
+                      type="number"
+                      min="1"
+                      value={condition.minOccurrences}
+                      onChange={(event) =>
+                        updateCondition(index, {
+                          minOccurrences: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+              {isObject && (
+                <>
+                  {["enters_area", "in_area"].includes(condition.operator) && (
+                    <label className="field">
+                      逻辑区域
+                      <select
+                        value={condition.logicalAreaId || ""}
+                        onChange={(event) =>
+                          updateCondition(index, {
+                            logicalAreaId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">请选择</option>
+                        {logicalAreas.map((area) => (
+                          <option key={area.id} value={area.id}>
+                            {area.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="form-row">
+                    <label className="field">
+                      最少目标数量
+                      <input
+                        type="number"
+                        min="1"
+                        value={condition.minTargetCount}
+                        onChange={(event) =>
+                          updateCondition(index, {
+                            minTargetCount: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      最短持续时间（秒）
+                      <input
+                        type="number"
+                        min="0"
+                        value={condition.minDurationSeconds}
+                        onChange={(event) =>
+                          updateCondition(index, {
+                            minDurationSeconds: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+              {selected?.type === "action_recognition" && (
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={condition.withinCurrentStep !== false}
+                    onChange={(event) =>
+                      updateCondition(index, {
+                        withinCurrentStep: event.target.checked,
+                      })
+                    }
+                  />
+                  仅在当前步骤有效时间内判断
+                </label>
+              )}
+            </article>
+          );
+        })}
+      </div>
+      <label className="field">
+        多条件组合
+        <select
+          value={form.combination}
+          onChange={(event) => update("combination", event.target.value)}
+        >
+          {Object.entries(AI_CONDITION_COMBINATIONS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="ai-config-fallback">
+        <SafetyCertificateOutlined />
+        <span>{FIXED_AI_FALLBACK}</span>
+      </div>
+    </div>
+  );
+});
+
+function AiRuleTreatmentRow({
+  sopId,
+  stepId,
+  kind,
+  rule,
+  saved,
+  items,
+  store,
+}) {
+  const [draft, setDraft] = useState(() => ({
+    mode: saved?.mode || "",
+    reason: saved?.reason || "",
+    judgementItemId: saved?.judgementItemId || "",
+  }));
+  useEffect(() => {
+    setDraft({
+      mode: saved?.mode || "",
+      reason: saved?.reason || "",
+      judgementItemId: saved?.judgementItemId || "",
+    });
+  }, [saved?.mode, saved?.reason, saved?.judgementItemId]);
+  const purpose = kind === "score" ? "scoring" : "safety";
+  const ruleField = kind === "score" ? "scoreRuleIds" : "safetyRuleIds";
+  const candidates = items.filter(
+    (item) =>
+      item.purposes?.includes(purpose) && item[ruleField]?.includes(rule.id),
+  );
+  return (
+    <article className="ai-config-rule-row">
+      <div>
+        <strong>{rule.name || rule.id}</strong>
+        <small>{rule.id}</small>
+      </div>
+      <label className="field">
+        处理方式
+        <select
+          value={draft.mode}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              mode: event.target.value,
+              judgementItemId:
+                event.target.value === "teacher" ? "" : current.judgementItemId,
+            }))
+          }
+        >
+          <option value="">请选择</option>
+          <option value="ai">
+            {kind === "score" ? "由AI判断" : "AI辅助监测"}
+          </option>
+          <option value="teacher">由教师处理</option>
+        </select>
+      </label>
+      {draft.mode === "ai" && (
+        <label className="field">
+          关联判断项
+          <select
+            value={draft.judgementItemId}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                judgementItemId: event.target.value,
+              }))
+            }
+          >
+            <option value="">请选择</option>
+            {candidates.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          {!candidates.length && (
+            <small className="form-error">请先新增关联本规则的判断项。</small>
+          )}
+        </label>
+      )}
+      {draft.mode === "teacher" && (
+        <label className="field">
+          教师处理原因
+          <input
+            value={draft.reason}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                reason: event.target.value,
+              }))
+            }
+            placeholder="请说明摄像头无法可靠判断的原因"
+          />
+        </label>
+      )}
+      <Button
+        disabled={
+          !draft.mode ||
+          (draft.mode === "teacher" && !draft.reason.trim()) ||
+          (draft.mode === "ai" && !draft.judgementItemId)
+        }
+        onClick={() =>
+          store.saveAiRuleTreatment(sopId, {
+            stepId,
+            kind,
+            ruleId: rule.id,
+            ...draft,
+          })
+        }
+      >
+        保存
+      </Button>
+    </article>
+  );
+}
+
+function AiConfigStepCard({
+  sop,
+  step,
+  index,
+  config,
+  evaluation,
+  capabilities,
+  store,
+  setModal,
+  nav,
+}) {
+  const stepConfig =
+    config.stepConfigs.find((item) => item.stepId === step.id) || {};
+  const stepResult = evaluation.stepResults.find(
+    (item) => item.stepId === step.id,
+  ) || { status: "unconfigured", issues: [] };
+  const items = config.judgementItems.filter((item) => item.stepId === step.id);
+  const scoreRules = (sop.scoreRules || []).filter(
+    (rule) => rule.stepId === step.id,
+  );
+  const safetyRules = (sop.safetyRules || []).filter(
+    (rule) => rule.stepId === step.id,
+  );
+  const expected = step.expectedJudgementMode || step.judgementMode;
+  const allowedModes = allowedActualEvaluationModes(expected);
+  const [modeDraft, setModeDraft] = useState(
+    stepConfig.actualEvaluationMode || "",
+  );
+  const [reasonDraft, setReasonDraft] = useState(
+    stepConfig.downgradeReason || "",
+  );
+  useEffect(() => {
+    setModeDraft(stepConfig.actualEvaluationMode || "");
+    setReasonDraft(stepConfig.downgradeReason || "");
+  }, [stepConfig.actualEvaluationMode, stepConfig.downgradeReason]);
+  const openItemForm = (item) => {
+    const formRef = createRef();
+    setModal({
+      title: item ? "编辑AI判断项" : "新增AI判断项",
+      size: "large",
+      content: (
+        <AiJudgementItemForm
+          ref={formRef}
+          initial={item}
+          step={{ ...step, scoreRules, safetyRules }}
+          capabilities={capabilities}
+          logicalAreas={config.logicalAreas}
+        />
+      ),
+      confirmText: item ? "保存修改" : "创建判断项",
+      onConfirm: () => {
+        store.saveAiJudgementItem(sop.id, formRef.current.getValue());
+        return item ? "AI判断项已更新" : "AI判断项已创建";
+      },
+    });
+  };
+  return (
+    <details className="panel ai-config-step" open={index === 0}>
+      <summary>
+        <span className="ai-config-step__index">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <span>
+          <strong>
+            {step.id} · {step.name || "未命名步骤"}
+          </strong>
+          <small>教师期望：{aiExpectedModeLabel(step)}</small>
+        </span>
+        <Status>{AI_CONFIG_STEP_STATUSES[stepResult.status]}</Status>
+      </summary>
+      <div className="ai-config-step__body">
+        <section className="ai-config-teacher-standard">
+          <header>
+            <LockOutlined />
+            <div>
+              <strong>教师标准（只读）</strong>
+              <small>AI配置仅引用这些业务标准，不能在这里修改。</small>
+            </div>
+          </header>
+          <div className="ai-config-readonly-grid">
+            <div className="wide">
+              <small>教学内容</small>
+              <strong>{step.teachingInstruction || "教师未填写"}</strong>
+            </div>
+            <div className="wide">
+              <small>完成条件</small>
+              <strong>{step.completionCondition || "教师未填写"}</strong>
+            </div>
+            <div>
+              <small>本步骤分值</small>
+              <strong>{step.score ?? 0} 分</strong>
+            </div>
+            <div>
+              <small>未完成处理</small>
+              <strong>
+                {INCOMPLETE_POLICIES[step.incompletePolicy]?.label ||
+                  "教师未明确"}
+              </strong>
+            </div>
+            <div>
+              <small>期望评价方式</small>
+              <strong>{aiExpectedModeLabel(step)}</strong>
+            </div>
+            <div>
+              <small>前置步骤</small>
+              <strong>{step.predecessor || "无"}</strong>
+            </div>
+          </div>
+          <div className="ai-config-teacher-rules">
+            <article>
+              <strong>评分规则</strong>
+              {scoreRules.map((rule) => (
+                <p key={rule.id}>{rule.name || rule.id}</p>
+              ))}
+              {!scoreRules.length && <p>无结构化评分规则</p>}
+            </article>
+            <article>
+              <strong>安全规则</strong>
+              {safetyRules.map((rule) => (
+                <p key={rule.id}>{rule.name || rule.id}</p>
+              ))}
+              {!safetyRules.length && <p>无结构化安全规则</p>}
+            </article>
+            <article>
+              <strong>流程规则</strong>
+              <p>
+                错序：
+                {AI_CONFIG_FLOW_TREATMENTS[
+                  step.flowPolicy?.wrongOrder?.treatment
+                ] || "教师未设置"}
+              </p>
+              <p>
+                重复：
+                {AI_CONFIG_FLOW_TREATMENTS[
+                  step.flowPolicy?.repeat?.treatment
+                ] || "教师未设置"}
+              </p>
+              <p>
+                超时：
+                {AI_CONFIG_FLOW_TREATMENTS[
+                  step.flowPolicy?.timeout?.treatment
+                ] || "教师未设置"}
+              </p>
+            </article>
+          </div>
+        </section>
+        <section className="ai-config-workspace">
+          <header>
+            <div>
+              <strong>AI判断配置</strong>
+              <small>按本步骤业务标准组装已发布AI能力。</small>
+            </div>
+            <Status>{AI_CONFIG_STEP_STATUSES[stepResult.status]}</Status>
+          </header>
+          <div className="ai-config-mode-editor">
+            <label className="field">
+              实际评价方式
+              <select
+                value={modeDraft}
+                onChange={(event) => setModeDraft(event.target.value)}
+              >
+                <option value="">请选择</option>
+                {allowedModes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {AI_ACTUAL_EVALUATION_MODES[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isEvaluationModeDowngraded(expected, modeDraft) && (
+              <label className="field ai-config-downgrade-reason">
+                降级原因 <b className="required">必填</b>
+                <textarea
+                  value={reasonDraft}
+                  onChange={(event) => setReasonDraft(event.target.value)}
+                  placeholder="说明当前摄像头或AI能力无法可靠完成判断的原因"
+                />
+              </label>
+            )}
+            <Button
+              type="primary"
+              disabled={
+                !modeDraft ||
+                (isEvaluationModeDowngraded(expected, modeDraft) &&
+                  !reasonDraft.trim())
+              }
+              onClick={() =>
+                store.saveAiStepConfig(sop.id, {
+                  stepId: step.id,
+                  actualEvaluationMode: modeDraft,
+                  downgradeReason: reasonDraft,
+                })
+              }
+            >
+              保存评价方式
+            </Button>
+          </div>
+          <div className="ai-config-subsection">
+            <div className="ai-config-subsection__header">
+              <div>
+                <strong>AI判断项</strong>
+                <small>完成、评分和安全用途均需引用教师原始标准。</small>
+              </div>
+              <Button icon={<PlusOutlined />} onClick={() => openItemForm()}>
+                新增判断项
+              </Button>
+            </div>
+            {!capabilities.length && (
+              <div className="evaluation-notice evaluation-notice--warning">
+                <AlertOutlined />
+                <span>暂无可引用的已发布AI能力。</span>
+                <Button
+                  onClick={() =>
+                    nav(
+                      `${AI_CAPABILITIES_PATH}?fromSopId=${encodeURIComponent(sop.id)}&stepId=${encodeURIComponent(step.id)}`,
+                    )
+                  }
+                >
+                  前往AI能力库
+                </Button>
+              </div>
+            )}
+            <div className="ai-config-item-list">
+              {items.map((item) => (
+                <article key={item.id}>
+                  <header>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.purposes
+                          .map((purpose) => AI_JUDGEMENT_PURPOSES[purpose])
+                          .join(" · ")}
+                      </small>
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        className="table-action"
+                        onClick={() => openItemForm(item)}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="table-action table-action--danger"
+                        onClick={() =>
+                          setModal({
+                            title: "删除AI判断项",
+                            content: (
+                              <p>
+                                删除“{item.name}
+                                ”会同时失去其完成、评分或安全规则覆盖，配置可能重新变为不完整。确认删除？
+                              </p>
+                            ),
+                            confirmText: "确认删除",
+                            onConfirm: () => {
+                              store.deleteAiJudgementItem(sop.id, item.id);
+                              return "AI判断项已删除";
+                            },
+                          })
+                        }
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </header>
+                  <div className="ai-config-item-tags">
+                    {(item.conditions || []).map((condition) => {
+                      const capability = capabilities.find(
+                        (entry) => entry.id === condition.capabilityId,
+                      );
+                      return (
+                        <span key={condition.id}>
+                          {capability?.name || "能力引用异常"}
+                        </span>
+                      );
+                    })}
+                    <span>
+                      {AI_CONDITION_COMBINATIONS[item.combination] ||
+                        "组合未设置"}
+                    </span>
+                  </div>
+                  <p>{FIXED_AI_FALLBACK}</p>
+                </article>
+              ))}
+              {!items.length && (
+                <p className="hint">本步骤尚未添加AI判断项。</p>
+              )}
+            </div>
+          </div>
+          {!!scoreRules.length && (
+            <div className="ai-config-subsection">
+              <div className="ai-config-subsection__header">
+                <div>
+                  <strong>评分规则覆盖</strong>
+                  <small>逐条选择由AI判断或由教师处理。</small>
+                </div>
+              </div>
+              {scoreRules.map((rule) => (
+                <AiRuleTreatmentRow
+                  key={rule.id}
+                  sopId={sop.id}
+                  stepId={step.id}
+                  kind="score"
+                  rule={rule}
+                  saved={stepConfig.scoreRuleTreatments?.find(
+                    (entry) => entry.ruleId === rule.id,
+                  )}
+                  items={items}
+                  store={store}
+                />
+              ))}
+            </div>
+          )}
+          {!!safetyRules.length && (
+            <div className="ai-config-subsection">
+              <div className="ai-config-subsection__header">
+                <div>
+                  <strong>安全规则覆盖</strong>
+                  <small>逐条选择AI辅助监测或由教师处理。</small>
+                </div>
+              </div>
+              {safetyRules.map((rule) => (
+                <AiRuleTreatmentRow
+                  key={rule.id}
+                  sopId={sop.id}
+                  stepId={step.id}
+                  kind="safety"
+                  rule={rule}
+                  saved={stepConfig.safetyRuleTreatments?.find(
+                    (entry) => entry.ruleId === rule.id,
+                  )}
+                  items={items}
+                  store={store}
+                />
+              ))}
+            </div>
+          )}
+          {!!stepResult.issues.length && (
+            <div className="ai-config-step-issues">
+              <strong>当前步骤还需完善</strong>
+              {stepResult.issues.map((issue) => (
+                <p key={issue}>
+                  <AlertOutlined /> {issue}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </details>
+  );
+}
+
 function AiCapabilityConfigList() {
   const nav = useNavigate();
   const { data } = usePrototypeData();
   const sops = getConfigurableSops(data?.sops);
-  const rows = sops.map((sop) => [
-    sop.name || "未命名SOP",
-    [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
-    sop.owner || "未设置",
-    `${Array.isArray(sop.steps) ? sop.steps.length : 0} 步`,
-    "未配置",
-    "0",
-    "0",
-    "未配置",
-  ]);
+  const capabilities = data?.aiCapabilities || [];
+  const rows = sops.map((sop) => {
+    const config = (data.aiCapabilityConfigs || []).find(
+      (item) => item.sopId === sop.id,
+    );
+    const evaluation = evaluateAiCapabilityConfig({
+      sop,
+      config,
+      capabilities,
+    });
+    const workstationConfigs = config
+      ? (data.sopWorkstationAiConfigs || []).filter(
+          (item) => item.sopAiConfigId === config.id,
+        )
+      : [];
+    const runnableCount = workstationConfigs.filter((relation) => {
+      const workstation = data.workstations.find(
+        (item) => item.id === relation.workstationId,
+      );
+      if (!workstation) return false;
+      const checks = checkSopWorkstationAiConfig({
+        config: relation,
+        aiConfig: config,
+        aiConfigReady: evaluation.ready,
+        workstation,
+        devices: data.devices,
+        capabilities,
+      });
+      return deriveSopWorkstationRuntimeStatus({
+        config: relation,
+        checks,
+        readiness: checks.readiness,
+      }).runnable;
+    }).length;
+    return [
+      sop.name || "未命名SOP",
+      [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
+      sop.owner || "未设置",
+      `${evaluation.totalSteps} 步`,
+      evaluation.statusLabel,
+      `${evaluation.configuredStepCount}/${evaluation.totalSteps}`,
+      `${evaluation.judgementItemCount} 项`,
+      `${evaluation.distinctCapabilityIds.length} 个`,
+      workstationConfigs.length
+        ? `${runnableCount}/${workstationConfigs.length} 个可运行`
+        : "尚未添加工位",
+      <button
+        className="table-action"
+        onClick={() => nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}`)}
+      >
+        {evaluation.status === "unconfigured"
+          ? "开始配置"
+          : evaluation.status === "enabled"
+            ? "查看"
+            : "进入配置"}
+      </button>,
+    ];
+  });
   return (
     <>
       <PageHeader
         title="AI能力配置"
-        subtitle="为已发布SOP配置可复用AI能力、判断条件与现场启用规则。"
+        subtitle="按已发布SOP步骤组装AI判断项、已发布能力和教师业务规则。"
       />
       <section className="panel">
         <PanelTitle title="可配置的SOP" />
         <p className="hint">
-          从教师已发布的SOP中选择一项，进入对应的AI能力配置。
+          仅显示已发布且未停用的SOP；每个SOP只维护一套当前AI能力配置。
         </p>
       </section>
       {sops.length ? (
-        <section className="panel panel--table ai-entry-table">
+        <section className="panel panel--table ai-entry-table ai-config-list-table">
           <DataTable
             columns={[
               "SOP名称",
@@ -8106,17 +9109,15 @@ function AiCapabilityConfigList() {
               "创建教师",
               "步骤数",
               "AI配置状态",
-              "已配置判断项",
+              "已配置步骤",
+              "AI判断项",
               "引用AI能力",
               "工位状态",
+              "操作",
             ]}
             rows={rows}
             rowKey={(_, index) => sops[index].id}
-            onView={(_, index) =>
-              nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sops[index].id)}`)
-            }
-            viewLabel="开始配置"
-            statusColumns={[4, 7]}
+            statusColumns={[4, 8]}
           />
         </section>
       ) : (
@@ -8130,33 +9131,1062 @@ function AiCapabilityConfigList() {
   );
 }
 
-function AiCapabilityConfigDetail() {
+const AiWorkstationSelectForm = forwardRef(function AiWorkstationSelectForm(
+  { workstations, devices },
+  ref,
+) {
+  const [workstationId, setWorkstationId] = useState(workstations[0]?.id || "");
+  useImperativeHandle(ref, () => ({
+    getValue() {
+      if (!workstationId) throw new Error("请选择目标工位。");
+      return workstationId;
+    },
+  }));
+  return (
+    <div className="ai-workstation-select-form">
+      <label className="field">
+        目标工位 <b className="required">必选</b>
+        <select
+          value={workstationId}
+          onChange={(event) => setWorkstationId(event.target.value)}
+        >
+          {workstations.map((workstation) => {
+            const readiness = deriveWorkstationAiReadiness({
+              workstation,
+              devices,
+              edgeRequired: true,
+            });
+            return (
+              <option key={workstation.id} value={workstation.id}>
+                {workstation.name} · {workstation.code} · AI{readiness.label}
+              </option>
+            );
+          })}
+        </select>
+      </label>
+      {workstations.map((workstation) => {
+        if (workstation.id !== workstationId) return null;
+        const readiness = deriveWorkstationAiReadiness({
+          workstation,
+          devices,
+          edgeRequired: true,
+        });
+        return (
+          <div className="ai-workstation-option-summary" key={workstation.id}>
+            <Status tone={readiness.tone}>{readiness.label}</Status>
+            <span>{workstation.location}</span>
+            <p>{readiness.reasons.join("；")}</p>
+          </div>
+        );
+      })}
+      <p className="form-hint">
+        AI基础状态异常或待完善的工位可以添加并查看原因，但完成修复前不能启用。
+      </p>
+    </div>
+  );
+});
+
+function AiAreaMappingEditor({ area, mapping, cameras, relationId, store }) {
+  const canvasRef = useRef(null);
+  const [cameraId, setCameraId] = useState(
+    mapping?.cameraId || cameras[0]?.id || "",
+  );
+  const [rectangle, setRectangle] = useState({
+    x: Number(mapping?.x ?? 18),
+    y: Number(mapping?.y ?? 22),
+    width: Number(mapping?.width ?? 36),
+    height: Number(mapping?.height ?? 30),
+  });
+  const dragRef = useRef(null);
+  useEffect(() => {
+    setCameraId(mapping?.cameraId || cameras[0]?.id || "");
+    setRectangle({
+      x: Number(mapping?.x ?? 18),
+      y: Number(mapping?.y ?? 22),
+      width: Number(mapping?.width ?? 36),
+      height: Number(mapping?.height ?? 30),
+    });
+  }, [
+    mapping?.cameraId,
+    mapping?.x,
+    mapping?.y,
+    mapping?.width,
+    mapping?.height,
+  ]);
+  const point = (event) => {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: Math.max(
+        0,
+        Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100),
+      ),
+      y: Math.max(
+        0,
+        Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100),
+      ),
+    };
+  };
+  const startDraw = (event) => {
+    const start = point(event);
+    if (!start) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = start;
+    setRectangle({ x: start.x, y: start.y, width: 1, height: 1 });
+  };
+  const draw = (event) => {
+    if (!dragRef.current) return;
+    const current = point(event);
+    if (!current) return;
+    const start = dragRef.current;
+    setRectangle({
+      x: Math.min(start.x, current.x),
+      y: Math.min(start.y, current.y),
+      width: Math.max(1, Math.abs(current.x - start.x)),
+      height: Math.max(1, Math.abs(current.y - start.y)),
+    });
+  };
+  const finishDraw = () => {
+    dragRef.current = null;
+  };
+  const setNumber = (key, value) =>
+    setRectangle((current) => ({ ...current, [key]: Number(value) }));
+  return (
+    <details className="ai-area-mapping-editor" open={!mapping}>
+      <summary>
+        <span>
+          <strong>{area.name}</strong>
+          <small>{area.description || "当前SOP需要的逻辑区域"}</small>
+        </span>
+        <Status>{mapping ? "已配置" : "未配置"}</Status>
+      </summary>
+      <div className="ai-area-mapping-editor__body">
+        <label className="field">
+          区域所属摄像头
+          <select
+            value={cameraId}
+            onChange={(event) => setCameraId(event.target.value)}
+          >
+            {cameras.map((camera) => (
+              <option key={camera.id} value={camera.id}>
+                {camera.label} · {camera.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div
+          className="ai-roi-canvas"
+          ref={canvasRef}
+          onPointerDown={startDraw}
+          onPointerMove={draw}
+          onPointerUp={finishDraw}
+          onPointerCancel={finishDraw}
+          role="application"
+          aria-label={`${area.name}实际区域框选画面`}
+        >
+          <img
+            src="/assets/workstation-male.png"
+            alt="当前工位摄像头示例画面"
+          />
+          <span
+            className="ai-roi-canvas__box"
+            style={{
+              left: `${rectangle.x}%`,
+              top: `${rectangle.y}%`,
+              width: `${rectangle.width}%`,
+              height: `${rectangle.height}%`,
+            }}
+          >
+            {area.name}
+          </span>
+        </div>
+        <p className="hint">在画面中拖动鼠标框选矩形，也可以直接调整坐标。</p>
+        <div className="ai-roi-coordinates">
+          {[
+            ["x", "左侧 X"],
+            ["y", "顶部 Y"],
+            ["width", "宽度"],
+            ["height", "高度"],
+          ].map(([key, label]) => (
+            <label className="field" key={key}>
+              {label}（%）
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round(rectangle[key] * 10) / 10}
+                onChange={(event) => setNumber(key, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="row-actions ai-area-mapping-editor__actions">
+          <Button
+            type="primary"
+            disabled={!cameraId}
+            onClick={() =>
+              store.saveSopWorkstationAreaMapping(relationId, {
+                logicalAreaId: area.id,
+                cameraId,
+                rectangle,
+              })
+            }
+          >
+            保存实际区域
+          </Button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function AiValidationCaseCard({
+  validationCase,
+  judgementItems,
+  relationId,
+  store,
+}) {
+  const [draft, setDraft] = useState(validationCase);
+  useEffect(() => setDraft(validationCase), [validationCase]);
+  const toggleItem = (id) =>
+    setDraft((current) => ({
+      ...current,
+      judgementItemIds: current.judgementItemIds.includes(id)
+        ? current.judgementItemIds.filter((item) => item !== id)
+        : [...current.judgementItemIds, id],
+    }));
+  return (
+    <article className="ai-validation-case">
+      <header>
+        <div>
+          <small>
+            {VALIDATION_SCENARIOS.find(
+              (scenario) => scenario.key === validationCase.scenarioType,
+            )?.label || validationCase.scenarioType}
+          </small>
+          <strong>{validationCase.name}</strong>
+        </div>
+        <Status>
+          {validationCase.result === "passed"
+            ? "通过"
+            : validationCase.result === "failed"
+              ? "不通过"
+              : "待执行"}
+        </Status>
+      </header>
+      <div className="ai-validation-case__instructions">
+        <span>
+          <small>操作说明</small>
+          {validationCase.instruction}
+        </span>
+        <span>
+          <small>期望结果</small>
+          {validationCase.expectedResult}
+        </span>
+      </div>
+      <fieldset className="ai-validation-case__coverage">
+        <legend>涉及AI判断项</legend>
+        {judgementItems.map((item) => (
+          <label key={item.id}>
+            <input
+              type="checkbox"
+              checked={draft.judgementItemIds.includes(item.id)}
+              onChange={() => toggleItem(item.id)}
+            />
+            {item.name}
+          </label>
+        ))}
+      </fieldset>
+      <label className="field">
+        系统实际结果
+        <textarea
+          value={draft.actualResult}
+          onChange={(event) =>
+            setDraft((current) => ({
+              ...current,
+              actualResult: event.target.value,
+            }))
+          }
+          placeholder="记录模拟AI结果以及是否符合期望"
+        />
+      </label>
+      <div className="form-row">
+        <label className="field">
+          案例结果
+          <select
+            value={draft.result}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                result: event.target.value,
+              }))
+            }
+          >
+            <option value="pending">待执行</option>
+            <option value="passed">通过</option>
+            <option value="failed">不通过</option>
+          </select>
+        </label>
+        <label className="field">
+          备注
+          <input
+            value={draft.note}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, note: event.target.value }))
+            }
+          />
+        </label>
+      </div>
+      <Button
+        disabled={draft.result === "pending" || !draft.actualResult.trim()}
+        onClick={() =>
+          store.saveSopWorkstationValidationCase(
+            relationId,
+            validationCase.id,
+            draft,
+          )
+        }
+      >
+        保存案例结果
+      </Button>
+    </article>
+  );
+}
+
+function AiWorkstationConfigWorkspace({
+  relation,
+  aiConfig,
+  evaluation,
+  data,
+  store,
+  setModal,
+}) {
+  const normalized = normalizeSopWorkstationAiConfig(relation);
+  const workstation = data.workstations.find(
+    (item) => item.id === normalized.workstationId,
+  );
+  if (!workstation) return null;
+  const base = normalizeWorkstationAiBaseConfig(workstation);
+  const primaryCamera = data.devices.find(
+    (item) => item.id === base.primaryCameraId,
+  );
+  const fallbackCamera = data.devices.find(
+    (item) => item.id === base.fallbackCameraId,
+  );
+  const cameras = [
+    primaryCamera && { ...primaryCamera, label: "主摄像头" },
+    fallbackCamera && { ...fallbackCamera, label: "备用摄像头" },
+  ].filter(Boolean);
+  const checks = checkSopWorkstationAiConfig({
+    config: normalized,
+    aiConfig,
+    aiConfigReady: evaluation.ready,
+    workstation,
+    devices: data.devices,
+    capabilities: data.aiCapabilities,
+  });
+  const runtime = deriveSopWorkstationRuntimeStatus({
+    config: normalized,
+    checks,
+    readiness: checks.readiness,
+  });
+  const areas = requiredLogicalAreas(aiConfig);
+  const coverage = buildSopWorkstationValidationCoverage(
+    aiConfig,
+    normalized.validationCases,
+  );
+  const [environment, setEnvironment] = useState(
+    normalized.validationEnvironment,
+  );
+  useEffect(
+    () => setEnvironment(normalized.validationEnvironment),
+    [normalized.id, normalized.validationStartedAt],
+  );
+  const startValidation = () =>
+    store.startSopWorkstationValidation(normalized.id, environment);
+  const confirmEnable = () =>
+    setModal({
+      title:
+        normalized.enableStatus === "disabled"
+          ? "重新启用AI评价"
+          : "启用AI评价",
+      content: (
+        <p>
+          确认在{workstation.name}
+          启用当前SOP的AI评价？启用后，新进入该工位执行本SOP的学生将按当前AI判断配置运行。
+        </p>
+      ),
+      confirmText: "确认启用",
+      onConfirm: () => {
+        store.enableSopWorkstationAi(normalized.id);
+        return `${workstation.name}已启用当前SOP的AI评价`;
+      },
+    });
+  return (
+    <div className="ai-workstation-workspace">
+      <section className="ai-workstation-block">
+        <PanelTitle
+          title={`${workstation.name} · 工位基础信息`}
+          action={
+            <Status tone={checks.readiness.tone}>
+              AI{checks.readiness.label}
+            </Status>
+          }
+        />
+        <div className="ai-workstation-facts">
+          {[
+            ["工位编号", workstation.code],
+            ["工位状态", workstation.status],
+            ["主摄像头", primaryCamera?.name || "未配置"],
+            ["备用摄像头", fallbackCamera?.name || "未配置"],
+            [
+              "主摄像头状态",
+              primaryCamera
+                ? `${primaryCamera.status} / ${primaryCamera.streamStatus}`
+                : "--",
+            ],
+            ["最近基础配置变更", base.lastAiCriticalChangeAt],
+          ].map(([label, value]) => (
+            <span key={label}>
+              <small>{label}</small>
+              <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+        {checks.readiness.code !== "available" && (
+          <div className="evaluation-notice evaluation-notice--warning">
+            <AlertOutlined />
+            <span>{checks.readiness.reasons.join("；")}</span>
+          </div>
+        )}
+      </section>
+
+      <section className="ai-workstation-block">
+        <PanelTitle
+          title="判断项摄像头配置"
+          action={<span>每项仅使用一个主要摄像头</span>}
+        />
+        <div className="ai-judgement-camera-list">
+          {checks.activeJudgementItems.map((item) => {
+            const binding = normalized.judgementCameraBindings.find(
+              (entry) => entry.judgementItemId === item.id,
+            );
+            return (
+              <article key={item.id}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <small>默认使用工位主摄像头</small>
+                </div>
+                <select
+                  aria-label={`${item.name}摄像头`}
+                  value={binding?.cameraId || base.primaryCameraId}
+                  onChange={(event) =>
+                    store.saveSopWorkstationCameraBinding(
+                      normalized.id,
+                      item.id,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {cameras.map((camera) => (
+                    <option key={camera.id} value={camera.id}>
+                      {camera.label} · {camera.name}
+                    </option>
+                  ))}
+                </select>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="ai-workstation-block">
+        <PanelTitle
+          title="逻辑区域到实际区域"
+          action={<span>{areas.length} 个需要映射</span>}
+        />
+        {areas.map((area) => (
+          <AiAreaMappingEditor
+            key={area.id}
+            area={area}
+            mapping={normalized.logicalAreaMappings.find(
+              (item) => item.logicalAreaId === area.id,
+            )}
+            cameras={cameras}
+            relationId={normalized.id}
+            store={store}
+          />
+        ))}
+        {!areas.length && <p className="hint">当前AI判断项不依赖逻辑区域。</p>}
+      </section>
+
+      <section className="ai-workstation-block">
+        <PanelTitle
+          title="配置检查"
+          action={
+            <Status>{checks.ready ? "可以开始现场验证" : "需要完善"}</Status>
+          }
+        />
+        <div className="ai-workstation-checks">
+          {checks.checks.map((check) => (
+            <article
+              className={check.passed ? "is-pass" : "is-fail"}
+              key={check.key}
+            >
+              {check.passed ? <CheckCircleOutlined /> : <AlertOutlined />}
+              <span>
+                <strong>{check.label}</strong>
+                {check.reason && <small>{check.reason}</small>}
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="ai-workstation-block">
+        <PanelTitle
+          title="现场验证"
+          action={
+            <Status>
+              {WORKSTATION_VALIDATION_STATUSES[normalized.validationStatus]}
+            </Status>
+          }
+        />
+        {normalized.validationStatus !== "validating" ? (
+          <div className="ai-validation-start">
+            {normalized.validationStatus === "pending_revalidation" && (
+              <div className="evaluation-notice evaluation-notice--warning">
+                <AlertOutlined />
+                <span>
+                  {normalized.validationInvalidationReason ||
+                    "关键配置已经变化，需要重新验证。"}
+                </span>
+              </div>
+            )}
+            <div className="form-row">
+              <label className="field">
+                验证人
+                <input
+                  value={environment.tester}
+                  onChange={(event) =>
+                    setEnvironment((current) => ({
+                      ...current,
+                      tester: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                使用工具
+                <input
+                  value={environment.tools}
+                  onChange={(event) =>
+                    setEnvironment((current) => ({
+                      ...current,
+                      tools: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div className="form-row">
+              <label className="field">
+                光照情况
+                <select
+                  value={environment.lighting}
+                  onChange={(event) =>
+                    setEnvironment((current) => ({
+                      ...current,
+                      lighting: event.target.value,
+                    }))
+                  }
+                >
+                  <option>正常</option>
+                  <option>偏暗</option>
+                  <option>过亮</option>
+                </select>
+              </label>
+              <label className="field">
+                遮挡情况
+                <select
+                  value={environment.occlusion}
+                  onChange={(event) =>
+                    setEnvironment((current) => ({
+                      ...current,
+                      occlusion: event.target.value,
+                    }))
+                  }
+                >
+                  <option>无遮挡</option>
+                  <option>轻微遮挡</option>
+                  <option>明显遮挡</option>
+                </select>
+              </label>
+            </div>
+            <label className="field">
+              现场说明
+              <textarea
+                value={environment.note}
+                onChange={(event) =>
+                  setEnvironment((current) => ({
+                    ...current,
+                    note: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <Button
+              type="primary"
+              disabled={!checks.ready}
+              onClick={startValidation}
+            >
+              开始现场验证
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="ai-validation-summary-strip">
+              <span>
+                <small>验证场景</small>
+                <strong>{normalized.validationCases.length}/8</strong>
+              </span>
+              <span>
+                <small>判断项覆盖</small>
+                <strong>
+                  {coverage.covered}/{coverage.total}
+                </strong>
+              </span>
+              <span>
+                <small>已执行</small>
+                <strong>
+                  {
+                    normalized.validationCases.filter(
+                      (item) => item.result !== "pending",
+                    ).length
+                  }
+                </strong>
+              </span>
+            </div>
+            <div className="ai-validation-case-list">
+              {normalized.validationCases.map((validationCase) => (
+                <AiValidationCaseCard
+                  key={validationCase.id}
+                  validationCase={validationCase}
+                  judgementItems={checks.activeJudgementItems}
+                  relationId={normalized.id}
+                  store={store}
+                />
+              ))}
+            </div>
+            <section className="ai-validation-coverage">
+              <h3>AI判断项覆盖</h3>
+              {coverage.rows.map((row) => (
+                <span key={row.judgementItemId}>
+                  <strong>{row.judgementItemName}</strong>
+                  <small>
+                    {row.caseNames.join("、") || "尚无通过案例覆盖"}
+                  </small>
+                  <Status>{row.result}</Status>
+                </span>
+              ))}
+            </section>
+            <Button
+              type="primary"
+              disabled={normalized.validationCases.some(
+                (item) => item.result === "pending",
+              )}
+              onClick={() =>
+                store.completeSopWorkstationValidation(normalized.id)
+              }
+            >
+              完成验证并生成结论
+            </Button>
+          </>
+        )}
+        {!!normalized.validationRecords.length && (
+          <div className="ai-validation-records">
+            <h3>验证记录</h3>
+            <DataTable
+              columns={["验证时间", "验证人", "案例", "通过", "失败", "结论"]}
+              rows={normalized.validationRecords.map((record) => [
+                record.completedAt,
+                record.validatedBy,
+                `${record.summary?.caseCount || 0} 个`,
+                `${record.summary?.passedCount || 0} 个`,
+                `${record.summary?.failedCount || 0} 个`,
+                record.overallResult === "passed" ? "验证通过" : "验证不通过",
+              ])}
+              statusColumns={[5]}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="ai-workstation-block ai-workstation-enable-state">
+        <PanelTitle
+          title="启用与运行状态"
+          action={<Status>{runtime.label}</Status>}
+        />
+        <div className="ai-workstation-enable-grid">
+          <span>
+            <small>启用状态</small>
+            <strong>
+              {WORKSTATION_ENABLE_STATUSES[normalized.enableStatus]}
+            </strong>
+          </span>
+          <span>
+            <small>验证状态</small>
+            <strong>
+              {WORKSTATION_VALIDATION_STATUSES[normalized.validationStatus]}
+            </strong>
+          </span>
+          <span>
+            <small>当前运行状态</small>
+            <strong>{runtime.label}</strong>
+          </span>
+          <span>
+            <small>最近验证</small>
+            <strong>{normalized.lastValidatedAt || "未验证"}</strong>
+          </span>
+        </div>
+        <div className="row-actions">
+          {normalized.enableStatus === "enabled" ? (
+            <Button
+              type="danger"
+              onClick={() =>
+                setModal({
+                  title: "停用当前工位AI评价",
+                  content: (
+                    <p>
+                      停用后不再用于新学生运行，当前区域、摄像头配置和验证记录均会保留。
+                    </p>
+                  ),
+                  confirmText: "确认停用",
+                  onConfirm: () => {
+                    store.disableSopWorkstationAi(normalized.id);
+                    return "当前工位AI评价已停用";
+                  },
+                })
+              }
+            >
+              停用AI评价
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              disabled={
+                normalized.validationStatus !== "passed" || !checks.ready
+              }
+              onClick={confirmEnable}
+            >
+              {normalized.enableStatus === "disabled"
+                ? "重新启用"
+                : "启用AI评价"}
+            </Button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SopWorkstationEnablementSection({
+  sop,
+  aiConfig,
+  evaluation,
+  data,
+  store,
+  setModal,
+  nav,
+}) {
+  const relations = (data.sopWorkstationAiConfigs || []).filter(
+    (item) => item.sopAiConfigId === aiConfig.id,
+  );
+  const [selectedId, setSelectedId] = useState(relations[0]?.id || "");
+  useEffect(() => {
+    if (!relations.some((item) => item.id === selectedId))
+      setSelectedId(relations[0]?.id || "");
+  }, [relations, selectedId]);
+  const selected = relations.find((item) => item.id === selectedId);
+  const available = data.workstations.filter(
+    (workstation) =>
+      isWorkstationSelectable(workstation) &&
+      !relations.some((item) => item.workstationId === workstation.id),
+  );
+  const addWorkstation = () => {
+    const formRef = createRef();
+    setModal({
+      eyebrow: "工位启用与现场验证",
+      title: "添加目标工位",
+      content: (
+        <AiWorkstationSelectForm
+          ref={formRef}
+          workstations={available}
+          devices={data.devices}
+        />
+      ),
+      confirmText: "添加工位",
+      onConfirm: () => {
+        const created = store.addSopWorkstationAiConfig(
+          sop.id,
+          formRef.current.getValue(),
+        );
+        setSelectedId(created.id);
+        return "目标工位已添加";
+      },
+    });
+  };
+  if (!evaluation.ready || aiConfig.status === "configuring")
+    return (
+      <section className="panel empty-state ai-workstation-enablement">
+        <AlertOutlined />
+        <h2>当前SOP的AI能力配置尚未完成</h2>
+        <p>请先完成AI判断项和能力引用配置，再进入工位启用与现场验证。</p>
+      </section>
+    );
+  return (
+    <section className="panel ai-workstation-enablement">
+      <PanelTitle
+        title="工位启用与现场验证"
+        action={
+          <Button
+            icon={<PlusOutlined />}
+            disabled={!available.length}
+            onClick={addWorkstation}
+          >
+            添加工位
+          </Button>
+        }
+      />
+      <p className="hint">
+        每个工位独立维护当前摄像头选择、实际区域、验证状态和启用状态，不创建工位配置版本。
+      </p>
+      {!relations.length ? (
+        <div className="empty-state ai-workstation-empty">
+          <DesktopOutlined />
+          <h3>暂无已添加工位</h3>
+          <p>请从工位管理中的现有工位选择目标工位。</p>
+          {!available.length && (
+            <Button onClick={() => nav("/admin/workstations")}>
+              去工位管理
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="ai-workstation-list">
+            {relations.map((relation) => {
+              const workstation = data.workstations.find(
+                (item) => item.id === relation.workstationId,
+              );
+              if (!workstation) return null;
+              const checks = checkSopWorkstationAiConfig({
+                config: relation,
+                aiConfig,
+                aiConfigReady: evaluation.ready,
+                workstation,
+                devices: data.devices,
+                capabilities: data.aiCapabilities,
+              });
+              const runtime = deriveSopWorkstationRuntimeStatus({
+                config: relation,
+                checks,
+                readiness: checks.readiness,
+              });
+              const base = normalizeWorkstationAiBaseConfig(workstation);
+              const selectableCameraIds = new Set(
+                [base.primaryCameraId, base.fallbackCameraId].filter(Boolean),
+              );
+              const configuredCameraCount = checks.activeJudgementItems.filter(
+                (item) =>
+                  relation.judgementCameraBindings?.some(
+                    (binding) =>
+                      binding.judgementItemId === item.id &&
+                      selectableCameraIds.has(binding.cameraId),
+                  ),
+              ).length;
+              const configuredAreaCount = checks.requiredLogicalAreas.filter(
+                (area) =>
+                  relation.logicalAreaMappings?.some(
+                    (mapping) =>
+                      mapping.logicalAreaId === area.id &&
+                      selectableCameraIds.has(mapping.cameraId),
+                  ),
+              ).length;
+              return (
+                <button
+                  key={relation.id}
+                  className={`ai-workstation-list__item ${selectedId === relation.id ? "is-active" : ""}`}
+                  onClick={() => setSelectedId(relation.id)}
+                >
+                  <span>
+                    <strong>{workstation.name}</strong>
+                    <small>
+                      {workstation.code} · {workstation.location}
+                    </small>
+                  </span>
+                  <span>
+                    <small>AI基础状态</small>
+                    <Status tone={checks.readiness.tone}>
+                      {checks.readiness.label}
+                    </Status>
+                  </span>
+                  <span>
+                    <small>区域配置</small>
+                    <strong>
+                      {configuredAreaCount}/{checks.requiredLogicalAreas.length}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>摄像头配置</small>
+                    <strong>
+                      {configuredCameraCount}/
+                      {checks.activeJudgementItems.length}
+                    </strong>
+                  </span>
+                  <span>
+                    <small>现场验证</small>
+                    <Status>
+                      {
+                        WORKSTATION_VALIDATION_STATUSES[
+                          relation.validationStatus
+                        ]
+                      }
+                    </Status>
+                  </span>
+                  <span>
+                    <small>启用状态</small>
+                    <Status>
+                      {WORKSTATION_ENABLE_STATUSES[relation.enableStatus]}
+                    </Status>
+                  </span>
+                  <span>
+                    <small>运行状态</small>
+                    <Status>{runtime.label}</Status>
+                  </span>
+                  <span>
+                    <small>最近验证</small>
+                    <strong>{relation.lastValidatedAt || "未验证"}</strong>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {selected && (
+            <AiWorkstationConfigWorkspace
+              relation={selected}
+              aiConfig={aiConfig}
+              evaluation={evaluation}
+              data={data}
+              store={store}
+              setModal={setModal}
+            />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function AiCapabilityConfigDetail({ setModal }) {
   const nav = useNavigate();
+  const store = usePrototypeData();
+  const { data } = store;
   const { sopId } = useParams();
-  const { data } = usePrototypeData();
   const sop = getConfigurableSops(data?.sops).find((item) => item.id === sopId);
-  if (!sop) {
+  if (!sop)
     return <MissingState title="可配置的SOP不存在" backTo={AI_CONFIG_PATH} />;
-  }
+  const rawConfig = (data.aiCapabilityConfigs || []).find(
+    (item) => item.sopId === sop.id,
+  );
+  const config = normalizeAiCapabilityConfig(rawConfig || { sopId: sop.id });
+  const allCapabilities = data.aiCapabilities || [];
+  const capabilities = allCapabilities.filter(
+    isCapabilityAvailableForConfiguration,
+  );
+  const evaluation = evaluateAiCapabilityConfig({
+    sop,
+    config: rawConfig,
+    capabilities: allCapabilities,
+  });
+  const expectedCounts = (sop.steps || []).reduce(
+    (counts, step) => {
+      const mode = step.expectedJudgementMode || step.judgementMode;
+      if (mode === "visual_auto") counts.automatic += 1;
+      else if (mode === "visual_assist_default_pass") counts.assisted += 1;
+      else counts.teacher += 1;
+      return counts;
+    },
+    { automatic: 0, assisted: 0, teacher: 0 },
+  );
+  const progress = evaluation.totalSteps
+    ? Math.round((evaluation.configuredStepCount / evaluation.totalSteps) * 100)
+    : 0;
+  const addArea = () => {
+    const formRef = createRef();
+    setModal({
+      title: "新增逻辑区域",
+      content: <AiLogicalAreaForm ref={formRef} />,
+      confirmText: "创建区域",
+      onConfirm: () => {
+        store.createAiLogicalArea(sop.id, formRef.current.getValue());
+        return "逻辑区域已创建";
+      },
+    });
+  };
   return (
     <>
       <PageHeader
         title="AI能力配置"
         subtitle={sop.name || "未命名SOP"}
         actions={
-          <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+          <div className="row-actions">
+            {!!rawConfig && (
+              <Button
+                type="danger"
+                onClick={() =>
+                  setModal({
+                    title: "清空当前AI能力配置",
+                    content: (
+                      <p>
+                        将删除当前SOP的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师SOP或AI能力库内容。
+                      </p>
+                    ),
+                    confirmText: "确认清空",
+                    onConfirm: () => {
+                      store.clearAiCapabilityConfig(sop.id);
+                      return "当前AI能力配置已清空";
+                    },
+                  })
+                }
+              >
+                清空当前配置
+              </Button>
+            )}
+            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+          </div>
         }
       />
-      <section className="panel ai-config-summary">
-        <PanelTitle title="SOP信息" />
-        <div className="ai-config-summary__grid">
+      <section className="panel ai-config-overview">
+        <PanelTitle
+          title="当前配置概览"
+          action={<Status>{evaluation.statusLabel}</Status>}
+        />
+        <div className="ai-config-summary__grid ai-config-summary__grid--wide">
           <div>
             <small>SOP名称</small>
-            <strong>{sop.name || "未命名SOP"}</strong>
+            <strong>{sop.name}</strong>
           </div>
           <div>
             <small>创建教师</small>
             <strong>{sop.owner || "未设置"}</strong>
+          </div>
+          <div>
+            <small>专业/课程</small>
+            <strong>
+              {[sop.major, sop.course].filter(Boolean).join(" / ") || "未设置"}
+            </strong>
           </div>
           <div>
             <small>SOP状态</small>
@@ -8164,19 +10194,224 @@ function AiCapabilityConfigDetail() {
           </div>
           <div>
             <small>步骤数</small>
+            <strong>{evaluation.totalSteps} 步</strong>
+          </div>
+          <div>
+            <small>教师期望评价方式</small>
             <strong>
-              {Array.isArray(sop.steps) ? sop.steps.length : 0} 步
+              自动 {expectedCounts.automatic} · 辅助 {expectedCounts.assisted} ·
+              教师 {expectedCounts.teacher}
             </strong>
           </div>
+          <div>
+            <small>AI判断项</small>
+            <strong>{evaluation.judgementItemCount} 项</strong>
+          </div>
+          <div>
+            <small>引用AI能力</small>
+            <strong>{evaluation.distinctCapabilityIds.length} 个</strong>
+          </div>
+        </div>
+        <div className="ai-config-progress-row">
+          <span>
+            <small>配置完整度</small>
+            <strong>{progress}%</strong>
+          </span>
+          <div className="progress">
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <small>
+            {evaluation.configuredStepCount}/{evaluation.totalSteps}{" "}
+            个步骤已完成配置
+          </small>
         </div>
       </section>
-      <section className="panel ai-entry-table">
-        <PanelTitle title="AI能力配置" />
-        <p>
-          当前状态：<Status>未配置</Status>
-        </p>
-        <p className="hint">详细的AI判断项配置将在后续任务中开放。</p>
+      <section className="panel ai-config-readiness">
+        <PanelTitle
+          title="配置完整性检查"
+          action={
+            <div className="row-actions">
+              {evaluation.status === "pending_validation" && (
+                <Button
+                  onClick={() =>
+                    document
+                      .getElementById("workstation-enablement")
+                      ?.scrollIntoView({ behavior: "smooth" })
+                  }
+                >
+                  去工位验证
+                </Button>
+              )}
+              <Button
+                type="primary"
+                disabled={
+                  !evaluation.ready ||
+                  evaluation.status === "pending_validation"
+                }
+                onClick={() =>
+                  setModal({
+                    title: "完成AI能力配置",
+                    content: (
+                      <p>
+                        完整性检查已通过。完成后配置进入“待验证”，后续需要在工位现场验证后才能启用。
+                      </p>
+                    ),
+                    confirmText: "确认完成",
+                    onConfirm: () => {
+                      store.completeAiCapabilityConfig(sop.id);
+                      return "AI能力配置已进入待验证";
+                    },
+                  })
+                }
+              >
+                完成配置
+              </Button>
+            </div>
+          }
+        />
+        {evaluation.ready ? (
+          <div className="evaluation-notice evaluation-notice--success">
+            <CheckCircleOutlined />
+            <span>所有步骤、规则、判断项、能力引用和条件均已通过检查。</span>
+          </div>
+        ) : (
+          <div className="ai-config-check-list">
+            {evaluation.issues.slice(0, 8).map((issue) => (
+              <p key={issue}>
+                <AlertOutlined /> {issue}
+              </p>
+            ))}
+            {evaluation.issues.length > 8 && (
+              <small>
+                另有 {evaluation.issues.length - 8} 项，请在对应步骤内查看。
+              </small>
+            )}
+          </div>
+        )}
       </section>
+      <section className="panel ai-config-logical-areas">
+        <PanelTitle
+          title="逻辑区域"
+          action={
+            <Button icon={<PlusOutlined />} onClick={addArea}>
+              新增逻辑区域
+            </Button>
+          }
+        />
+        <p className="hint">
+          逻辑区域只描述业务含义，摄像头画面与坐标将在后续工位验证中配置。
+        </p>
+        <div className="ai-config-area-list">
+          {config.logicalAreas.map((area) => (
+            <article key={area.id}>
+              <div>
+                <strong>{area.name}</strong>
+                <small>{area.description || "暂无说明"}</small>
+                <small>
+                  被{" "}
+                  {config.judgementItems.reduce(
+                    (count, item) =>
+                      count +
+                      (item.conditions || []).filter(
+                        (condition) => condition.logicalAreaId === area.id,
+                      ).length,
+                    0,
+                  )}{" "}
+                  个判断条件引用
+                </small>
+              </div>
+              <button
+                className="table-action table-action--danger"
+                onClick={() =>
+                  setModal({
+                    title: "删除逻辑区域",
+                    content: (
+                      <p>
+                        确认删除“{area.name}”？已被判断条件引用的区域无法删除。
+                      </p>
+                    ),
+                    confirmText: "确认删除",
+                    onConfirm: () => {
+                      store.deleteAiLogicalArea(sop.id, area.id);
+                      return "逻辑区域已删除";
+                    },
+                  })
+                }
+              >
+                删除
+              </button>
+            </article>
+          ))}
+          {!config.logicalAreas.length && (
+            <p className="hint">
+              暂无逻辑区域。仅在条件需要“进入区域”或“位于区域”时创建。
+            </p>
+          )}
+        </div>
+      </section>
+      <div className="ai-config-step-list">
+        {(sop.steps || []).map((step, index) => (
+          <AiConfigStepCard
+            key={step.id}
+            sop={sop}
+            step={step}
+            index={index}
+            config={config}
+            evaluation={evaluation}
+            capabilities={capabilities}
+            store={store}
+            setModal={setModal}
+            nav={nav}
+          />
+        ))}
+      </div>
+      <section className="panel ai-config-footer-summary">
+        <div>
+          <small>步骤</small>
+          <strong>{evaluation.totalSteps}</strong>
+        </div>
+        <div>
+          <small>AI自动</small>
+          <strong>{evaluation.modeCounts.automatic}</strong>
+        </div>
+        <div>
+          <small>AI辅助</small>
+          <strong>{evaluation.modeCounts.assisted}</strong>
+        </div>
+        <div>
+          <small>教师评价</small>
+          <strong>{evaluation.modeCounts.teacher}</strong>
+        </div>
+        <div>
+          <small>判断项</small>
+          <strong>{evaluation.judgementItemCount}</strong>
+        </div>
+        <div>
+          <small>引用能力</small>
+          <strong>{evaluation.distinctCapabilityIds.length}</strong>
+        </div>
+        <div>
+          <small>逻辑区域</small>
+          <strong>{evaluation.logicalAreaCount}</strong>
+        </div>
+        <div>
+          <small>当前状态</small>
+          <Status>{evaluation.statusLabel}</Status>
+        </div>
+      </section>
+      {!!rawConfig && (
+        <div id="workstation-enablement">
+          <SopWorkstationEnablementSection
+            sop={sop}
+            aiConfig={config}
+            evaluation={evaluation}
+            data={data}
+            store={store}
+            setModal={setModal}
+            nav={nav}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -16643,8 +18878,7 @@ function AiEvaluationDetail({ setModal }) {
   const sop = store.data.sops.find((item) => item.id === id);
   const [tab, setTab] = useState("mapping");
   const [selectedWorkstationId, setSelectedWorkstationId] = useState("");
-  const implementationRef = useRef(null);
-  const validationRef = useRef(null);
+  const workstationAiRef = useRef(null);
   const modelValidationRef = useRef(null);
   const compatibilityRef = useRef(null);
   if (!sop)
@@ -18787,20 +21021,44 @@ function AdminList({ type, setModal }) {
     },
     workstations: {
       title: "工位管理",
-      subtitle: "维护物理工位、适用项目、设备绑定和管理状态",
+      subtitle: "维护物理工位、设备绑定与AI基础运行条件",
       singular: "工位",
       createText: "新建工位",
       formType: "workstation",
       collection: "workstations",
-      columns: ["工位", "标识", "位置", "状态", "已绑定设备", "当前安排"],
-      row: (item) => [
-        item.name,
-        item.code,
-        item.location,
-        item.status,
-        `${data.devices.filter((d) => d.workstationId === item.id).length} 台`,
-        item.currentArrangement,
+      columns: [
+        "工位",
+        "标识 / 位置",
+        "业务状态",
+        "主摄像头",
+        "摄像头状态",
+        "AI就绪",
+        "绑定设备",
+        "更新时间",
       ],
+      row: (item) => {
+        const aiConfig = normalizeWorkstationAiBaseConfig(item);
+        const camera = data.devices.find(
+          (device) => device.id === aiConfig.primaryCameraId,
+        );
+        const readiness = deriveWorkstationAiReadiness({
+          workstation: item,
+          devices: data.devices,
+          edgeRequired: true,
+        });
+        return [
+          item.name,
+          `${item.code} · ${item.location}`,
+          item.status,
+          camera?.name || "未配置",
+          camera
+            ? `${camera.status} / ${camera.streamStatus || "流状态未知"}`
+            : "--",
+          readiness.label,
+          `${data.devices.filter((d) => d.workstationId === item.id).length} 台`,
+          item.updatedAt,
+        ];
+      },
       key: "code",
       create: store.createWorkstation,
     },
@@ -18899,10 +21157,11 @@ function AdminList({ type, setModal }) {
           rows={filtered.map(config.row)}
           rowKey={(row) => row[1]}
           onView={(row) => {
-            const target = items.find(
-              (item) =>
-                String(item[config.key]) ===
-                String(row[type === "devices" ? 0 : 1]),
+            const target = items.find((item) =>
+              type === "workstations"
+                ? String(row[1]).startsWith(`${item.code} ·`)
+                : String(item[config.key]) ===
+                  String(row[type === "devices" ? 0 : 1]),
             );
             if (target) nav(`/admin/${type}/${target.id}`);
           }}
@@ -19295,12 +21554,176 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
   );
 });
 
+const WorkstationAiBaseConfigForm = forwardRef(
+  function WorkstationAiBaseConfigForm({ workstation }, ref) {
+    const { data } = usePrototypeData();
+    const initial = normalizeWorkstationAiBaseConfig(workstation);
+    const [form, setForm] = useState(initial);
+    const cameras = data.devices.filter(
+      (device) =>
+        device.workstationId === workstation.id &&
+        isCameraDevice(device) &&
+        device.status !== "停用",
+    );
+    const edgeDevices = data.devices.filter(
+      (device) =>
+        device.workstationId === workstation.id &&
+        isEdgeDevice(device) &&
+        device.status !== "停用",
+    );
+    const criticalChange = isCriticalWorkstationAiChange(initial, form);
+    const affectedCount = data.aiCapabilityConfigs.reduce(
+      (count, config) =>
+        count +
+        (config.workstationValidationStates || []).filter(
+          (state) =>
+            state.workstationId === workstation.id &&
+            ["enabled", "validated", "passed"].includes(state.status),
+        ).length,
+      0,
+    );
+    const selectedDevices = [
+      ["主摄像头", form.primaryCameraId],
+      ["备用摄像头", form.fallbackCameraId],
+      ["边缘设备", form.edgeDeviceId],
+    ]
+      .map(([label, id]) => [
+        label,
+        data.devices.find((device) => device.id === id),
+      ])
+      .filter(([, device]) => device);
+
+    useImperativeHandle(ref, () => ({
+      validate() {
+        if (
+          form.primaryCameraId &&
+          form.primaryCameraId === form.fallbackCameraId
+        )
+          throw new Error("主摄像头和备用摄像头不能选择同一台设备。");
+        return form;
+      },
+    }));
+
+    return (
+      <div className="workstation-ai-form">
+        <div className="form-row">
+          <label className="field">
+            主摄像头 <b className="required">AI运行必需</b>
+            <select
+              value={form.primaryCameraId}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  primaryCameraId: event.target.value,
+                  fallbackCameraId:
+                    current.fallbackCameraId === event.target.value
+                      ? ""
+                      : current.fallbackCameraId,
+                }))
+              }
+            >
+              <option value="">请选择已绑定摄像头</option>
+              {cameras.map((camera) => (
+                <option value={camera.id} key={camera.id}>
+                  {camera.name} · {camera.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            备用摄像头 <span className="optional">选填</span>
+            <select
+              value={form.fallbackCameraId}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  fallbackCameraId: event.target.value,
+                }))
+              }
+            >
+              <option value="">不配置备用摄像头</option>
+              {cameras
+                .filter((camera) => camera.id !== form.primaryCameraId)
+                .map((camera) => (
+                  <option value={camera.id} key={camera.id}>
+                    {camera.name} · {camera.status}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          边缘设备 <b className="required">AI运行必需</b>
+          <select
+            value={form.edgeDeviceId}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                edgeDeviceId: event.target.value,
+              }))
+            }
+          >
+            <option value="">请选择已绑定边缘设备</option>
+            {edgeDevices.map((device) => (
+              <option value={device.id} key={device.id}>
+                {device.name} · {device.status}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedDevices.length > 0 && (
+          <div className="workstation-ai-device-preview">
+            {selectedDevices.map(([label, device]) => (
+              <article key={label}>
+                <span>
+                  {isCameraDevice(device) ? (
+                    <VideoCameraOutlined />
+                  ) : (
+                    <HddOutlined />
+                  )}
+                </span>
+                <div>
+                  <small>{label}</small>
+                  <strong>{device.name}</strong>
+                  <p>
+                    {device.serial} · {device.status}
+                    {isCameraDevice(device)
+                      ? ` · ${device.streamStatus || "流状态未知"}`
+                      : ""}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        {criticalChange && (
+          <div className="workstation-ai-impact-warning">
+            <AlertOutlined />
+            <div>
+              <strong>本次保存包含关键基础配置变更</strong>
+              <p>
+                保存后，相关的已验证或已启用 SOP AI
+                配置将转为待重新验证，现有配置和关联关系继续保留。
+              </p>
+              <small>预计影响 {affectedCount} 条已有工位验证状态。</small>
+            </div>
+          </div>
+        )}
+        {!cameras.length && (
+          <p className="form-hint">
+            当前工位没有可选摄像头，请先在设备管理中登记并绑定摄像头。
+          </p>
+        )}
+      </div>
+    );
+  },
+);
+
 function AdminDetail({ type, setModal }) {
   const { id } = useParams();
   const nav = useNavigate();
   const formRef = useRef(null);
-  const implementationRef = useRef(null);
-  const validationRef = useRef(null);
+  const workstationAiRef = useRef(null);
   const store = usePrototypeData();
   const { data } = store;
   const plural = {
@@ -19383,7 +21806,6 @@ function AdminDetail({ type, setModal }) {
           `${data.devices.filter((device) => device.workstationId === item.id).length} 台`,
         ],
         ["当前安排", item.currentArrangement],
-        ["规则版本", "SOP V3.2"],
         ["更新时间", item.updatedAt],
       ],
       update: store.updateWorkstation,
@@ -19519,143 +21941,68 @@ function AdminDetail({ type, setModal }) {
     type === "workstation"
       ? data.devices.filter((device) => device.workstationId === item.id)
       : [];
-  const publishedSops =
+  const workstationAiConfig =
+    type === "workstation" ? normalizeWorkstationAiBaseConfig(item) : null;
+  const workstationAiReadiness =
     type === "workstation"
-      ? data.sops.filter((sop) => sop.status === "已发布")
-      : [];
-  const supportedSops = publishedSops.filter(
-    (sop) => sop.name === item.supportedProject,
-  );
-  const workstationSops = supportedSops.length ? supportedSops : publishedSops;
-  const primarySop = workstationSops[0];
-  const primaryMapping = primarySop
-    ? store.getSopMappingStatus(primarySop.id).mapping
-    : null;
-  const validationRecords =
+      ? deriveWorkstationAiReadiness({
+          workstation: item,
+          devices: data.devices,
+          edgeRequired: true,
+        })
+      : null;
+  const primaryCamera =
     type === "workstation"
-      ? (data.fieldValidations || []).filter(
-          (record) => record.workstationId === item.id,
-        )
-      : [];
-  const latestValidation = validationRecords.find(
-    (record) =>
-      record.sopId === primarySop?.id &&
-      record.sopVersion === primarySop?.version,
-  );
-  const primaryModel = data.models.find(
-    (model) => model.sopId === primarySop?.id && model.status === "已部署",
-  );
-  const currentProfile =
-    type === "workstation"
-      ? (data.workstationProfiles || []).find(
-          (profile) => profile.id === item.currentProfileId,
+      ? data.devices.find(
+          (device) => device.id === workstationAiConfig.primaryCameraId,
         )
       : null;
-  const evaluationGate =
-    type === "workstation" && primarySop
-      ? store.getWorkstationEvaluationGate(item.id, primarySop.id)
+  const fallbackCamera =
+    type === "workstation"
+      ? data.devices.find(
+          (device) => device.id === workstationAiConfig.fallbackCameraId,
+        )
       : null;
-  const openImplementationCheck = () =>
+  const edgeDevice =
+    type === "workstation"
+      ? data.devices.find(
+          (device) => device.id === workstationAiConfig.edgeDeviceId,
+        )
+      : null;
+  const affectedAiValidationCount =
+    type === "workstation"
+      ? data.aiCapabilityConfigs.reduce(
+          (count, aiConfig) =>
+            count +
+            (aiConfig.workstationValidationStates || []).filter(
+              (state) =>
+                state.workstationId === item.id &&
+                ["enabled", "validated", "passed"].includes(state.status),
+            ).length,
+          0,
+        )
+      : 0;
+  const openWorkstationAiConfig = () =>
     setModal({
-      eyebrow: "自动评价启用前置条件",
-      title: `${item.name} · 实施检查`,
+      eyebrow: "工位AI基础配置",
+      title: `${item.name} · 选择运行设备`,
       size: "large",
       content: (
-        <ImplementationCheckForm
-          ref={implementationRef}
+        <WorkstationAiBaseConfigForm
+          ref={workstationAiRef}
           workstation={item}
-          evaluationItems={primaryMapping?.evaluationItems || []}
         />
       ),
-      confirmText: "保存实施检查",
+      confirmText: "保存并检查",
       onConfirm: () => {
-        const saved = store.saveWorkstationImplementation(
+        const saved = store.saveWorkstationAiBaseConfig(
           item.id,
-          implementationRef.current.getValue(),
+          workstationAiRef.current.validate(),
         );
-        return `实施检查已保存：${saved.roiVersion}`;
+        return saved.criticalChange
+          ? `AI基础配置已保存，${saved.affectedCount}条状态待重新验证`
+          : `AI基础配置已检查：${saved.readiness.label}`;
       },
-    });
-  const openFieldValidation = () =>
-    setModal({
-      eyebrow: "SOP 现场验证",
-      title: `${item.name} · 新增验证记录`,
-      size: "large",
-      content: (
-        <FieldValidationForm
-          ref={validationRef}
-          workstation={item}
-          sops={workstationSops}
-          evaluationItems={primaryMapping?.evaluationItems || []}
-        />
-      ),
-      confirmText: "提交验证记录",
-      onConfirm: () => {
-        const saved = store.saveFieldValidation(
-          validationRef.current.getValue(),
-        );
-        return `现场验证已提交：${saved.status}`;
-      },
-    });
-  const openValidationRecord = (record) =>
-    setModal({
-      eyebrow: "只读验证记录",
-      title: `${record.sopVersion} · ${record.status}`,
-      size: "large",
-      hideCancel: true,
-      dismissOnly: true,
-      confirmText: "关闭",
-      content: (
-        <div className="validation-record-detail">
-          <div className="definition-list">
-            <span>
-              <small>Workstation Profile</small>
-              <strong>{record.workstationProfileVersion || "未记录"}</strong>
-            </span>
-            <span>
-              <small>模型版本</small>
-              <strong>{record.modelVersion}</strong>
-            </span>
-            <span>
-              <small>ROI / 摄像头</small>
-              <strong>
-                {record.roiVersion} / {record.cameraConfigVersion}
-              </strong>
-            </span>
-            <span>
-              <small>验证人</small>
-              <strong>{record.operator}</strong>
-            </span>
-            <span>
-              <small>时间</small>
-              <strong>{record.createdAt}</strong>
-            </span>
-            <span>
-              <small>Evaluation Item Coverage</small>
-              <strong>
-                {record.coverage?.coveredItemCount || 0}/
-                {record.coverage?.totalItemCount || 0} ·{" "}
-                {record.coverage?.passed ? "完整" : "缺失"}
-              </strong>
-            </span>
-          </div>
-          <div className="validation-record-tests">
-            {(record.testCases || record.tests || []).map((test) => (
-              <article key={test.id || test.key}>
-                <strong>{test.name || test.label}</strong>
-                <Status tone={test.result === "失败" ? "danger" : "success"}>
-                  {test.result}
-                </Status>
-                <p>{test.note || "未填写补充说明"}</p>
-                {!!test.evaluationItemIds?.length && (
-                  <small>覆盖：{test.evaluationItemIds.join("、")}</small>
-                )}
-              </article>
-            ))}
-          </div>
-          {record.note && <p className="hint">总结：{record.note}</p>}
-        </div>
-      ),
     });
   return (
     <>
@@ -19666,20 +22013,12 @@ function AdminDetail({ type, setModal }) {
         actions={
           <>
             {type === "workstation" && (
-              <>
-                <Button
-                  icon={<CameraOutlined />}
-                  onClick={openImplementationCheck}
-                >
-                  实施检查
-                </Button>
-                <Button
-                  icon={<SafetyCertificateOutlined />}
-                  onClick={openFieldValidation}
-                >
-                  新增现场验证
-                </Button>
-              </>
+              <Button
+                icon={<VideoCameraOutlined />}
+                onClick={openWorkstationAiConfig}
+              >
+                配置AI基础设备
+              </Button>
             )}
             <Button
               onClick={() =>
@@ -19722,173 +22061,127 @@ function AdminDetail({ type, setModal }) {
           <p>{item.notes}</p>
         </section>
       )}
-      {type === "workstation" && primarySop && (
-        <>
-          <div className="implementation-layout">
-            <section className="panel">
-              <PanelTitle
-                title="当前画面与 ROI"
-                action={
-                  <Status>
-                    {currentProfile?.version || "Workstation Profile 未配置"}
-                  </Status>
-                }
-              />
-              <RoiPreview implementation={item.implementation} />
-              <div className="roi-legend">
-                <span className="blue">操作区</span>
-                <span className="green">工具区</span>
-                <span className="red">危险区</span>
+      {type === "workstation" && (
+        <section className="panel workstation-ai-panel">
+          <PanelTitle
+            title="AI基础运行配置"
+            action={
+              <Status tone={workstationAiReadiness.tone}>
+                {workstationAiReadiness.label}
+              </Status>
+            }
+          />
+          <div className="workstation-ai-summary">
+            <div
+              className={`workstation-ai-readiness is-${workstationAiReadiness.code}`}
+            >
+              <span className="workstation-ai-readiness__icon">
+                {workstationAiReadiness.code === "available" ? (
+                  <CheckCircleOutlined />
+                ) : (
+                  <ExclamationCircleFilled />
+                )}
+              </span>
+              <div>
+                <small>AI就绪状态</small>
+                <strong>{workstationAiReadiness.label}</strong>
+                <p>{workstationAiReadiness.reasons.join("；")}</p>
               </div>
-              <div className="definition-list ai-implementation-facts">
-                <span>
-                  <small>Primary Camera</small>
-                  <strong>
-                    {currentProfile?.cameras?.find(
-                      (camera) => camera.id === currentProfile.primaryCameraId,
-                    )?.name || "未配置"}
-                  </strong>
-                </span>
-                <span>
-                  <small>Fallback Camera</small>
-                  <strong>
-                    {currentProfile?.cameras?.find(
-                      (camera) => camera.id === currentProfile.fallbackCameraId,
-                    )?.name || "—"}
-                  </strong>
-                </span>
-              </div>
-            </section>
-            <section className="panel evaluation-gate-panel">
-              <PanelTitle
-                title="自动评价启用门槛"
-                action={
-                  <Status tone={evaluationGate.enabled ? "success" : "warning"}>
-                    {evaluationGate.status}
-                  </Status>
-                }
-              />
-              <div className="gate-coverage-number">
-                <strong>
-                  {evaluationGate.enabledStepCount}/
-                  {evaluationGate.automaticStepCount}
-                </strong>
-                <span>视频自动判定步骤已启用</span>
-              </div>
-              <div className="implementation-status-list">
-                {[
-                  ["机位", item.implementation.cameraPosition],
-                  ["光照", item.implementation.lighting],
-                  ["遮挡", item.implementation.occlusion],
-                  ["现场验证", latestValidation?.status || "未验证"],
-                ].map(([label, value]) => (
-                  <span key={label}>
-                    <small>{label}</small>
-                    <Status
-                      tone={
-                        value === "已确认" || value === "通过"
-                          ? "success"
-                          : "warning"
-                      }
-                    >
-                      {value}
-                    </Status>
-                  </span>
-                ))}
-              </div>
-              <div className="version-baseline">
-                <span>
-                  <small>SOP / 模型</small>
-                  <strong>
-                    {primarySop.version} / {primaryModel?.version || "未部署"}
-                  </strong>
-                </span>
-                <span>
-                  <small>Profile / ROI / 摄像头配置</small>
-                  <strong>
-                    {currentProfile?.version || "未配置"} /{" "}
-                    {item.implementation.roiVersion} /{" "}
-                    {item.implementation.cameraConfigVersion}
-                  </strong>
-                </span>
-              </div>
-              {!evaluationGate.enabled && (
-                <div className="fallback-note">
-                  <AlertOutlined />
-                  <div>
-                    <strong>当前不启用自动判定，但不阻塞 SOP 使用</strong>
-                    <p>{evaluationGate.reasons.join("；")}</p>
-                    <small>
-                      所有未启用项自动降级为默认通过，教师可留痕扣分。
-                    </small>
-                  </div>
-                </div>
-              )}
-            </section>
+            </div>
+            <div className="workstation-ai-timestamps">
+              <span>
+                <small>最近检查</small>
+                <strong>{workstationAiConfig.lastCheckedAt}</strong>
+              </span>
+              <span>
+                <small>配置更新</small>
+                <strong>{workstationAiConfig.updatedAt || "未更新"}</strong>
+              </span>
+              <span>
+                <small>最近关键变更</small>
+                <strong>{workstationAiConfig.lastAiCriticalChangeAt}</strong>
+              </span>
+            </div>
           </div>
-          <section className="panel panel--table">
-            <PanelTitle
-              title={`${primarySop.name} ${primarySop.version} · 步骤覆盖`}
-              action={<span>模型已部署不代表本工位已启用</span>}
-            />
-            <DataTable
-              columns={[
-                "Step ID",
-                "步骤",
-                "SOP配置方式",
-                "本工位实际方式",
-                "自动评价状态",
-              ]}
-              rows={primarySop.steps.map((step) => {
-                const effectiveMode = evaluationGate.effectiveMode(step);
-                return [
-                  step.id,
-                  step.name,
-                  JUDGEMENT_MODES[step.judgementMode]?.shortLabel,
-                  JUDGEMENT_MODES[effectiveMode]?.shortLabel,
-                  step.judgementMode === "visual_auto"
-                    ? evaluationGate.enabled
-                      ? "已启用"
-                      : "已降级"
-                    : "按SOP默认策略",
-                ];
-              })}
-              statusColumns={[4]}
-            />
-          </section>
-          <section className="panel panel--table">
-            <PanelTitle
-              title="SOP 现场验证记录"
-              action={<span>{validationRecords.length} 条</span>}
-            />
-            <DataTable
-              columns={[
-                "验证时间",
-                "SOP版本",
-                "模型版本",
-                "Workstation Profile",
-                "Coverage",
-                "结果",
-                "验证人",
-              ]}
-              rows={validationRecords.map((record) => [
-                record.createdAt,
-                record.sopVersion,
-                record.modelVersion,
-                record.workstationProfileVersion || "未记录",
-                `${record.coverage?.coveredItemCount || 0}/${record.coverage?.totalItemCount || 0}`,
-                record.status,
-                record.operator,
-              ])}
-              statusColumns={[5]}
-              rowKey={(_, index) => validationRecords[index].id}
-              onView={(_, index) =>
-                openValidationRecord(validationRecords[index])
-              }
-              emptyText="尚无现场验证记录，自动判定保持关闭。"
-            />
-          </section>
-        </>
+          <div className="workstation-ai-assets">
+            {[
+              ["主摄像头", primaryCamera, true],
+              ["备用摄像头", fallbackCamera, false],
+              ["边缘设备", edgeDevice, true],
+            ].map(([label, device, required]) => (
+              <article key={label} className={!device ? "is-empty" : ""}>
+                <span className="workstation-ai-assets__icon">
+                  {label === "边缘设备" ? (
+                    <HddOutlined />
+                  ) : (
+                    <VideoCameraOutlined />
+                  )}
+                </span>
+                <div className="workstation-ai-assets__heading">
+                  <small>{label}</small>
+                  <strong>
+                    {device?.name || (required ? "未配置" : "未配置（可选）")}
+                  </strong>
+                </div>
+                {device ? (
+                  <dl>
+                    <div>
+                      <dt>序列号</dt>
+                      <dd>{device.serial}</dd>
+                    </div>
+                    <div>
+                      <dt>在线状态</dt>
+                      <dd>
+                        <Status
+                          tone={device.status === "在线" ? "success" : "danger"}
+                        >
+                          {device.status}
+                        </Status>
+                      </dd>
+                    </div>
+                    {isCameraDevice(device) && (
+                      <>
+                        <div>
+                          <dt>视频流</dt>
+                          <dd>{device.streamStatus || "未知"}</dd>
+                        </div>
+                        <div>
+                          <dt>分辨率</dt>
+                          <dd>{device.resolution || "未记录"}</dd>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <dt>最后在线</dt>
+                      <dd>{device.lastHeartbeat || "未记录"}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p>请从已绑定到本工位的设备中选择。</p>
+                )}
+              </article>
+            ))}
+          </div>
+          <div className="workstation-ai-boundary-note">
+            <CheckCircleOutlined />
+            <div>
+              <strong>基础条件与SOP现场验证分开管理</strong>
+              <p>
+                “可用”仅表示主摄像头、视频流和边缘设备满足基础运行条件；具体SOP能否启用AI判断，仍需在对应AI能力配置中完成工位现场验证。
+              </p>
+            </div>
+          </div>
+          {affectedAiValidationCount > 0 && (
+            <div className="workstation-ai-impact-note">
+              <AlertOutlined />
+              <p>
+                更换或解绑主摄像头、备用摄像头、边缘设备后，当前关联的{" "}
+                {affectedAiValidationCount}{" "}
+                条已验证状态会转为待重新验证，已有判断项和能力关联不会删除。
+              </p>
+            </div>
+          )}
+        </section>
       )}
       {type === "teacher" && (
         <section className="panel panel--table">
@@ -19923,12 +22216,23 @@ function AdminDetail({ type, setModal }) {
         <section className="panel panel--table">
           <PanelTitle title="已绑定设备" />
           <DataTable
-            columns={["设备", "类型", "状态", "版本"]}
+            columns={[
+              "设备",
+              "序列号",
+              "类型",
+              "状态",
+              "视频流 / 分辨率",
+              "最后在线",
+            ]}
             rows={linkedDevices.map((device) => [
               device.name,
+              device.serial,
               device.type,
               device.status,
-              device.version,
+              isCameraDevice(device)
+                ? `${device.streamStatus || "未知"} / ${device.resolution || "未记录"}`
+                : "--",
+              device.lastHeartbeat || "未记录",
             ])}
             onView={(row) => {
               const device = linkedDevices.find(
@@ -19987,7 +22291,7 @@ function AdminRecords({ exam = false, setModal }) {
     return [
       item.name,
       item.teacherName || "王老师",
-      `${sop?.name || "标准已失效"} ${item.snapshot?.sopVersion || sop?.version || ""}`,
+      sop?.name || "标准已失效",
       `${item.studentIds.length}人`,
       item.status,
       item.scheduleStart?.replace("T", " ") || "待定",
@@ -20267,22 +22571,22 @@ function SessionDiagnosticPanel({ record, store }) {
       </div>
       <div className="diagnostic-versions">
         {[
-          ["SOP", selectedStep.evidenceMetadata?.sopVersion],
-          ["Mapping", selectedStep.evidenceMetadata?.mappingVersion],
+          ["SOP", record.sopId || "随安排锁定"],
           [
-            "AI Package",
+            "AI能力配置",
+            selectedStep.evidenceMetadata?.mappingVersion
+              ? "随会话锁定"
+              : "未配置",
+          ],
+          [
+            "当前已发布模型",
             selectedStep.evidenceMetadata?.aiPackageVersion ||
-              selectedStep.evidenceMetadata?.modelVersion,
+            selectedStep.evidenceMetadata?.modelVersion
+              ? "随会话锁定"
+              : "未启用",
           ],
-          [
-            "Workstation Profile",
-            selectedStep.evidenceMetadata?.workstationProfileVersion,
-          ],
+          ["工位AI配置", selectedSession.workstationId],
           ["现场验证", selectedStep.evidenceMetadata?.validationId],
-          [
-            "Compatibility",
-            selectedStep.evidenceMetadata?.compatibilityDecisionId,
-          ],
         ].map(([label, value]) => (
           <span key={label}>
             <small>{label}</small>
@@ -21265,6 +23569,7 @@ function RoutedApp() {
                 path="/teacher/sop/edit/:id"
                 element={<SopEditor setModal={setModal} />}
               />
+              {/* 旧版教师 Mapping 调试路由保留；正式 SOP 页面不再提供入口。 */}
               <Route
                 path="/teacher/sop/:id/ai-mapping/:mappingId"
                 element={<TeacherMappingReview setModal={setModal} />}
@@ -21382,7 +23687,7 @@ function RoutedApp() {
               />
               <Route
                 path={`${AI_CONFIG_PATH}/:sopId`}
-                element={<AiCapabilityConfigDetail />}
+                element={<AiCapabilityConfigDetail setModal={setModal} />}
               />
               <Route
                 path={AI_LIBRARY_PATH}
