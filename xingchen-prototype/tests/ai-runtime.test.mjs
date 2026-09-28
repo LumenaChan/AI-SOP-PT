@@ -9,7 +9,10 @@ import {
   evaluationProfileFromGate,
   startAiRuntimeSession,
 } from "../src/aiRuntimeRules.js";
-import { createSessionStepsFromSop } from "../src/domainRules.js";
+import {
+  createSessionStepsFromSop,
+  normalizeSystemAlertSettings,
+} from "../src/domainRules.js";
 import { capabilityConfigReferenceIds } from "../src/aiCapabilityConfigRules.js";
 import { invalidateSopWorkstationConfigs } from "../src/sopWorkstationAiRules.js";
 
@@ -346,4 +349,14 @@ test("formal arrangement and runtime panel source are disconnected from legacy A
   assert.match(runtimePanel, /aiCapabilityConfigSnapshot/);
   assert.match(runtimePanel, /activeJudgementItems/);
   assert.match(runtimePanel, /simulateAiCondition/);
+});
+
+test("legacy version alert setting migrates to AI configuration invalidation semantics", () => {
+  const settings = normalizeSystemAlertSettings({
+    versionMismatchAlertEnabled: false,
+    capabilityOfflineAlertEnabled: true,
+  });
+  assert.equal(settings.aiConfigurationInvalidationAlertEnabled, false);
+  assert.equal(settings.capabilityOfflineAlertEnabled, true);
+  assert.equal("versionMismatchAlertEnabled" in settings, false);
 });

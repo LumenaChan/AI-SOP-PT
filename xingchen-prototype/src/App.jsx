@@ -66,6 +66,46 @@ import {
   usePrototypeData,
 } from "./prototypeData.jsx";
 import {
+  buildStudentIdentityVerification,
+  clearStudentIdentitySession,
+  createStudentIdentitySession,
+  getStudentFaceStatus,
+  getStudentIdentityError,
+  requestStudentCamera,
+  resolveStudentIdentity,
+  stopMediaStream,
+  writeStudentIdentitySession,
+} from "./studentIdentityRules.js";
+import {
+  buildStudentHelpPayload,
+  buildStudentPracticeFeedback,
+  getStudentSessionAccess,
+  getStudentTaskDetails,
+  resolveStudentPrimaryCamera,
+  STUDENT_HELP_REASONS,
+  studentTaskActionLabel,
+} from "./studentPracticeRules.js";
+import {
+  teacherIdentityView,
+  teacherSessionEvents,
+  teacherStudentActivities,
+} from "./studentTeacherLinkRules.js";
+import {
+  DEFAULT_EXAM_DURATION_MINUTES,
+  EXAM_INCIDENT_REASONS,
+  examCountdownTone,
+  examEntryStatus,
+  examRemainingSeconds,
+  formatExamEntryWindow,
+  formatExamRemaining,
+  normalizeExamDuration,
+} from "./studentExamRules.js";
+import {
+  compressImageForPrototype,
+  formatFaceImageSize,
+  STUDENT_FACE_ACCEPT,
+} from "./studentFaceRules.js";
+import {
   AI_CONFIG_PATH,
   AI_LIBRARY_PATH,
   AI_LIBRARY_SECTIONS,
@@ -1036,12 +1076,31 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   <strong>{admin ? "系统管理员" : "王老师 · 教师"}</strong>
                   <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>
                   <Button
+                    disabled={!admin}
                     onClick={() => {
-                      nav(admin ? "/teacher/dashboard" : "/admin/overview");
+                      nav("/teacher/dashboard");
                       setRoleMenuOpen(false);
                     }}
                   >
-                    切换到{admin ? "教师端" : "管理员端"}
+                    教师端{!admin ? " · 当前" : ""}
+                  </Button>
+                  <Button
+                    disabled={admin}
+                    onClick={() => {
+                      nav("/admin/overview");
+                      setRoleMenuOpen(false);
+                    }}
+                  >
+                    管理员端{admin ? " · 当前" : ""}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      clearStudentIdentitySession();
+                      nav("/student/login");
+                      setRoleMenuOpen(false);
+                    }}
+                  >
+                    学生端
                   </Button>
                   <Button
                     onClick={() => {
@@ -1131,6 +1190,9 @@ function LoginPage() {
             >
               管理员
             </button>
+            <button type="button" onClick={() => nav("/student/login")}>
+              学生
+            </button>
           </div>
           <label>
             账号
@@ -1161,6 +1223,490 @@ function LoginPage() {
         </form>
       </section>
     </div>
+  );
+}
+
+function StudentShell({ children }) {
+  const nav = useNavigate();
+  const location = useLocation();
+  const store = usePrototypeData();
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const resolved = resolveStudentIdentity(store.data.students);
+  const leaveStudent = (path) => {
+    setRoleMenuOpen(false);
+    clearStudentIdentitySession();
+    nav(path);
+  };
+  return (
+    <div className="student-app">
+      <header className="student-topbar">
+        <button
+          className="student-brand"
+          onClick={() =>
+            nav(
+              location.pathname === "/student/login" || !resolved
+                ? "/student/login"
+                : "/student/current",
+            )
+          }
+          aria-label="返回学生端首页"
+        >
+          <span className="brand__mark">
+            <ProductOutlined />
+          </span>
+          <span>
+            <strong>兴辰智能</strong>
+            <small>学生端</small>
+          </span>
+        </button>
+        <div className="student-topbar__actions">
+          {resolved && location.pathname !== "/student/login" && (
+            <span className="student-welcome">
+              {resolved.student.name} · {resolved.student.no}
+            </span>
+          )}
+          {resolved && location.pathname !== "/student/login" && (
+            <Button
+              onClick={() => {
+                clearStudentIdentitySession();
+                nav("/student/login");
+              }}
+            >
+              退出学生端
+            </Button>
+          )}
+          <div className="role-menu-wrap">
+            <button
+              className="student-role-switch"
+              aria-haspopup="menu"
+              aria-expanded={roleMenuOpen}
+              onClick={() => setRoleMenuOpen((open) => !open)}
+            >
+              <UserOutlined /> 切换身份 <span aria-hidden="true">⌄</span>
+            </button>
+            {roleMenuOpen && (
+              <div className="role-popover student-role-popover" role="menu">
+                <span className="eyebrow">原型演示身份</span>
+                <strong>
+                  {resolved ? `${resolved.student.name} · 学生` : "学生端"}
+                </strong>
+                <p>切换到教师或管理员工作台，不会改变正在运行的实训会话。</p>
+                <Button onClick={() => leaveStudent("/teacher/dashboard")}>
+                  教师端
+                </Button>
+                <Button onClick={() => leaveStudent("/admin/overview")}>
+                  管理员端
+                </Button>
+                <Button disabled>学生端 · 当前</Button>
+                {resolved && (
+                  <Button
+                    onClick={() => {
+                      clearStudentIdentitySession();
+                      leaveStudent("/student/login");
+                    }}
+                  >
+                    退出学生端
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+      <main
+        className={`student-content ${
+          location.pathname.startsWith("/student/session/")
+            ? "student-content--session"
+            : ""
+        }`}
+      >
+        {children}
+      </main>
+    </div>
+  );
+}
+
+function cameraFailureMessage(error) {
+  if (error?.name === "NotAllowedError" || error?.name === "SecurityError")
+    return "摄像头权限未开启";
+  if (error?.name === "NotFoundError" || error?.name === "OverconstrainedError")
+    return "未检测到可用摄像头";
+  if (error?.name === "NotReadableError") return "摄像头正被其他应用占用";
+  return "当前摄像头不可用";
+}
+
+function StudentLoginPage() {
+  const nav = useNavigate();
+  const store = usePrototypeData();
+  const validDefault = store.data.students.find(
+    (student) => !getStudentIdentityError(student),
+  );
+  const [studentId, setStudentId] = useState(
+    validDefault?.id || store.data.students[0]?.id || "",
+  );
+  const [cameraStatus, setCameraStatus] = useState("initializing");
+  const [cameraMessage, setCameraMessage] = useState("正在连接摄像头…");
+  const [recognitionStatus, setRecognitionStatus] = useState("idle");
+  const [recognitionError, setRecognitionError] = useState("");
+  const [recognizedStudent, setRecognizedStudent] = useState(null);
+  const [currentTaskCount, setCurrentTaskCount] = useState(0);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const recognitionTimerRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallbackTimer = window.setTimeout(() => {
+      if (cancelled || streamRef.current) return;
+      setCameraStatus("simulated");
+      setCameraMessage("摄像头暂未响应，已切换为原型模拟识别模式");
+    }, 4000);
+    setCameraStatus("initializing");
+    requestStudentCamera(navigator.mediaDevices)
+      .then((stream) => {
+        if (cancelled) {
+          stopMediaStream(stream);
+          return;
+        }
+        streamRef.current = stream;
+        window.clearTimeout(fallbackTimer);
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        setCameraStatus("ready");
+        setCameraMessage("摄像头已就绪，请正对画面");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        window.clearTimeout(fallbackTimer);
+        console.warn("学生登录摄像头不可用，已进入模拟模式：", error);
+        setCameraStatus("simulated");
+        setCameraMessage(
+          `${cameraFailureMessage(error)}，已切换为原型模拟识别模式`,
+        );
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+      window.clearTimeout(recognitionTimerRef.current);
+      stopMediaStream(streamRef.current);
+      streamRef.current = null;
+    };
+  }, []);
+
+  const selectedStudent = store.data.students.find(
+    (student) => student.id === studentId,
+  );
+  const selectedClass = store.data.classes.find(
+    (item) => item.id === recognizedStudent?.classId,
+  );
+  const startRecognition = () => {
+    clearStudentIdentitySession();
+    setRecognitionStatus("recognizing");
+    setRecognitionError("");
+    setRecognizedStudent(null);
+    recognitionTimerRef.current = window.setTimeout(() => {
+      const student = store.data.students.find((item) => item.id === studentId);
+      const error = getStudentIdentityError(student);
+      if (error) {
+        setRecognitionStatus("failed");
+        setRecognitionError(error);
+        return;
+      }
+      const identitySession = createStudentIdentitySession(student.id);
+      writeStudentIdentitySession(identitySession);
+      setRecognizedStudent(student);
+      setCurrentTaskCount(store.getStudentCurrentSessions(student.id).length);
+      setRecognitionStatus("success");
+    }, 1000);
+  };
+
+  return (
+    <div className="student-login-page">
+      <section className="student-login-intro">
+        <span className="eyebrow">身份确认</span>
+        <h1>学生刷脸登录</h1>
+        <p>请正对摄像头，保持面部无遮挡。识别通过后可进入当前实训任务。</p>
+        <div className="student-camera" data-status={cameraStatus}>
+          <video ref={videoRef} autoPlay muted playsInline />
+          {cameraStatus !== "ready" && (
+            <div className="student-camera__fallback">
+              <span>
+                <UserOutlined />
+              </span>
+              <strong>
+                {cameraStatus === "initializing"
+                  ? "正在连接摄像头"
+                  : "模拟摄像头画面"}
+              </strong>
+              <small>请将面部保持在识别区域内</small>
+            </div>
+          )}
+          <div className="student-camera__frame" aria-hidden="true" />
+          <span
+            className={`student-camera__state student-camera__state--${cameraStatus}`}
+          >
+            <i />{" "}
+            {cameraStatus === "ready"
+              ? "摄像头可用"
+              : cameraStatus === "initializing"
+                ? "初始化中"
+                : "模拟模式"}
+          </span>
+        </div>
+        <p
+          className={`student-camera-message ${cameraStatus === "simulated" ? "is-warning" : ""}`}
+        >
+          {cameraMessage}
+        </p>
+      </section>
+
+      <aside className="student-login-card">
+        <div>
+          <span className="eyebrow">当前操作</span>
+          <h2>
+            {recognitionStatus === "success"
+              ? "身份确认成功"
+              : "请完成人脸识别"}
+          </h2>
+          <p>
+            {recognitionStatus === "recognizing"
+              ? "正在识别人脸，请保持正视摄像头…"
+              : "识别过程约需 1 秒，请勿遮挡面部。"}
+          </p>
+        </div>
+
+        {recognitionStatus === "success" && recognizedStudent ? (
+          <section className="student-recognition-result student-recognition-result--success">
+            <CheckCircleFilled />
+            <div>
+              <small>识别成功</small>
+              <strong>{recognizedStudent.name}</strong>
+              <span>学号：{recognizedStudent.no}</span>
+              <span>{selectedClass?.name || "暂未归班"}</span>
+              <p>
+                {currentTaskCount
+                  ? `当前有 ${currentTaskCount} 个可进入任务`
+                  : "当前暂无可进入任务"}
+              </p>
+            </div>
+          </section>
+        ) : recognitionStatus === "failed" ? (
+          <section
+            className="student-recognition-result student-recognition-result--failed"
+            role="alert"
+          >
+            <ExclamationCircleFilled />
+            <div>
+              <small>身份确认未通过</small>
+              <strong>{selectedStudent?.name || "未识别学生"}</strong>
+              <p>{recognitionError}</p>
+            </div>
+          </section>
+        ) : (
+          <div
+            className={`student-recognition-progress ${recognitionStatus === "recognizing" ? "is-active" : ""}`}
+          >
+            <span>
+              <CameraOutlined />
+            </span>
+            <strong>
+              {recognitionStatus === "recognizing"
+                ? "正在识别人脸…"
+                : "等待开始识别"}
+            </strong>
+          </div>
+        )}
+
+        {recognitionStatus === "success" ? (
+          <Button type="primary" onClick={() => nav("/student/current")}>
+            进入当前任务
+          </Button>
+        ) : (
+          <Button
+            type="primary"
+            disabled={!studentId || recognitionStatus === "recognizing"}
+            onClick={startRecognition}
+          >
+            {recognitionStatus === "recognizing"
+              ? "正在识别…"
+              : recognitionStatus === "failed"
+                ? "重新识别"
+                : "开始人脸识别"}
+          </Button>
+        )}
+
+        <details className="student-demo-settings">
+          <summary>原型演示设置</summary>
+          <label>
+            模拟识别对象
+            <select
+              value={studentId}
+              disabled={recognitionStatus === "recognizing"}
+              onChange={(event) => {
+                clearStudentIdentitySession();
+                setStudentId(event.target.value);
+                setRecognitionStatus("idle");
+                setRecognitionError("");
+                setRecognizedStudent(null);
+              }}
+            >
+              {store.data.students.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name} · {student.no} · {student.status} ·{" "}
+                  {getStudentFaceStatus(student)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>仅用于原型演示，不代表正式人脸登录方式。</small>
+        </details>
+      </aside>
+    </div>
+  );
+}
+
+function StudentCurrentPage() {
+  const nav = useNavigate();
+  const store = usePrototypeData();
+  const [refreshedAt, setRefreshedAt] = useState("");
+  const resolved = resolveStudentIdentity(store.data.students);
+  if (!resolved) return <Navigate to="/student/login" replace />;
+  const sessions = store.getStudentCurrentSessions(resolved.student.id);
+  const studentClass = store.data.classes.find(
+    (item) => item.id === resolved.student.classId,
+  );
+  const cards = sessions
+    .map((task) => getStudentTaskDetails(store.data, task))
+    .filter(Boolean);
+  const formatSchedule = (value) =>
+    value ? String(value).replace("T", " ").slice(0, 16) : "以教师现场安排为准";
+  return (
+    <section className="student-current-page">
+      <header className="student-current-heading">
+        <div>
+          <span className="eyebrow">当前任务</span>
+          <h1>{resolved.student.name}</h1>
+          <p>
+            {studentClass?.name || "班级信息待补充"} · 学号：
+            {resolved.student.no}
+          </p>
+        </div>
+        <Button
+          onClick={() =>
+            setRefreshedAt(
+              new Intl.DateTimeFormat("zh-CN", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false,
+              }).format(new Date()),
+            )
+          }
+        >
+          <ReloadOutlined /> 刷新当前任务
+        </Button>
+      </header>
+
+      {cards.length > 1 && (
+        <p className="student-current-notice">
+          <AlertOutlined /> 当前存在多个可进入任务，请按教师现场安排选择。
+        </p>
+      )}
+
+      {cards.length ? (
+        <div className="student-task-grid">
+          {cards.map(({ arrangement, session, workstation, sop, teacher }) => (
+            <article className="student-task-card" key={session.id}>
+              <header>
+                <Status
+                  tone={arrangement.type === "exam" ? "warning" : "success"}
+                >
+                  {arrangement.type === "exam" ? "考试" : "练习"}
+                </Status>
+                <Status>{session.status}</Status>
+              </header>
+              <h2>{arrangement.name}</h2>
+              <dl>
+                <div>
+                  <dt>教师</dt>
+                  <dd>{teacher?.name || "教师信息待补充"}</dd>
+                </div>
+                {arrangement.type === "exam" ? (
+                  <>
+                    <div>
+                      <dt>允许入场</dt>
+                      <dd>
+                        {formatExamEntryWindow(
+                          arrangement.scheduleStart,
+                          arrangement.entryEnd,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>考试时长</dt>
+                      <dd>
+                        {normalizeExamDuration(arrangement.examDurationMinutes)}{" "}
+                        分钟
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>入场状态</dt>
+                      <dd>
+                        {["进行中", "已暂停"].includes(session.status)
+                          ? session.status
+                          : examEntryStatus(
+                              arrangement.scheduleStart,
+                              arrangement.entryEnd,
+                            )}
+                      </dd>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <dt>计划时间</dt>
+                    <dd>{formatSchedule(arrangement.scheduleStart)}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>SOP</dt>
+                  <dd>{sop?.name || "当前标准暂不可用"}</dd>
+                </div>
+                <div>
+                  <dt>工位</dt>
+                  <dd>{workstation?.name || "工位信息不可用"}</dd>
+                </div>
+              </dl>
+              <Button
+                type="primary"
+                disabled={!workstation}
+                onClick={() =>
+                  nav(
+                    `/student/session/${arrangement.id}/${session.workstationId}`,
+                  )
+                }
+              >
+                {studentTaskActionLabel(arrangement.type, session.status)}
+              </Button>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <section className="student-current-empty">
+          <span>
+            <CheckCircleOutlined />
+          </span>
+          <h2>当前暂无可进入的练习或考试</h2>
+          <p>请等待教师安排并开放工位。</p>
+          <Button onClick={() => setRefreshedAt(String(Date.now()))}>
+            <ReloadOutlined /> 刷新当前任务
+          </Button>
+        </section>
+      )}
+      {refreshedAt && (
+        <small className="student-current-refreshed">
+          已刷新 · {refreshedAt}
+        </small>
+      )}
+    </section>
   );
 }
 
@@ -1419,6 +1965,7 @@ function MonitorPage({ exam = false, setModal }) {
   const store = usePrototypeData();
   const [view, setView] = useState("grid");
   const arrangement = store.data.arrangements.find((item) => item.id === id);
+  const sop = store.data.sops.find((item) => item.id === arrangement?.sopId);
   const base = exam ? "exams" : "practices";
   const endRef = useRef(null);
   if (!arrangement)
@@ -1428,22 +1975,28 @@ function MonitorPage({ exam = false, setModal }) {
   const sessions = arrangement.sessions || [];
   const completedSteps = sessions.reduce(
     (total, session) =>
-      total + session.steps.filter((step) => step.state === "pass").length,
+      total +
+      (session.steps || []).filter((step) => step.state === "pass").length,
     0,
   );
   const allSteps = sessions.reduce(
-    (total, session) => total + session.steps.length,
+    (total, session) => total + (session.steps || []).length,
     0,
   );
   const progress = allSteps ? Math.round((completedSteps / allSteps) * 100) : 0;
   const events = sessions
     .flatMap((session) =>
-      session.events.map((event) => ({
+      teacherSessionEvents(session).map((event) => ({
         ...event,
         workstationId: session.workstationId,
+        studentId: session.studentId,
       })),
     )
-    .sort((a, b) => b.time.localeCompare(a.time));
+    .sort((a, b) =>
+      String(b.createdAt || b.displayTime).localeCompare(
+        String(a.createdAt || a.displayTime),
+      ),
+    );
   const pause = () => {
     const shouldPause = arrangement.status === "进行中";
     setModal({
@@ -1483,7 +2036,9 @@ function MonitorPage({ exam = false, setModal }) {
   const count = (...statuses) =>
     sessions.filter((item) => statuses.includes(item.status)).length;
   const aiEnabledCount = sessions.filter(
-    (item) => item.evaluationProfile?.automaticEvaluationEnabled,
+    (item) =>
+      item.evaluationProfile?.aiRuntimeEnabled ??
+      item.evaluationProfile?.automaticEvaluationEnabled,
   ).length;
   const canControlArrangement = ["进行中", "已暂停"].includes(
     arrangement.status,
@@ -1616,10 +2171,11 @@ function MonitorPage({ exam = false, setModal }) {
               const student = store.data.students.find(
                 (item) => item.id === session?.studentId,
               );
-              const currentStep = session?.steps.find(
+              const currentStep = (session?.steps || []).find(
                 (step) => step.id === session.currentStepId,
               );
               const status = session?.status || "未开放";
+              const identity = teacherIdentityView(session || { status });
               const tone =
                 status === "故障"
                   ? "danger"
@@ -1630,9 +2186,10 @@ function MonitorPage({ exam = false, setModal }) {
                       : "muted";
               const sessionProgress = session
                 ? Math.round(
-                    (session.steps.filter((step) => step.state === "pass")
-                      .length /
-                      session.steps.length) *
+                    ((session.steps || []).filter(
+                      (step) => step.state === "pass",
+                    ).length /
+                      Math.max(1, (session.steps || []).length)) *
                       100,
                   )
                 : 0;
@@ -1687,6 +2244,17 @@ function MonitorPage({ exam = false, setModal }) {
                         {session?.elapsed || "--"}
                       </span>
                     </p>
+                    {session && (
+                      <div
+                        className={`station-identity station-identity--${identity.tone}`}
+                      >
+                        <UserOutlined />
+                        <span>
+                          <strong>{identity.label}</strong>
+                          <small>{identity.detail}</small>
+                        </span>
+                      </div>
+                    )}
                     <div className="progress">
                       <i style={{ width: `${sessionProgress}%` }} />
                     </div>
@@ -1710,8 +2278,8 @@ function MonitorPage({ exam = false, setModal }) {
           <div className="timeline">
             {events.map((event, index) => (
               <button
-                className={`event event--${event.level}`}
-                key={`${event.time}-${index}`}
+                className={`event event--${event.teacherTone || event.level || "info"}`}
+                key={event.id || `${event.displayTime}-${index}`}
                 onClick={() =>
                   nav(
                     `/teacher/${base}/${arrangement.id}/stations/${event.workstationId}`,
@@ -1719,8 +2287,13 @@ function MonitorPage({ exam = false, setModal }) {
                 }
               >
                 <i />
-                <time>{event.time}</time>
+                <time>{event.displayTime}</time>
                 <span>
+                  <em
+                    className={`event-category event-category--${event.category}`}
+                  >
+                    {event.categoryLabel}
+                  </em>
                   <strong>
                     {
                       store.data.workstations.find(
@@ -1729,7 +2302,11 @@ function MonitorPage({ exam = false, setModal }) {
                     }{" "}
                     · {event.title}
                   </strong>
-                  <small>{event.detail}</small>
+                  <small>
+                    {event.stepName ? `${event.stepName} · ` : ""}
+                    {event.reasonLabel ? `原因：${event.reasonLabel} · ` : ""}
+                    {event.detail}
+                  </small>
                 </span>
               </button>
             ))}
@@ -1742,31 +2319,193 @@ function MonitorPage({ exam = false, setModal }) {
 }
 
 const StudentHelpForm = forwardRef(function StudentHelpForm(_, ref) {
-  const [reason, setReason] = useState("");
+  const [reasonCode, setReasonCode] = useState("operation_help");
+  const [note, setNote] = useState("");
   useImperativeHandle(ref, () => ({
-    getValue: () => reason.trim(),
+    getValue: () => buildStudentHelpPayload(reasonCode, note),
   }));
   return (
-    <label className="field">
-      需要帮助的内容（可选）
-      <textarea
-        autoFocus
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        placeholder="例如：看不清当前步骤、设备状态异常、需要教师到场确认"
-      />
-    </label>
+    <div className="student-help-form">
+      <p>请选择本次需要教师到场的原因。</p>
+      <div className="student-help-reasons">
+        {STUDENT_HELP_REASONS.map((reason) => (
+          <label key={reason.value}>
+            <input
+              type="radio"
+              name="student-help-reason"
+              value={reason.value}
+              checked={reasonCode === reason.value}
+              onChange={() => setReasonCode(reason.value)}
+            />
+            <span>{reason.label}</span>
+          </label>
+        ))}
+      </div>
+      {reasonCode === "other" && (
+        <label className="field">
+          其他求助内容
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="请简要说明需要教师协助的内容"
+          />
+        </label>
+      )}
+    </div>
   );
 });
 
-function WorkstationPage() {
+const ExamIncidentHelpForm = forwardRef(function ExamIncidentHelpForm(_, ref) {
+  const [reasonCode, setReasonCode] = useState("device_failure");
+  const [note, setNote] = useState("");
+  useImperativeHandle(ref, () => ({
+    getValue: () => ({ reasonCode, note }),
+  }));
+  return (
+    <div className="student-help-form exam-incident-help-form">
+      <p>异常求助只用于现场处置，不会自动影响考试得分。</p>
+      <div className="student-help-reasons">
+        {EXAM_INCIDENT_REASONS.map((reason) => (
+          <label key={reason.value}>
+            <input
+              type="radio"
+              name="exam-incident-reason"
+              value={reason.value}
+              checked={reasonCode === reason.value}
+              onChange={() => setReasonCode(reason.value)}
+            />
+            <span>{reason.label}</span>
+          </label>
+        ))}
+      </div>
+      <label className="field">
+        {reasonCode === "other" ? "异常说明（必填）" : "补充说明（选填）"}
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="请简要描述现场情况，便于教师快速处理"
+        />
+      </label>
+    </div>
+  );
+});
+
+function StudentHintContent({ step }) {
+  const [showMedia, setShowMedia] = useState(false);
+  const mediaUrl = step?.standardMediaUrl || "";
+  const video =
+    String(step?.standardMediaType || "").includes("视频") ||
+    /\.(mp4|webm|ogg)(\?|$)/i.test(mediaUrl);
+  return (
+    <div className="student-hint-content">
+      <span className="eyebrow">{step?.id || "当前步骤"}</span>
+      <h3>{step?.name || "当前步骤提示"}</h3>
+      <article>
+        <strong>操作说明</strong>
+        <p>{step?.teachingInstruction || "当前步骤暂无操作说明。"}</p>
+      </article>
+      <article>
+        <strong>操作要点</strong>
+        <p>{step?.keyPoints || "当前步骤暂无补充要点。"}</p>
+      </article>
+      <article>
+        <strong>常见错误</strong>
+        <p>{step?.commonMistakes || "当前步骤暂无常见错误说明。"}</p>
+      </article>
+      <article className="is-safety">
+        <strong>安全要求</strong>
+        <p>{step?.redline || "请遵守现场通用安全规范。"}</p>
+      </article>
+      <Button onClick={() => setShowMedia((shown) => !shown)}>
+        <PlayCircleFilled /> {showMedia ? "收起标准示教" : "查看标准示教"}
+      </Button>
+      {showMedia && (
+        <div className="student-hint-media">
+          {!mediaUrl ? (
+            <p>当前步骤暂无标准示教资源。</p>
+          ) : video ? (
+            <video controls preload="metadata" src={mediaUrl} />
+          ) : (
+            <img src={mediaUrl} alt={`${step?.name || "当前步骤"}标准示教`} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentSessionPage() {
+  const nav = useNavigate();
+  const { id, stationId } = useParams();
+  const store = usePrototypeData();
+  const resolved = resolveStudentIdentity(store.data.students);
+  const access = getStudentSessionAccess(
+    store.data,
+    resolved?.student?.id,
+    id,
+    stationId,
+  );
+  const verification = buildStudentIdentityVerification(
+    resolved?.identitySession,
+  );
+
+  useEffect(() => {
+    const hasValidVerification =
+      access.session?.identityVerification?.status === "passed" &&
+      access.session?.identityVerification?.studentId === resolved?.student?.id;
+    if (access.allowed && verification && !hasValidVerification) {
+      store.attachStudentIdentityVerification(id, stationId, verification);
+    }
+  }, [
+    access.allowed,
+    access.session?.id,
+    access.session?.identityVerification,
+    id,
+    stationId,
+    verification?.studentId,
+    verification?.verifiedAt,
+    resolved?.student?.id,
+  ]);
+
+  if (!resolved) return <Navigate to="/student/login" replace />;
+  if (!access.allowed)
+    return (
+      <section className="student-session-denied">
+        <LockOutlined />
+        <h1>无法进入当前任务</h1>
+        <p>{access.reason}</p>
+        <Button type="primary" onClick={() => nav("/student/current")}>
+          返回当前任务
+        </Button>
+      </section>
+    );
+  return <WorkstationPage studentMode />;
+}
+
+function LegacyWorkstationRedirect() {
+  const { id, stationId } = useParams();
+  const store = usePrototypeData();
+  const resolved = resolveStudentIdentity(store.data.students);
+  return (
+    <Navigate
+      to={resolved ? `/student/session/${id}/${stationId}` : "/student/login"}
+      replace
+    />
+  );
+}
+
+function WorkstationPage({ studentMode = false }) {
   const nav = useNavigate();
   const { id, stationId } = useParams();
   const store = usePrototypeData();
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  const [examNow, setExamNow] = useState(Date.now());
   const helpRef = useRef(null);
+  const examIncidentRef = useRef(null);
+  const autoSubmitRef = useRef("");
   const arrangement = store.data.arrangements.find((item) => item.id === id);
   const session = arrangement?.sessions.find(
     (item) => item.workstationId === stationId,
@@ -1777,7 +2516,36 @@ function WorkstationPage() {
   const student = store.data.students.find(
     (item) => item.id === session?.studentId,
   );
-  const sop = store.data.sops.find((item) => item.id === arrangement?.sopId);
+  const sop =
+    session?.evaluationSnapshot?.sopSnapshot ||
+    arrangement?.snapshot?.sopSnapshot ||
+    store.data.sops.find((item) => item.id === arrangement?.sopId);
+  useEffect(() => {
+    if (arrangement?.type !== "exam" || session?.status !== "进行中") return;
+    setExamNow(Date.now());
+    const timer = window.setInterval(() => setExamNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [arrangement?.type, session?.id, session?.status]);
+
+  useEffect(() => {
+    if (
+      arrangement?.type !== "exam" ||
+      session?.status !== "进行中" ||
+      !session.examTiming
+    )
+      return;
+    if (examRemainingSeconds(session, examNow) > 0) return;
+    if (autoSubmitRef.current === session.id) return;
+    autoSubmitRef.current = session.id;
+    try {
+      store.finishWorkstationSession(arrangement.id, stationId, {
+        reason: "time_expired",
+      });
+    } catch (error) {
+      autoSubmitRef.current = "";
+      console.error("考试超时自动交卷失败：", error);
+    }
+  }, [arrangement?.id, arrangement?.type, examNow, session, stationId, store]);
   if (!arrangement || !session || !workstation || !student || !sop)
     return (
       <div className="workstation-page workstation-page--empty">
@@ -1810,27 +2578,72 @@ function WorkstationPage() {
   const progress = session.steps.length
     ? Math.round((completedSteps / session.steps.length) * 100)
     : 0;
+  const remainingSeconds = exam ? examRemainingSeconds(session, examNow) : 0;
+  const countdownTone = examCountdownTone(remainingSeconds);
   const unfinishedCount = session.steps.filter((step) =>
     ["pending", "active"].includes(step.state),
   ).length;
   const evaluationProfile = session.evaluationProfile || {
+    aiRuntimeEnabled: false,
     automaticEvaluationEnabled: false,
     enabledStepCount: 0,
     automaticStepCount: 0,
+    aiParticipatingStepCount: 0,
+    automaticEvaluationStepCount: 0,
+    assistedEvaluationStepCount: 0,
+    safetyMonitoringStepCount: 0,
     fallbackPolicy: "未启用步骤默认通过，教师发现问题后留痕扣分",
   };
+  const aiRuntimeEnabled =
+    evaluationProfile.aiRuntimeEnabled ??
+    evaluationProfile.automaticEvaluationEnabled;
+  const cameraState = resolveStudentPrimaryCamera(
+    store.data,
+    session,
+    workstation,
+  );
+  const practiceFeedback = buildStudentPracticeFeedback({
+    session,
+    currentStep: standardStep,
+    cameraState,
+  });
+  const safetyBlocked =
+    standardStep?.state === "blocked" ||
+    (session.runtime?.safetyCandidates || []).some(
+      (item) => item.status === "pending",
+    );
+  const technicalPaused = (session.runtime?.technicalIncidents || []).some(
+    (item) => item.status !== "resolved" && item.affectsContinuation,
+  );
   const readiness = [
     {
+      label: "身份确认",
+      detail:
+        session.identityVerification?.status === "passed"
+          ? `${student.name}的身份已确认`
+          : studentMode
+            ? "正在写入本次身份确认"
+            : "请确认本次学生身份",
+      ready:
+        session.identityVerification?.status === "passed" ||
+        (studentMode && Boolean(student)),
+      blocking: true,
+    },
+    {
       label: "摄像头画面",
-      detail: blocked ? "当前画面或边缘服务异常" : "主视角在线，关键区域可见",
-      ready: !blocked,
+      detail: cameraState.available
+        ? `${cameraState.camera.name}在线，关键区域可见`
+        : cameraState.reason,
+      ready: cameraState.available,
+      blocking: true,
     },
     {
       label: "评价服务",
-      detail: evaluationProfile.automaticEvaluationEnabled
-        ? `自动评价已启用 ${evaluationProfile.enabledStepCount}/${evaluationProfile.automaticStepCount} 步`
-        : "自动评价未启用，本次按默认通过规则运行",
-      ready: !blocked,
+      detail: aiRuntimeEnabled
+        ? "AI辅助评价已就绪"
+        : "AI辅助评价当前不可用，本次将按安全降级规则运行",
+      ready: aiRuntimeEnabled,
+      blocking: false,
     },
     {
       label: exam ? "考试资源" : "训练资源",
@@ -1838,9 +2651,10 @@ function WorkstationPage() {
         ? "试题流程和录像存储已就绪"
         : `${sop.steps.length} 个步骤的教学内容已加载`,
       ready: exam || sop.steps.every((step) => step.teachingInstruction),
+      blocking: true,
     },
   ];
-  const ready = readiness.every((item) => item.ready);
+  const ready = readiness.every((item) => !item.blocking || item.ready);
   const finishModal = (message) => {
     setModal(null);
     setToast(message || "操作已完成");
@@ -1856,7 +2670,7 @@ function WorkstationPage() {
             将以 <strong>{student.name}</strong> 的身份在{workstation.name}
             开始，使用本次会话已锁定的SOP标准。
           </p>
-          <p>开始后刷新页面会自动恢复同一个 Session，不会重复创建记录。</p>
+          <p>开始后刷新页面会自动恢复当前进度，不会重复创建记录。</p>
         </div>
       ),
       confirmText: `确认开始${exam ? "考试" : "训练"}`,
@@ -1880,6 +2694,37 @@ function WorkstationPage() {
         return "已通知教师，请留在当前工位等待";
       },
     });
+  const requestExamIncidentHelp = () =>
+    setModal({
+      eyebrow: "考试异常求助",
+      title: "请选择需要教师处理的异常",
+      content: <ExamIncidentHelpForm ref={examIncidentRef} />,
+      confirmText: "通知教师",
+      onConfirm: () => {
+        store.requestExamIncidentHelp(
+          arrangement.id,
+          workstation.id,
+          examIncidentRef.current?.getValue(),
+        );
+        return "已通知教师，请停止受影响的操作并等待处理";
+      },
+    });
+  const showHint = () => {
+    store.recordStudentHintRequest(
+      arrangement.id,
+      workstation.id,
+      currentStep?.id,
+    );
+    setModal({
+      eyebrow: "当前步骤提示",
+      title: "我不会，查看操作提示",
+      size: "large",
+      dismissOnly: true,
+      hideCancel: true,
+      confirmText: "知道了",
+      content: <StudentHintContent step={standardStep} />,
+    });
+  };
   const finish = () =>
     setModal({
       eyebrow: exam ? "交卷确认" : "结束确认",
@@ -1899,33 +2744,41 @@ function WorkstationPage() {
       ),
       confirmText: exam ? "确认交卷" : "确认结束",
       onConfirm: () => {
-        store.finishWorkstationSession(arrangement.id, workstation.id);
+        store.finishWorkstationSession(arrangement.id, workstation.id, {
+          reason: exam ? "manual_submit" : "student_finished",
+        });
         return exam ? "已交卷，等待教师发布成绩" : "训练已结束，个人报告已生成";
       },
     });
   const modalDone = async (message) => finishModal(message);
 
   return (
-    <div className={`workstation-page ${exam ? "workstation-page--exam" : ""}`}>
-      <header className="workstation-topbar">
-        <button
-          className="workstation-brand"
-          onClick={() => window.location.reload()}
-        >
-          <ProductOutlined />
-          <span>
-            <strong>兴辰智能</strong>
-            <small>学生工位端</small>
-          </span>
-        </button>
-        <div>
-          <Status tone={exam ? "warning" : "success"}>
-            {exam ? "考试模式" : "训练模式"}
-          </Status>
-          <span>{workstation.name}</span>
-          <span>{student.name}</span>
-        </div>
-      </header>
+    <div
+      className={`workstation-page ${exam ? "workstation-page--exam" : ""} ${
+        studentMode ? "workstation-page--student" : ""
+      }`}
+    >
+      {!studentMode && (
+        <header className="workstation-topbar">
+          <button
+            className="workstation-brand"
+            onClick={() => window.location.reload()}
+          >
+            <ProductOutlined />
+            <span>
+              <strong>兴辰智能</strong>
+              <small>学生工位端</small>
+            </span>
+          </button>
+          <div>
+            <Status tone={exam ? "warning" : "success"}>
+              {exam ? "考试模式" : "训练模式"}
+            </Status>
+            <span>{workstation.name}</span>
+            <span>{student.name}</span>
+          </div>
+        </header>
+      )}
 
       {waiting ? (
         <main className="workstation-entry">
@@ -1961,17 +2814,42 @@ function WorkstationPage() {
                   <dt>标准</dt>
                   <dd>{sop.name}</dd>
                 </div>
+                {exam && (
+                  <div>
+                    <dt>考试时长</dt>
+                    <dd>
+                      {normalizeExamDuration(
+                        session.examDurationMinutes ??
+                          arrangement.examDurationMinutes,
+                      )}{" "}
+                      分钟
+                    </dd>
+                  </div>
+                )}
               </dl>
-              <label className="workstation-check">
-                <input
-                  type="checkbox"
-                  checked={identityConfirmed}
-                  onChange={(event) =>
-                    setIdentityConfirmed(event.target.checked)
-                  }
-                />
-                我确认以上学生、任务和工位信息无误
-              </label>
+              {exam && (
+                <div className="exam-entry-rules">
+                  <strong>考试规则</strong>
+                  <p>开始后立即计时，倒计时结束会自动交卷。</p>
+                  <p>考试中不显示标准答案、操作提示、实时正误或得分。</p>
+                </div>
+              )}
+              {studentMode ? (
+                <p className="workstation-identity-verified">
+                  <CheckCircleFilled /> 已使用本次人脸登录身份确认
+                </p>
+              ) : (
+                <label className="workstation-check">
+                  <input
+                    type="checkbox"
+                    checked={identityConfirmed}
+                    onChange={(event) =>
+                      setIdentityConfirmed(event.target.checked)
+                    }
+                  />
+                  我确认以上学生、任务和工位信息无误
+                </label>
+              )}
             </section>
             <section className="workstation-card readiness-card">
               <h2>开始前准备</h2>
@@ -1991,13 +2869,13 @@ function WorkstationPage() {
               </div>
               <Button
                 type="primary"
-                disabled={!identityConfirmed || !ready}
+                disabled={(!studentMode && !identityConfirmed) || !ready}
                 onClick={start}
               >
-                确认并开始{exam ? "考试" : "训练"}
+                {exam ? "确认开始考试" : "确认并开始训练"}
               </Button>
               <small className="session-resume-note">
-                Session {session.id} · 页面刷新或短暂断线后自动恢复
+                页面刷新或短暂断线后会自动恢复当前进度
               </small>
             </section>
           </div>
@@ -2005,16 +2883,34 @@ function WorkstationPage() {
       ) : completed ? (
         <main className="workstation-complete">
           <CheckCircleFilled />
-          <span className="eyebrow">{exam ? "考试已交卷" : "训练已完成"}</span>
+          <span className="eyebrow">
+            {session.endedBy === "teacher"
+              ? exam
+                ? "本次考试已结束"
+                : "本次练习已由教师结束"
+              : exam
+                ? session.submitReason === "time_expired"
+                  ? "考试时间到"
+                  : "考试已提交"
+                : "训练已完成"}
+          </span>
           <h1>
-            {exam && !published
-              ? "成绩等待教师统一发布"
-              : `本次得分 ${session.score} 分`}
+            {session.endedBy === "teacher" && exam
+              ? "考试记录已保存，请等待教师发布成绩"
+              : exam && !published
+                ? "成绩等待教师统一发布"
+                : `本次得分 ${session.score} 分`}
           </h1>
           <p>
-            {exam && !published
-              ? "系统已保存步骤、时间和视频证据，发布前不显示正误与扣分。"
-              : `已记录 ${completedSteps}/${session.steps.length} 个完成步骤，可查看本次个人结果。`}
+            {session.endedBy === "teacher"
+              ? exam
+                ? "教师已结束本次考试，步骤、时间和视频证据已保存，当前页面不能继续操作。"
+                : "教师已结束本次练习，当前步骤、用时和现场记录均已保存。"
+              : exam && !published
+                ? session.submitReason === "time_expired"
+                  ? "倒计时结束后系统已自动交卷。步骤、时间和视频证据已保存，请等待教师发布成绩。"
+                  : "试卷已提交。系统已保存步骤、时间和视频证据，请等待教师发布成绩。"
+                : `已记录 ${completedSteps}/${session.steps.length} 个完成步骤，可查看本次个人结果。`}
           </p>
           {policy.showFinalReport && (
             <section className="workstation-result-list">
@@ -2034,13 +2930,31 @@ function WorkstationPage() {
               ))}
             </section>
           )}
-          <Button
-            onClick={() =>
-              nav(`/workstation/${arrangement.id}/${workstation.id}`)
-            }
-          >
-            刷新结果状态
-          </Button>
+          <div className="workstation-complete__actions">
+            {studentMode ? (
+              <>
+                <Button type="primary" onClick={() => nav("/student/current")}>
+                  返回当前任务
+                </Button>
+                <Button
+                  onClick={() => {
+                    clearStudentIdentitySession();
+                    nav("/student/login");
+                  }}
+                >
+                  退出学生端
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={() =>
+                  nav(`/workstation/${arrangement.id}/${workstation.id}`)
+                }
+              >
+                刷新结果状态
+              </Button>
+            )}
+          </div>
         </main>
       ) : (
         <main className="workstation-session">
@@ -2054,34 +2968,63 @@ function WorkstationPage() {
               </h1>
               <p>{policy.statusText}</p>
             </div>
-            <div className="workstation-timer">
-              <small>有效用时</small>
-              <strong>{session.elapsed}</strong>
-              <span>{progress}%</span>
+            <div
+              className={`workstation-timer ${exam ? `workstation-timer--${countdownTone}` : ""}`}
+            >
+              <small>{exam ? "剩余时间" : "有效用时"}</small>
+              <strong>
+                {exam ? formatExamRemaining(remainingSeconds) : session.elapsed}
+              </strong>
+              <span>
+                {exam
+                  ? `共 ${normalizeExamDuration(session.examDurationMinutes ?? arrangement.examDurationMinutes)} 分钟`
+                  : `${progress}%`}
+              </span>
             </div>
           </section>
 
-          {blocked && (
+          {safetyBlocked && (
+            <section className="workstation-blocked">
+              <SafetyCertificateOutlined />
+              <div>
+                <strong>安全异常</strong>
+                <p>请立即停止操作并等待教师处理。</p>
+              </div>
+            </section>
+          )}
+          {blocked && !safetyBlocked && (
             <section className="workstation-blocked">
               <AlertOutlined />
               <div>
-                <strong>系统或安全异常，评价已暂停</strong>
+                <strong>系统评价暂不可用</strong>
                 <p>
-                  {session.events[0]?.detail || "请停止操作并等待教师处理。"}
+                  {session.events[0]?.detail || "请按现场要求等待教师处理。"}
                 </p>
               </div>
             </section>
           )}
-          {paused && !blocked && (
+          {paused && !blocked && !safetyBlocked && (
             <section className="workstation-paused">
               <PauseCircleFilled />
               <div>
-                <strong>当前会话已暂停</strong>
-                <p>计时与自动评价已经停止，录像仍按规则留存。</p>
+                <strong>
+                  {technicalPaused
+                    ? "系统异常"
+                    : exam
+                      ? "考试已暂停"
+                      : "当前会话已暂停"}
+                </strong>
+                <p>
+                  {technicalPaused
+                    ? "当前考试评价与倒计时已暂停，请保持现场并等待教师处理。"
+                    : exam
+                      ? "当前倒计时已停止，请保持现场状态并等待教师恢复。"
+                      : "计时与自动评价已经停止，录像仍按规则留存。"}
+                </p>
               </div>
               <Button
                 type="primary"
-                disabled={arrangement.status === "已暂停"}
+                disabled={studentMode || arrangement.status === "已暂停"}
                 onClick={() => {
                   store.setArrangementSessionPaused(
                     arrangement.id,
@@ -2092,7 +3035,7 @@ function WorkstationPage() {
                   window.setTimeout(() => setToast(""), 2400);
                 }}
               >
-                {arrangement.status === "已暂停"
+                {studentMode || arrangement.status === "已暂停"
                   ? "等待教师恢复安排"
                   : "从断点恢复"}
               </Button>
@@ -2100,56 +3043,144 @@ function WorkstationPage() {
           )}
 
           <div className="workstation-session__grid">
-            <section className="workstation-learning-card">
-              {policy.showTeachingContent ? (
-                <>
-                  <div className="workstation-teaching-media">
-                    <img
-                      src={standardStep.standardMediaUrl}
-                      alt={`${standardStep.name}标准示教`}
-                    />
-                    <span>{standardStep.standardMediaType}</span>
-                  </div>
-                  <div className="workstation-teaching-copy">
-                    <span className="eyebrow">
-                      当前步骤 · {standardStep.id}
-                    </span>
-                    <h2>{standardStep.name}</h2>
-                    <p>{standardStep.teachingInstruction}</p>
-                    <article>
-                      <strong>操作要点</strong>
-                      <span>{standardStep.keyPoints}</span>
-                    </article>
-                    <article>
-                      <strong>纠正提示</strong>
-                      <span>{standardStep.commonMistakes}</span>
-                    </article>
-                    {standardStep.redline && (
-                      <article className="safety-tip">
-                        <strong>安全提醒</strong>
-                        <span>{standardStep.redline}</span>
-                      </article>
-                    )}
-                  </div>
-                </>
+            <section className="student-live-card">
+              <header>
+                <div>
+                  <span className="live-dot" />
+                  <strong>当前工位实时画面</strong>
+                </div>
+                <small>主摄像头：{cameraState.camera?.name || "未配置"}</small>
+              </header>
+              {cameraState.available ? (
+                <div className="student-live-view">
+                  <img
+                    src={`/assets/workstation-${student.gender === "女" ? "female" : "male"}.png`}
+                    alt={`${workstation.name}主摄像头实时画面`}
+                  />
+                  <span>
+                    <i /> 实时画面
+                  </span>
+                  <small>
+                    {workstation.name} · {workstation.location}
+                  </small>
+                </div>
               ) : (
-                <div className="exam-focus-card">
+                <div className="student-live-unavailable">
+                  <VideoCameraOutlined />
+                  <strong>当前视频暂不可用</strong>
+                  <p>{cameraState.reason}</p>
+                </div>
+              )}
+            </section>
+
+            {exam ? (
+              <div className="exam-session-side">
+                <section className="exam-focus-card">
                   <SafetyCertificateOutlined />
                   <span className="eyebrow">
                     第 {currentIndex + 1} / {session.steps.length} 步
                   </span>
                   <h2>{currentStep?.name}</h2>
-                  <p>请独立完成现场操作。系统正在后台记录时间和视频证据。</p>
-                  <small>
-                    考试过程中不显示标准答案、实时正误、扣分或识别置信度。
+                  <p>请独立完成现场操作。</p>
+                  <small>系统正在记录本次考试过程。</small>
+                </section>
+                <aside className="workstation-control-card">
+                  <h2>考试状态</h2>
+                  <div className="workstation-runtime-list">
+                    <span>
+                      <small>当前状态</small>
+                      <strong>{session.status}</strong>
+                    </span>
+                    <span>
+                      <small>步骤进度</small>
+                      <strong>
+                        {currentIndex + 1}/{session.steps.length}
+                      </strong>
+                    </span>
+                    <span>
+                      <small>视频记录</small>
+                      <strong>
+                        {cameraState.available ? "记录中" : "需处理"}
+                      </strong>
+                    </span>
+                    <span>
+                      <small>智能辅助</small>
+                      <strong>
+                        {aiRuntimeEnabled ? "运行中" : "降级运行"}
+                      </strong>
+                    </span>
+                  </div>
+                  {session.examIncidentHelpRequestedAt && (
+                    <p className="help-sent-note">
+                      <CheckCircleFilled /> 异常已通知教师
+                    </p>
+                  )}
+                  <Button
+                    onClick={requestExamIncidentHelp}
+                    disabled={Boolean(session.examIncidentHelpRequestedAt)}
+                  >
+                    <BellOutlined />{" "}
+                    {session.examIncidentHelpRequestedAt
+                      ? "等待教师处理"
+                      : "考试异常求助"}
+                  </Button>
+                  <Button
+                    type="danger"
+                    onClick={finish}
+                    disabled={blocked || safetyBlocked}
+                  >
+                    结束并交卷
+                  </Button>
+                  <small className="session-resume-note">
+                    刷新或短暂断线后按服务端时间恢复倒计时
                   </small>
+                </aside>
+              </div>
+            ) : (
+              <section className="student-current-step-card">
+                <span className="eyebrow">当前步骤 · {standardStep?.id}</span>
+                <h2>{standardStep?.name || "当前步骤"}</h2>
+                <div className="student-step-instruction">
+                  <strong>操作说明</strong>
+                  <p>
+                    {standardStep?.teachingInstruction ||
+                      "当前步骤暂无操作说明。"}
+                  </p>
                 </div>
-              )}
-            </section>
+                <div className="student-step-instruction">
+                  <strong>操作要点</strong>
+                  <p>{standardStep?.keyPoints || "请按教师现场要求完成。"}</p>
+                </div>
+                {standardStep?.redline && (
+                  <div className="student-step-instruction is-safety">
+                    <strong>
+                      <SafetyCertificateOutlined /> 安全提醒
+                    </strong>
+                    <p>{standardStep.redline}</p>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
 
-            <aside className="workstation-control-card">
-              <h2>本次会话</h2>
-              <div className="workstation-runtime-list">
+          {policy.showAiFeedback && (
+            <section
+              className={`student-ai-feedback is-${practiceFeedback.type}`}
+            >
+              <span>
+                <AlertOutlined />
+              </span>
+              <div>
+                <small>AI练习反馈</small>
+                <strong>{practiceFeedback.title}</strong>
+                <p>{practiceFeedback.message}</p>
+              </div>
+            </section>
+          )}
+
+          {policy.allowLearningHelp && (
+            <section className="student-practice-actions">
+              <div className="student-practice-summary">
                 <span>
                   <small>当前状态</small>
                   <strong>{session.status}</strong>
@@ -2162,49 +3193,40 @@ function WorkstationPage() {
                 </span>
                 <span>
                   <small>实时得分</small>
-                  <strong>
-                    {policy.showRealtimeScore
-                      ? `${session.score} 分`
-                      : "考试后公布"}
-                  </strong>
-                </span>
-                <span>
-                  <small>评价方式</small>
-                  <strong>
-                    {evaluationProfile.automaticEvaluationEnabled
-                      ? `自动评价 ${evaluationProfile.enabledStepCount}/${evaluationProfile.automaticStepCount}`
-                      : "默认通过模式"}
-                  </strong>
+                  <strong>{session.score} 分</strong>
                 </span>
               </div>
-              {!evaluationProfile.automaticEvaluationEnabled && (
-                <p className="evaluation-fallback-note">
-                  <AlertOutlined /> {evaluationProfile.fallbackPolicy}
-                </p>
-              )}
               {session.helpRequestedAt && (
                 <p className="help-sent-note">
-                  <CheckCircleFilled /> 已于 {session.helpRequestedAt.slice(-5)}{" "}
-                  通知教师
+                  <CheckCircleFilled /> 已通知教师，请留在当前工位等待教师处理
                 </p>
               )}
-              <Button
-                onClick={requestHelp}
-                disabled={Boolean(session.helpRequestedAt)}
-              >
-                <BellOutlined />{" "}
-                {session.helpRequestedAt ? "等待教师处理" : "请求教师帮助"}
-              </Button>
-              <Button type="danger" onClick={finish} disabled={blocked}>
-                {exam ? "结束并交卷" : "结束本次训练"}
-              </Button>
+              <div className="student-practice-buttons">
+                {policy.allowHint && (
+                  <Button onClick={showHint} disabled={!currentStep}>
+                    <BookOutlined /> 我不会
+                  </Button>
+                )}
+                <Button
+                  onClick={requestHelp}
+                  disabled={Boolean(session.helpRequestedAt)}
+                >
+                  <BellOutlined />{" "}
+                  {session.helpRequestedAt ? "已通知教师" : "请求教师帮助"}
+                </Button>
+                <Button
+                  type="danger"
+                  onClick={finish}
+                  disabled={blocked || safetyBlocked}
+                >
+                  结束练习
+                </Button>
+              </div>
               <small className="session-resume-note">
-                Session {session.id}
-                <br />
-                刷新或短暂断线后自动恢复当前步骤
+                刷新或短暂断线后会自动恢复当前步骤
               </small>
-            </aside>
-          </div>
+            </section>
+          )}
 
           <section className="workstation-step-progress">
             <header>
@@ -2484,8 +3506,11 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
                           key={condition.id}
                           disabled={
                             session.status !== "进行中" ||
-                            !session.evaluationProfile
-                              ?.automaticEvaluationEnabled
+                            !(
+                              session.evaluationProfile?.aiRuntimeEnabled ??
+                              session.evaluationProfile
+                                ?.automaticEvaluationEnabled
+                            )
                           }
                           onClick={() =>
                             confirmAction(
@@ -2676,7 +3701,9 @@ function StudentMonitorPage({ exam = false, setModal }) {
   const base = exam ? "exams" : "practices";
   const initialIndex = Math.max(
     0,
-    session?.steps.findIndex((step) => step.id === session.currentStepId) || 0,
+    (session?.steps || []).findIndex(
+      (step) => step.id === session?.currentStepId,
+    ),
   );
   const [selectedStep, setSelectedStep] = useState(initialIndex);
   const [camera, setCamera] = useState("main");
@@ -2687,18 +3714,30 @@ function StudentMonitorPage({ exam = false, setModal }) {
         backTo={`/teacher/${base}/${id}/live`}
       />
     );
-  const detailStep = session.steps[selectedStep] || session.steps[0];
-  const currentStep = session.steps.find(
+  const hasFallbackCamera = Boolean(
+    session.evaluationSnapshot?.workstationAiBaseConfigSnapshot
+      ?.fallbackCameraId,
+  );
+  const aiRuntimeEnabled =
+    session.evaluationProfile?.aiRuntimeEnabled ??
+    session.evaluationProfile?.automaticEvaluationEnabled;
+  const detailStep = session.steps?.[selectedStep] || session.steps?.[0] || {};
+  const currentStep = (session.steps || []).find(
     (step) => step.id === session.currentStepId,
   );
   const running = session.status === "进行中";
   const paused = session.status === "已暂停";
   const blocked = session.status === "故障";
   const waiting = session.status === "待开始" || session.status === "可入场";
-  const completed = session.steps.filter(
+  const completed = (session.steps || []).filter(
     (step) => step.state === "pass",
   ).length;
-  const progress = Math.round((completed / session.steps.length) * 100);
+  const progress = Math.round(
+    (completed / Math.max(1, (session.steps || []).length)) * 100,
+  );
+  const identity = teacherIdentityView(session);
+  const normalizedEvents = teacherSessionEvents(session);
+  const studentActivities = teacherStudentActivities(session);
   const reportPath = `/teacher/${base}/${arrangement.id}/students/${student?.id}`;
   const togglePause = () =>
     setModal({
@@ -2758,7 +3797,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 nav(`/workstation/${arrangement.id}/${workstation.id}`)
               }
             >
-              进入学生工位端
+              打开学生端入口
             </Button>
             <Button
               disabled={blocked || waiting || session.status === "待复位"}
@@ -2785,8 +3824,8 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 <strong>{camera === "main" ? "主视角" : "辅助视角"}</strong>
                 <small>
                   本次SOP快照 ·{" "}
-                  {session.evaluationProfile?.automaticEvaluationEnabled
-                    ? `自动评价 ${session.evaluationProfile.enabledStepCount}/${session.evaluationProfile.automaticStepCount}`
+                  {aiRuntimeEnabled
+                    ? `AI参与 ${session.evaluationProfile.aiParticipatingStepCount} 个步骤`
                     : "默认通过模式"}
                 </small>
               </div>
@@ -2803,14 +3842,16 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 >
                   <VideoCameraOutlined /> 主视角
                 </button>
-                <button
-                  role="tab"
-                  aria-selected={camera === "assist"}
-                  className={camera === "assist" ? "active" : ""}
-                  onClick={() => setCamera("assist")}
-                >
-                  <CameraOutlined /> 辅助视角
-                </button>
+                {hasFallbackCamera && (
+                  <button
+                    role="tab"
+                    aria-selected={camera === "assist"}
+                    className={camera === "assist" ? "active" : ""}
+                    onClick={() => setCamera("assist")}
+                  >
+                    <CameraOutlined /> 辅助视角
+                  </button>
+                )}
               </div>
             </header>
             <div className={`live-video-frame ${!running ? "is-paused" : ""}`}>
@@ -2893,6 +3934,29 @@ function StudentMonitorPage({ exam = false, setModal }) {
           </section>
         </section>
         <aside className="student-monitor-side">
+          <section className="panel teacher-identity-card">
+            <header>
+              <div>
+                <span className="eyebrow">学生身份</span>
+                <h2>{student?.name || "学生信息缺失"}</h2>
+                <p>{student?.no ? `学号 ${student.no}` : "学号信息不可用"}</p>
+              </div>
+              <Status tone={identity.tone}>{identity.label}</Status>
+            </header>
+            <div
+              className={`teacher-identity-result teacher-identity-result--${identity.state}`}
+            >
+              {identity.state === "passed" ? (
+                <CheckCircleFilled />
+              ) : (
+                <AlertOutlined />
+              )}
+              <span>
+                <strong>{identity.label}</strong>
+                <small>{identity.detail}</small>
+              </span>
+            </div>
+          </section>
           <section className="monitor-kpis">
             <div className="monitor-score-ring">
               <strong>{waiting ? "--" : session.score}</strong>
@@ -2910,14 +3974,18 @@ function StudentMonitorPage({ exam = false, setModal }) {
               <small>异常提醒</small>
               <strong
                 className={
-                  session.events.some((event) => event.level === "danger")
+                  normalizedEvents.some(
+                    (event) => event.teacherTone === "danger",
+                  )
                     ? "danger-text"
                     : ""
                 }
               >
                 {
-                  session.events.filter((event) =>
-                    ["danger", "warning"].includes(event.level),
+                  normalizedEvents.filter((event) =>
+                    ["danger", "warning", "attention"].includes(
+                      event.teacherTone,
+                    ),
                   ).length
                 }
               </strong>
@@ -2926,6 +3994,44 @@ function StudentMonitorPage({ exam = false, setModal }) {
               <small>录像状态</small>
               <strong>{session.recording?.status || "不可用"}</strong>
             </div>
+          </section>
+          <section className="panel student-activity-card">
+            <PanelTitle
+              title="学生行为与求助"
+              action={<Status>{studentActivities.length} 条</Status>}
+            />
+            {studentActivities.length ? (
+              <div className="student-activity-list">
+                {studentActivities.map((event) => (
+                  <article
+                    className={`student-activity student-activity--${event.teacherTone}`}
+                    key={event.id}
+                  >
+                    {event.category === "identity" ? (
+                      <UserOutlined />
+                    ) : event.category === "hint" ? (
+                      <BookOutlined />
+                    ) : (
+                      <BellOutlined />
+                    )}
+                    <div>
+                      <small>
+                        {event.categoryLabel} · {event.displayTime}
+                      </small>
+                      <strong>{event.title}</strong>
+                      <p>
+                        {event.stepName ? `${event.stepName} · ` : ""}
+                        {event.reasonLabel
+                          ? `原因：${event.reasonLabel}`
+                          : event.detail}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="hint">尚无学生提示行为或求助记录</p>
+            )}
           </section>
           <section className="panel current-step-panel">
             <header>
@@ -3023,17 +4129,20 @@ function StudentMonitorPage({ exam = false, setModal }) {
           </section>
           <section className="panel monitor-event-card">
             <PanelTitle title="当前会话事件" />
-            {session.events.length ? (
-              session.events.map((event) => (
+            {normalizedEvents.length ? (
+              normalizedEvents.map((event) => (
                 <div
-                  className="monitor-alert-row"
-                  key={`${event.time}-${event.title}`}
+                  className={`monitor-alert-row monitor-alert-row--${event.teacherTone}`}
+                  key={event.id}
                 >
                   <AlertOutlined />
                   <div>
+                    <small className="monitor-event-category">
+                      {event.categoryLabel}
+                    </small>
                     <strong>{event.title}</strong>
                     <p>
-                      {event.time} · {event.detail}
+                      {event.displayTime} · {event.detail}
                     </p>
                   </div>
                 </div>
@@ -5861,12 +6970,16 @@ const StationCheckForm = forwardRef(function StationCheckForm(
   { workstation, snapshot, readiness },
   ref,
 ) {
-  const [checks, setChecks] = useState({
+  const hasFallbackCamera = Boolean(
+    snapshot?.workstationAiBaseConfigSnapshot?.fallbackCameraId ||
+      readiness.gate.workstation?.aiBaseConfig?.fallbackCameraId,
+  );
+  const [checks, setChecks] = useState(() => ({
     node: false,
     mainCamera: false,
-    assistCamera: false,
+    ...(hasFallbackCamera ? { assistCamera: false } : {}),
     cache: false,
-  });
+  }));
   useImperativeHandle(ref, () => ({ getValue: () => checks }));
   const toggle = (key) =>
     setChecks((current) => ({ ...current, [key]: !current[key] }));
@@ -5877,13 +6990,15 @@ const StationCheckForm = forwardRef(function StationCheckForm(
           <img src="/assets/workstation-male.png" alt="主视角实时检查画面" />
           <figcaption>主视角 · 画面时间 09:58:21</figcaption>
         </figure>
-        <figure>
-          <img
-            src="/assets/workstation-female.png"
-            alt="辅助视角实时检查画面"
-          />
-          <figcaption>辅助视角 · 画面时间 09:58:21</figcaption>
-        </figure>
+        {hasFallbackCamera && (
+          <figure>
+            <img
+              src="/assets/workstation-female.png"
+              alt="辅助视角实时检查画面"
+            />
+            <figcaption>辅助视角 · 画面时间 09:58:21</figcaption>
+          </figure>
+        )}
       </div>
       <p className="hint">
         将使用{snapshot ? "已锁定" : "首次开放时生成"}
@@ -5894,10 +7009,13 @@ const StationCheckForm = forwardRef(function StationCheckForm(
       >
         {readiness.gate.enabled ? <CheckCircleFilled /> : <AlertOutlined />}
         <div>
-          <strong>{readiness.gate.status}</strong>
+          <strong>{readiness.gate.runtimeLabel}</strong>
           <p>
-            视频自动判定覆盖 {readiness.gate.enabledStepCount} /{" "}
-            {readiness.gate.automaticStepCount} 个步骤。
+            AI参与步骤 {readiness.gate.aiParticipatingStepCount}{" "}
+            个，其中自动评价
+            {readiness.gate.automaticEvaluationStepCount} 个、AI辅助
+            {readiness.gate.assistedEvaluationStepCount} 个、安全提醒
+            {readiness.gate.safetyMonitoringStepCount} 个。
             {!readiness.gate.enabled &&
               "未启用步骤按规则默认通过，不阻塞本次 SOP 使用。"}
           </p>
@@ -5906,19 +7024,19 @@ const StationCheckForm = forwardRef(function StationCheckForm(
           )}
         </div>
       </div>
-      {[
-        ["node", "边缘节点在线且推理服务正常"],
-        ["mainCamera", "主视角覆盖完整操作区域"],
-        ["assistCamera", "辅助视角可看清关键手部动作"],
-        ["cache", "本地录像缓存空间与写入测试通过"],
-      ].map(([key, label]) => (
+      {readiness.checks.map((key) => (
         <label className="checkbox-row" key={key}>
           <input
             type="checkbox"
             checked={checks[key]}
             onChange={() => toggle(key)}
           />
-          {label}
+          {{
+            node: "边缘节点在线且推理服务正常",
+            mainCamera: "主视角覆盖完整操作区域",
+            assistCamera: "辅助视角可看清关键手部动作",
+            cache: "本地录像缓存空间与写入测试通过",
+          }[key] || key}
         </label>
       ))}
       <small>
@@ -6065,13 +7183,25 @@ function ArrangementForm({ exam = false, setModal }) {
     : publishedSops[0]?.id || "";
   const [draft, setDraft] = useState(() =>
     existing
-      ? JSON.parse(JSON.stringify(existing))
+      ? {
+          ...JSON.parse(JSON.stringify(existing)),
+          ...(exam
+            ? {
+                examDurationMinutes: normalizeExamDuration(
+                  existing.examDurationMinutes,
+                ),
+              }
+            : {}),
+        }
       : {
           type,
           name: "",
           sopId: preferredSopId,
           scheduleStart: "2026-09-20T09:00",
           entryEnd: exam ? "2026-09-20T09:30" : "",
+          ...(exam
+            ? { examDurationMinutes: DEFAULT_EXAM_DURATION_MINUTES }
+            : {}),
           studentIds: [],
           workstationIds: [],
         },
@@ -6168,6 +7298,22 @@ function ArrangementForm({ exam = false, setModal }) {
               </label>
             )}
           </div>
+          {exam && (
+            <label className="field">
+              考试时长（分钟）
+              <input
+                type="number"
+                min="5"
+                max="240"
+                step="1"
+                value={draft.examDurationMinutes}
+                onChange={(event) =>
+                  update("examDurationMinutes", event.target.value)
+                }
+              />
+              <small>学生确认开始考试后锁定，允许设置 5～240 分钟。</small>
+            </label>
+          )}
           <h2>评价标准与 AI评价能力</h2>
           <label className="field">
             已发布 SOP
@@ -6344,7 +7490,7 @@ function PrepPage({ exam = false, setModal }) {
           workstation.id,
           checkRef.current.getValue(),
         );
-        return `${workstation.name} 已开放，${result.session.evaluationProfile.automaticEvaluationEnabled ? "自动评价已启用" : "自动评价已安全降级"}`;
+        return `${workstation.name} 已开放，${(result.session.evaluationProfile.aiRuntimeEnabled ?? result.session.evaluationProfile.automaticEvaluationEnabled) ? "AI运行已启用" : "AI运行已安全降级"}`;
       },
     });
   };
@@ -7223,6 +8369,10 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
     );
   const steps = session.steps || [];
   const activeStep = steps[sel] || steps[0];
+  const hasFallbackCamera = Boolean(
+    session.evaluationSnapshot?.workstationAiBaseConfigSnapshot
+      ?.fallbackCameraId,
+  );
   const totalMax = steps.reduce(
     (sum, item) => sum + Number(item.maxScore || 0),
     0,
@@ -7476,29 +8626,31 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
                   : "片段缺失"}
               </figcaption>
             </figure>
-            <figure>
-              {activeStep.evidenceMetadata?.cameras?.includes("辅助视角") ? (
-                <img
-                  src={
-                    sel % 2
-                      ? "/assets/workstation-male.png"
-                      : "/assets/workstation-female.png"
-                  }
-                  alt={`${activeStep.name}辅助视角证据示意图`}
-                />
-              ) : (
-                <div className="missing-evidence-frame">
-                  <VideoCameraOutlined />
-                  <strong>辅助视角片段不可用</strong>
-                </div>
-              )}
-              <figcaption>
-                辅助视角 · {activeStep.timeRange} ·{" "}
-                {activeStep.evidenceMetadata?.cameras?.includes("辅助视角")
-                  ? "有效片段"
-                  : "片段缺失"}
-              </figcaption>
-            </figure>
+            {hasFallbackCamera && (
+              <figure>
+                {activeStep.evidenceMetadata?.cameras?.includes("辅助视角") ? (
+                  <img
+                    src={
+                      sel % 2
+                        ? "/assets/workstation-male.png"
+                        : "/assets/workstation-female.png"
+                    }
+                    alt={`${activeStep.name}辅助视角证据示意图`}
+                  />
+                ) : (
+                  <div className="missing-evidence-frame">
+                    <VideoCameraOutlined />
+                    <strong>辅助视角片段不可用</strong>
+                  </div>
+                )}
+                <figcaption>
+                  辅助视角 · {activeStep.timeRange} ·{" "}
+                  {activeStep.evidenceMetadata?.cameras?.includes("辅助视角")
+                    ? "有效片段"
+                    : "片段缺失"}
+                </figcaption>
+              </figure>
+            )}
           </div>
           <div className="evidence-explain">
             <span>
@@ -20486,7 +21638,7 @@ function ClassDetail({ setModal }) {
             student.name,
             student.no,
             student.status,
-            student.face,
+            getStudentFaceStatus(student),
           ])}
           emptyText="当前班级尚未关联学生，可在学生管理中完成归班。"
         />
@@ -20494,6 +21646,120 @@ function ClassDetail({ setModal }) {
     </>
   );
 }
+
+function FacePhotoPicker({
+  value = "",
+  actionLabel = "选择照片",
+  onChange,
+  onStateChange,
+}) {
+  const [preview, setPreview] = useState(value);
+  const [fileInfo, setFileInfo] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chooseFile = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    onStateChange?.({ busy: true, error: "" });
+    try {
+      const result = await compressImageForPrototype(file);
+      setPreview(result.dataUrl);
+      setFileInfo(result);
+      onChange?.(result);
+      onStateChange?.({ busy: false, error: "" });
+    } catch (reason) {
+      const message =
+        reason instanceof Error ? reason.message : "图片处理失败，请重新选择。";
+      setError(message);
+      onStateChange?.({ busy: false, error: message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="face-photo-picker">
+      <div
+        className={`face-photo-picker__preview ${preview ? "has-photo" : ""}`}
+      >
+        {preview ? (
+          <img src={preview} alt="学生人脸照片预览" />
+        ) : (
+          <span>
+            <UserOutlined />
+            <small>暂无照片</small>
+          </span>
+        )}
+      </div>
+      <div className="face-photo-picker__body">
+        <strong>
+          人脸照片 <span className="optional">选填</span>
+        </strong>
+        <p>支持 JPG、PNG、WebP，原图不超过 5MB；保存前自动压缩至 512px 内。</p>
+        <label
+          className={`button button--default ${busy ? "is-disabled" : ""}`}
+        >
+          <UploadOutlined />{" "}
+          {busy ? "正在压缩…" : preview ? "重新选择照片" : actionLabel}
+          <input
+            type="file"
+            accept={STUDENT_FACE_ACCEPT}
+            disabled={busy}
+            onChange={(event) => {
+              chooseFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {fileInfo && (
+          <small className="face-photo-picker__meta">
+            {fileInfo.fileName} · 压缩后{" "}
+            {formatFaceImageSize(fileInfo.approxBytes)} · {fileInfo.width} ×{" "}
+            {fileInfo.height}
+          </small>
+        )}
+        {error && (
+          <small className="field-error" role="alert">
+            {error}
+          </small>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const StudentFaceUploadForm = forwardRef(function StudentFaceUploadForm(
+  { student },
+  ref,
+) {
+  const [result, setResult] = useState(null);
+  const [state, setState] = useState({ busy: false, error: "" });
+  useImperativeHandle(ref, () => ({
+    validate() {
+      if (state.busy) throw new Error("照片仍在压缩，请稍候再保存。");
+      if (state.error) throw new Error(state.error);
+      if (!result?.dataUrl) throw new Error("请先选择一张新的学生人脸照片。");
+      return result;
+    },
+  }));
+  return (
+    <div className="student-face-upload-form">
+      <p>
+        上传成功后，{student.name}
+        的人脸资料状态将更新为“已采集”，可用于原型刷脸登录。
+      </p>
+      <FacePhotoPicker
+        value={student.facePhotoDataUrl}
+        actionLabel="选择人脸照片"
+        onChange={setResult}
+        onStateChange={setState}
+      />
+      <p className="form-hint">
+        原型只保存压缩后的单张照片，不进行人脸检测、活体检测或质量评分。
+      </p>
+    </div>
+  );
+});
 
 const MasterDataForm = forwardRef(function MasterDataForm(
   { type, initial },
@@ -20517,6 +21783,10 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       gender: "未填写",
       admissionYear: "2026",
       face: "未采集",
+      faceStatus: "未采集",
+      facePhotoDataUrl: "",
+      faceUpdatedAt: "",
+      facePhotoChanged: false,
       notes: "",
     },
     workstation: {
@@ -20536,8 +21806,23 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       notes: "",
     },
   };
-  const [form, setForm] = useState({ ...defaults[type], ...initial });
+  const [form, setForm] = useState(() => ({
+    ...defaults[type],
+    ...initial,
+    ...(type === "student"
+      ? {
+          faceStatus: getStudentFaceStatus(initial || {}),
+          facePhotoDataUrl: initial?.facePhotoDataUrl || "",
+          faceUpdatedAt: initial?.faceUpdatedAt || "",
+          facePhotoChanged: false,
+        }
+      : {}),
+  }));
   const [errors, setErrors] = useState({});
+  const [faceUploadState, setFaceUploadState] = useState({
+    busy: false,
+    error: "",
+  });
   const setField = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: "" }));
@@ -20574,6 +21859,10 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         if (!form.classId) next.classId = "请选择班级";
         if (!/^20\d{2}$/.test(form.admissionYear))
           next.admissionYear = "请输入四位入学年份";
+        if (faceUploadState.busy)
+          next.facePhotoDataUrl = "照片仍在压缩，请稍候再保存";
+        else if (faceUploadState.error)
+          next.facePhotoDataUrl = faceUploadState.error;
       }
       if (type === "workstation") {
         if (!/^[A-Za-z0-9-]{3,30}$/.test(form.code?.trim()))
@@ -20750,19 +22039,26 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             />
             {error("admissionYear")}
           </label>
-          <label className="field">
-            人脸资料状态{" "}
-            <select
-              value={form.face}
-              onChange={(e) => setField("face", e.target.value)}
-            >
-              <option>未采集</option>
-              <option>已采集</option>
-              <option>待更新</option>
-              <option>待重采</option>
-            </select>
-          </label>
+          <div className="field face-status-readonly">
+            人脸资料状态
+            <Status>{getStudentFaceStatus(form)}</Status>
+            <small>状态由照片上传和“发起重采”自动维护</small>
+          </div>
         </div>
+        <FacePhotoPicker
+          value={form.facePhotoDataUrl}
+          actionLabel="选择人脸照片"
+          onStateChange={setFaceUploadState}
+          onChange={(result) => {
+            setForm((current) => ({
+              ...current,
+              facePhotoDataUrl: result.dataUrl,
+              facePhotoChanged: true,
+            }));
+            setErrors((current) => ({ ...current, facePhotoDataUrl: "" }));
+          }}
+        />
+        {error("facePhotoDataUrl")}
         <label className="field">
           备注 <span className="optional">选填</span>
           <textarea
@@ -21035,6 +22331,7 @@ function AdminList({ type, setModal }) {
   const { data } = store;
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部状态");
+  const [faceFilter, setFaceFilter] = useState("全部人脸状态");
   const configs = {
     teachers: {
       title: "教师管理",
@@ -21068,7 +22365,7 @@ function AdminList({ type, setModal }) {
         item.no,
         data.classes.find((c) => c.id === item.classId)?.name || "未归班",
         item.status,
-        item.face,
+        getStudentFaceStatus(item),
         item.updatedAt,
       ],
       key: "no",
@@ -21142,11 +22439,16 @@ function AdminList({ type, setModal }) {
   const items = data[config.collection];
   const filtered = items.filter(
     (item) =>
-      Object.values(item)
+      Object.entries(item)
+        .filter(([key]) => key !== "facePhotoDataUrl")
+        .map(([, value]) => value)
         .join(" ")
         .toLowerCase()
         .includes(query.trim().toLowerCase()) &&
-      (statusFilter === "全部状态" || item.status === statusFilter),
+      (statusFilter === "全部状态" || item.status === statusFilter) &&
+      (type !== "students" ||
+        faceFilter === "全部人脸状态" ||
+        getStudentFaceStatus(item) === faceFilter),
   );
   const openCreate = () =>
     setModal({
@@ -21205,8 +22507,25 @@ function AdminList({ type, setModal }) {
           onRefresh={() => {
             setQuery("");
             setStatusFilter("全部状态");
+            setFaceFilter("全部人脸状态");
           }}
         />
+        {type === "students" && (
+          <div className="student-face-filter">
+            <label>
+              人脸资料状态
+              <select
+                value={faceFilter}
+                onChange={(event) => setFaceFilter(event.target.value)}
+              >
+                <option>全部人脸状态</option>
+                <option>已采集</option>
+                <option>未采集</option>
+                <option>待重采</option>
+              </select>
+            </label>
+          </div>
+        )}
         <DataTable
           columns={config.columns}
           rows={filtered.map(config.row)}
@@ -21773,6 +23092,7 @@ function AdminDetail({ type, setModal }) {
   const { id } = useParams();
   const nav = useNavigate();
   const formRef = useRef(null);
+  const faceUploadRef = useRef(null);
   const workstationAiRef = useRef(null);
   const store = usePrototypeData();
   const { data } = store;
@@ -21833,7 +23153,6 @@ function AdminDetail({ type, setModal }) {
         ["所属班级", classItem?.name || "未归班"],
         ["所属专业", classItem?.major || "--"],
         ["账号状态", item.status],
-        ["人脸资料", item.face],
         ["入学年份", item.admissionYear],
         ["练习记录", "12 次"],
         ["考试记录", "3 次"],
@@ -22049,6 +23368,39 @@ function AdminDetail({ type, setModal }) {
           : `AI基础配置已检查：${saved.readiness.label}`;
       },
     });
+  const studentFaceStatus =
+    type === "student" ? getStudentFaceStatus(item) : "";
+  const openStudentFaceUpload = () =>
+    setModal({
+      eyebrow: "学生人脸资料",
+      title: `${item.name} · ${item.facePhotoDataUrl ? "重新上传" : "上传照片"}`,
+      size: "large",
+      confirmText: "保存人脸照片",
+      content: <StudentFaceUploadForm ref={faceUploadRef} student={item} />,
+      onConfirm: () => {
+        const result = faceUploadRef.current.validate();
+        store.updateStudentFacePhoto(item.id, result.dataUrl);
+        return `已更新${item.name}的人脸资料`;
+      },
+    });
+  const openStudentFaceReset = () =>
+    setModal({
+      eyebrow: "学生人脸资料",
+      title: "确认发起人脸重采？",
+      content: (
+        <div className="student-face-reset-warning">
+          <ExclamationCircleFilled />
+          <p>
+            发起后，当前人脸资料将停止用于新的学生身份确认。学生需重新上传有效照片后才能刷脸登录。
+          </p>
+        </div>
+      ),
+      confirmText: "确认发起重采",
+      onConfirm: () => {
+        store.resetStudentFace(item.id);
+        return "人脸资料状态已更新为待重采";
+      },
+    });
   return (
     <>
       <PageHeader
@@ -22065,18 +23417,20 @@ function AdminDetail({ type, setModal }) {
                 配置AI基础设备
               </Button>
             )}
-            <Button
-              onClick={() =>
-                setModal({
-                  title: secondary.title,
-                  content: <p>{secondary.text}</p>,
-                  confirmText: secondary.confirm,
-                  onConfirm: secondary.run,
-                })
-              }
-            >
-              {secondary.label}
-            </Button>
+            {type !== "student" && (
+              <Button
+                onClick={() =>
+                  setModal({
+                    title: secondary.title,
+                    content: <p>{secondary.text}</p>,
+                    confirmText: secondary.confirm,
+                    onConfirm: secondary.run,
+                  })
+                }
+              >
+                {secondary.label}
+              </Button>
+            )}
             <Button onClick={toggleStatus}>{statusConfig.actionLabel}</Button>
             <Button type="primary" onClick={openEdit}>
               编辑资料
@@ -22100,6 +23454,79 @@ function AdminDetail({ type, setModal }) {
           </section>
         ))}
       </div>
+      {type === "student" && (
+        <section className="panel student-face-card">
+          <PanelTitle
+            title="人脸资料"
+            action={<Status>{studentFaceStatus}</Status>}
+          />
+          <div className="student-face-card__content">
+            <div
+              className={`student-face-card__photo ${studentFaceStatus === "待重采" ? "is-invalid" : ""}`}
+            >
+              {item.facePhotoDataUrl ? (
+                <img
+                  src={item.facePhotoDataUrl}
+                  alt={`${item.name}的人脸资料照片`}
+                />
+              ) : (
+                <span>
+                  <UserOutlined />
+                  <small>暂无有效人脸照片</small>
+                </span>
+              )}
+              {studentFaceStatus === "待重采" && item.facePhotoDataUrl && (
+                <b>已失效</b>
+              )}
+            </div>
+            <div className="student-face-card__details">
+              <dl>
+                <div>
+                  <dt>当前状态</dt>
+                  <dd>
+                    <Status>{studentFaceStatus}</Status>
+                  </dd>
+                </div>
+                <div>
+                  <dt>最近采集时间</dt>
+                  <dd>{item.faceUpdatedAt || "尚未采集"}</dd>
+                </div>
+                <div>
+                  <dt>资料用途</dt>
+                  <dd>学生端身份确认</dd>
+                </div>
+              </dl>
+              <p>
+                {studentFaceStatus === "待重采"
+                  ? "当前照片仅供管理员参考，已经不能用于学生刷脸登录。"
+                  : studentFaceStatus === "未采集"
+                    ? "上传一张有效照片后，学生即可使用原型刷脸登录。"
+                    : "当前照片可用于学生端的原型身份确认。"}
+              </p>
+              <div className="student-face-card__actions">
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  onClick={openStudentFaceUpload}
+                >
+                  {studentFaceStatus === "已采集"
+                    ? "重新上传"
+                    : studentFaceStatus === "待重采"
+                      ? "上传新照片"
+                      : "上传照片"}
+                </Button>
+                {studentFaceStatus === "已采集" && (
+                  <Button onClick={openStudentFaceReset}>发起重采</Button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="student-face-card__privacy">
+            原型照片仅保存在当前浏览器 LocalStorage
+            中；正式系统需改用受控对象存储与访问审计。
+          </div>
+        </section>
+      )}
       {item.notes && (
         <section className="panel class-notes">
           <PanelTitle title="备注" />
@@ -22474,6 +23901,10 @@ function SessionDiagnosticPanel({ record, store }) {
         <p className="hint">当前安排尚未产生可诊断的 Session。</p>
       </section>
     );
+  const hasFallbackCamera = Boolean(
+    selectedSession.evaluationSnapshot?.workstationAiBaseConfigSnapshot
+      ?.fallbackCameraId,
+  );
   const saveRootCause = () => {
     try {
       store.saveDiagnosticRootCause(
@@ -22551,10 +23982,11 @@ function SessionDiagnosticPanel({ record, store }) {
           <strong>{selectedSession.recording?.coveragePercent ?? 0}%</strong>
         </span>
         <span>
-          <small>主 / 辅视角</small>
+          <small>{hasFallbackCamera ? "主 / 辅视角" : "主视角"}</small>
           <strong>
-            {selectedSession.recording?.mainCamera || "未产生"} /{" "}
-            {selectedSession.recording?.assistCamera || "未产生"}
+            {selectedSession.recording?.mainCamera || "未产生"}
+            {hasFallbackCamera &&
+              ` / ${selectedSession.recording?.assistCamera || "未产生"}`}
           </strong>
         </span>
         <span>
@@ -22999,14 +24431,19 @@ function SettingsPage({ setModal }) {
         <label className="toggle-row">
           <input
             type="checkbox"
-            checked={form.versionMismatchAlertEnabled}
+            checked={form.aiConfigurationInvalidationAlertEnabled}
             onChange={(event) =>
-              change("versionMismatchAlertEnabled", event.target.checked)
+              change(
+                "aiConfigurationInvalidationAlertEnabled",
+                event.target.checked,
+              )
             }
           />
           <span>
-            <strong>版本不一致告警</strong>
-            <small>实际版本与锁定版本不一致时阻止开放。</small>
+            <strong>AI配置有效性异常告警</strong>
+            <small>
+              AI能力重新发布或启用、工位关键配置变化、现场验证失效时告警。
+            </small>
           </span>
         </label>
       </section>
@@ -23589,7 +25026,34 @@ function RoutedApp() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/workstation/:id/:stationId" element={<WorkstationPage />} />
+      <Route
+        path="/student/login"
+        element={
+          <StudentShell>
+            <StudentLoginPage />
+          </StudentShell>
+        }
+      />
+      <Route
+        path="/student/current"
+        element={
+          <StudentShell>
+            <StudentCurrentPage />
+          </StudentShell>
+        }
+      />
+      <Route
+        path="/student/session/:id/:stationId"
+        element={
+          <StudentShell>
+            <StudentSessionPage />
+          </StudentShell>
+        }
+      />
+      <Route
+        path="/workstation/:id/:stationId"
+        element={<LegacyWorkstationRedirect />}
+      />
       <Route
         path="/*"
         element={

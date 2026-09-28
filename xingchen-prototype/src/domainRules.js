@@ -1317,9 +1317,14 @@ export function workstationFeedbackPolicy(type, published = false) {
   const exam = type === "exam";
   return {
     showTeachingContent: !exam,
+    showStandardMedia: !exam,
+    showAiFeedback: !exam,
     showRealtimeResult: !exam,
     showRealtimeScore: !exam,
     showCorrectionHints: !exam,
+    allowHint: !exam,
+    allowLearningHelp: !exam,
+    allowIncidentHelp: exam,
     showFinalReport: !exam || published,
     statusText: exam
       ? published
@@ -1826,6 +1831,17 @@ export function canCloseIssue(issue) {
     issue.technicalCheck?.status === "已通过" &&
     ["已确认", "无需确认"].includes(issue.businessCheck?.status)
   );
+}
+
+export function normalizeSystemAlertSettings(settings = {}) {
+  const { versionMismatchAlertEnabled, ...current } = settings || {};
+  return {
+    ...current,
+    aiConfigurationInvalidationAlertEnabled:
+      current.aiConfigurationInvalidationAlertEnabled ??
+      versionMismatchAlertEnabled ??
+      true,
+  };
 }
 
 export function validateSystemSettings(input) {

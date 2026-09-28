@@ -277,6 +277,10 @@ test("practice workstation exposes guidance, correction and live score", () => {
   const policy = workstationFeedbackPolicy("practice", false);
   assert.equal(policy.showTeachingContent, true);
   assert.equal(policy.showCorrectionHints, true);
+  assert.equal(policy.showAiFeedback, true);
+  assert.equal(policy.allowHint, true);
+  assert.equal(policy.allowLearningHelp, true);
+  assert.equal(policy.allowIncidentHelp, false);
   assert.equal(policy.showRealtimeScore, true);
   assert.equal(policy.showFinalReport, true);
 });
@@ -286,6 +290,11 @@ test("exam workstation hides answers and scores until publication", () => {
   assert.equal(active.showTeachingContent, false);
   assert.equal(active.showRealtimeResult, false);
   assert.equal(active.showRealtimeScore, false);
+  assert.equal(active.showStandardMedia, false);
+  assert.equal(active.showAiFeedback, false);
+  assert.equal(active.allowHint, false);
+  assert.equal(active.allowLearningHelp, false);
+  assert.equal(active.allowIncidentHelp, true);
   assert.equal(active.showFinalReport, false);
 
   const published = workstationFeedbackPolicy("exam", true);
