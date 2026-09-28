@@ -1,7 +1,10 @@
 import {
+  ARRANGEMENT_MANUAL_PAUSE_REASON,
   createOpenedAiSession,
   deriveAiRuntimeGate,
+  getSessionResumeBlocker,
   resolveAiSafetyCandidate,
+  SESSION_MANUAL_PAUSE_REASON,
   simulateAiConditionOnSession,
   startAiRuntimeSession,
   updateAiCorrectionContext,
@@ -413,6 +416,61 @@ export function createAiRuntimeStore(initialData = {}, options = {}) {
       return clone(updatedSession.events[0]);
     },
 
+    setArrangementPaused(id, paused) {
+      const arrangement = data.arrangements.find((item) => item.id === id);
+      if (!arrangement || !["进行中", "已暂停"].includes(arrangement.status))
+        throw new Error("只有进行中的安排可以暂停或恢复。");
+      const changedAt = now();
+      const sessions = arrangement.sessions.map((session) => {
+        if (paused && session.status === "进行中")
+          return {
+            ...session,
+            status: "已暂停",
+            ...(arrangement.type === "exam"
+              ? { examTiming: transitionExamTiming(session, true, changedAt) }
+              : {}),
+            runtime: {
+              ...(session.runtime || {}),
+              evaluationClock: {
+                ...(session.runtime?.evaluationClock || {}),
+                status: "paused",
+                pauseReason: ARRANGEMENT_MANUAL_PAUSE_REASON,
+              },
+            },
+          };
+        if (
+          !paused &&
+          session.status === "已暂停" &&
+          !getSessionResumeBlocker(session, ARRANGEMENT_MANUAL_PAUSE_REASON)
+        )
+          return {
+            ...session,
+            status: "进行中",
+            ...(arrangement.type === "exam"
+              ? { examTiming: transitionExamTiming(session, false, changedAt) }
+              : {}),
+            runtime: {
+              ...(session.runtime || {}),
+              evaluationClock: {
+                ...(session.runtime?.evaluationClock || {}),
+                status: "running",
+                pauseReason: "",
+              },
+            },
+          };
+        return session;
+      });
+      const updated = {
+        ...arrangement,
+        status: paused ? "已暂停" : "进行中",
+        paused,
+        sessions,
+        updatedAt: changedAt,
+      };
+      data = replaceArrangement(data, updated);
+      return clone(updated);
+    },
+
     setArrangementSessionPaused(arrangementId, workstationId, paused) {
       const arrangement = data.arrangements.find(
         (item) => item.id === arrangementId,
@@ -423,9 +481,16 @@ export function createAiRuntimeStore(initialData = {}, options = {}) {
       if (
         !arrangement ||
         !session ||
-        !["进行中", "已暂停"].includes(session.status)
+        (paused ? session.status !== "进行中" : session.status !== "已暂停")
       )
         throw new Error("当前学生会话不能暂停或恢复。");
+      if (!paused) {
+        const blocker = getSessionResumeBlocker(
+          session,
+          SESSION_MANUAL_PAUSE_REASON,
+        );
+        if (blocker) throw new Error(blocker.message);
+      }
       const changedAt = now();
       const updatedSession = {
         ...session,
@@ -438,7 +503,7 @@ export function createAiRuntimeStore(initialData = {}, options = {}) {
           evaluationClock: {
             ...(session.runtime?.evaluationClock || {}),
             status: paused ? "paused" : "running",
-            pauseReason: paused ? "教师暂停当前会话" : "",
+            pauseReason: paused ? SESSION_MANUAL_PAUSE_REASON : "",
           },
         },
       };

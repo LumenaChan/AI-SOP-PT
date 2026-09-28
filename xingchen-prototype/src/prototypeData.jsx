@@ -97,14 +97,17 @@ import {
   setLogicalAreaMapping,
 } from "./sopWorkstationAiRules.js";
 import {
+  ARRANGEMENT_MANUAL_PAUSE_REASON,
   createAiEvaluationSnapshot,
   createOpenedAiSession,
   deriveAiRuntimeGate,
   deriveSopAiCapabilityStatus,
   evaluationProfileFromGate,
+  getSessionResumeBlocker,
   resolveAiSafetyCandidate,
   simulateAiConditionOnSession,
   startAiRuntimeSession,
+  SESSION_MANUAL_PAUSE_REASON,
   updateAiCorrectionContext,
 } from "./aiRuntimeRules.js";
 import {
@@ -8423,7 +8426,10 @@ export function PrototypeDataProvider({ children }) {
                   evaluationClock: setEvaluationClockPaused(
                     normalizeSessionRuntime(session).evaluationClock,
                     true,
-                    { reason: "教师暂停整场安排", at: timestamp() },
+                    {
+                      reason: ARRANGEMENT_MANUAL_PAUSE_REASON,
+                      at: timestamp(),
+                    },
                   ),
                 },
                 steps: session.steps.map((step) =>
@@ -8432,7 +8438,11 @@ export function PrototypeDataProvider({ children }) {
                     : step,
                 ),
               };
-            if (!paused && session.status === "已暂停")
+            if (
+              !paused &&
+              session.status === "已暂停" &&
+              !getSessionResumeBlocker(session, ARRANGEMENT_MANUAL_PAUSE_REASON)
+            )
               return {
                 ...session,
                 status: "进行中",
@@ -8483,8 +8493,18 @@ export function PrototypeDataProvider({ children }) {
         const session = arrangement?.sessions.find(
           (item) => item.workstationId === workstationId,
         );
-        if (!session || !["进行中", "已暂停"].includes(session.status))
+        if (
+          !session ||
+          (paused ? session.status !== "进行中" : session.status !== "已暂停")
+        )
           throw new Error("当前学生会话不能暂停或恢复。");
+        if (!paused) {
+          const blocker = getSessionResumeBlocker(
+            session,
+            SESSION_MANUAL_PAUSE_REASON,
+          );
+          if (blocker) throw new Error(blocker.message);
+        }
         const status = paused ? "已暂停" : "进行中";
         const runtime = normalizeSessionRuntime(session);
         const examTransitionAt = new Date().toISOString();
@@ -8506,7 +8526,9 @@ export function PrototypeDataProvider({ children }) {
               runtime.evaluationClock,
               paused,
               {
-                reason: paused ? "教师暂停当前会话" : "教师恢复当前会话",
+                reason: paused
+                  ? SESSION_MANUAL_PAUSE_REASON
+                  : "教师恢复当前会话",
                 at: timestamp(),
               },
             ),
@@ -9355,6 +9377,24 @@ export function PrototypeDataProvider({ children }) {
           (item) => item.id === incident.stepId,
         );
         const nextStep = session.steps[incidentIndex + 1];
+        const technicalIncidents = runtime.technicalIncidents.map((item) =>
+          item.id === incidentId
+            ? {
+                ...item,
+                status: "resolved",
+                resolvedAt: when,
+                resolvedBy: "王老师",
+              }
+            : item,
+        );
+        const resumeBlocker = getSessionResumeBlocker(
+          {
+            ...session,
+            runtime: { ...runtime, technicalIncidents },
+          },
+          session.status === "已暂停" ? "技术异常阻断继续操作" : "",
+        );
+        const canResume = !resumeBlocker;
         const steps = session.steps.map((step) =>
           step.id === incident.stepId
             ? {
@@ -9367,7 +9407,7 @@ export function PrototypeDataProvider({ children }) {
                   closeReason: "Technical Incident已恢复",
                 },
               }
-            : step.id === nextStep?.id
+            : canResume && step.id === nextStep?.id
               ? {
                   ...step,
                   state: "active",
@@ -9384,8 +9424,8 @@ export function PrototypeDataProvider({ children }) {
         );
         const updatedSession = {
           ...session,
-          status: "进行中",
-          ...(arrangement.type === "exam"
+          status: canResume ? "进行中" : "已暂停",
+          ...(arrangement.type === "exam" && canResume
             ? {
                 examTiming: transitionExamTiming(
                   session,
@@ -9394,32 +9434,26 @@ export function PrototypeDataProvider({ children }) {
                 ),
               }
             : {}),
-          currentStepId: nextStep?.id || "",
+          currentStepId: canResume ? nextStep?.id || "" : session.currentStepId,
           steps,
           runtime: {
             ...runtime,
-            technicalIncidents: runtime.technicalIncidents.map((item) =>
-              item.id === incidentId
-                ? {
-                    ...item,
-                    status: "resolved",
-                    resolvedAt: when,
-                    resolvedBy: "王老师",
-                  }
-                : item,
-            ),
-            evaluationClock: setEvaluationClockPaused(
-              runtime.evaluationClock,
-              false,
-              { reason: "Technical Incident已恢复", at: when },
-            ),
+            technicalIncidents,
+            evaluationClock: canResume
+              ? setEvaluationClockPaused(runtime.evaluationClock, false, {
+                  reason: "Technical Incident已恢复",
+                  at: when,
+                })
+              : runtime.evaluationClock,
           },
           events: [
             {
               time: when.slice(-5),
               level: "green",
               title: "技术异常已恢复",
-              detail: "运行继续；考试中的待处置成绩仍需教师闭环",
+              detail: canResume
+                ? "运行继续；考试中的待处置成绩仍需教师闭环"
+                : `${resumeBlocker.message}当前会话继续保持暂停。`,
             },
             ...(session.events || []),
           ],

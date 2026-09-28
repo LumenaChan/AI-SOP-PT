@@ -436,6 +436,49 @@ function normalizedRuntime(session = {}) {
   };
 }
 
+export const ARRANGEMENT_MANUAL_PAUSE_REASON = "教师暂停整场安排";
+export const SESSION_MANUAL_PAUSE_REASON = "教师暂停当前会话";
+
+export function getSessionResumeBlocker(
+  session = {},
+  expectedPauseReason = "",
+) {
+  const runtime = session.runtime || {};
+  if (
+    (Array.isArray(runtime.safetyCandidates)
+      ? runtime.safetyCandidates
+      : []
+    ).some((candidate) => candidate?.status === "pending")
+  )
+    return {
+      code: "pending_safety",
+      message: "当前会话存在待处理安全事件，请先处理安全事件。",
+    };
+  if (
+    (Array.isArray(runtime.technicalIncidents)
+      ? runtime.technicalIncidents
+      : []
+    ).some(
+      (incident) =>
+        incident?.status !== "resolved" &&
+        incident?.affectsContinuation === true,
+    )
+  )
+    return {
+      code: "blocking_technical_incident",
+      message: "当前会话存在未恢复技术异常，请先处理异常。",
+    };
+  if (
+    expectedPauseReason &&
+    runtime.evaluationClock?.pauseReason !== expectedPauseReason
+  )
+    return {
+      code: "pause_reason_mismatch",
+      message: "当前会话不是由本次教师暂停操作产生，不能直接恢复。",
+    };
+  return null;
+}
+
 function completeCurrentStep(session, runtime, stepId, when) {
   const currentIndex = (session.steps || []).findIndex(
     (step) => step.id === stepId,
@@ -1016,7 +1059,7 @@ export function resolveAiSafetyCandidate({
       : item,
   );
   const remainingPending = safetyCandidates.some(
-    (item) => item.stepId === candidate.stepId && item.status === "pending",
+    (item) => item.status === "pending",
   );
   let currentStepId = session.currentStepId;
   let completed = false;
@@ -1051,10 +1094,22 @@ export function resolveAiSafetyCandidate({
     safetyRule?.sessionTreatment === "terminate_after_confirmation";
   const remainsPaused =
     confirmed && safetyRule?.sessionTreatment === "pause_for_review";
+  const hasBlockingTechnicalIncident = runtime.technicalIncidents.some(
+    (incident) =>
+      incident?.status !== "resolved" && incident?.affectsContinuation === true,
+  );
+  const mustRemainPaused =
+    remainsPaused || remainingPending || hasBlockingTechnicalIncident;
+  if (!terminated && mustRemainPaused)
+    steps = steps.map((step) =>
+      step.executionState === "active"
+        ? { ...step, executionState: "paused" }
+        : step,
+    );
   const scoreEngine = calculateScoreEngine({ steps });
   return {
     ...session,
-    status: terminated ? "待复位" : remainsPaused ? "已暂停" : "进行中",
+    status: terminated ? "待复位" : mustRemainPaused ? "已暂停" : "进行中",
     currentStepId: terminated ? "" : currentStepId,
     steps,
     score: scoreEngine.effectiveScore,
@@ -1062,7 +1117,7 @@ export function resolveAiSafetyCandidate({
     runtime: {
       ...nextRuntime,
       evaluationClock:
-        terminated || remainsPaused
+        terminated || mustRemainPaused
           ? nextRuntime.evaluationClock
           : setEvaluationClockPaused(nextRuntime.evaluationClock, false, {
               reason: confirmed ? "安全违规已处置" : "安全候选误报排除",
@@ -1076,9 +1131,11 @@ export function resolveAiSafetyCandidate({
         title: confirmed ? "安全违规已确认" : "安全候选误报已排除",
         detail: confirmed
           ? "按教师预先定义的安全规则处理"
-          : completed
-            ? "误报已排除，已成立的完成判断继续生效"
-            : "恢复操作且暂停时间不计入评价计时",
+          : mustRemainPaused
+            ? "该安全事件已处理，仍有其他阻断事件，当前会话继续保持暂停"
+            : completed
+              ? "误报已排除，已成立的完成判断继续生效"
+              : "恢复操作且暂停时间不计入评价计时",
       },
       ...(session.events || []),
     ],
