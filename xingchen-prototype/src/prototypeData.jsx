@@ -149,7 +149,16 @@ import {
   validateDatasetSplitIsolation,
   validateSystemSettings,
 } from "./domainRules.js";
-import { recoverMissingLegacySops } from "./storageMigrationRules.js";
+import currentPrototypeData from "./data/currentPrototypeData.json";
+import {
+  normalizePrototypeDataSource,
+  PROTOTYPE_DATA_SOURCE_BROWSER,
+  PROTOTYPE_DATA_SOURCE_CPD,
+  prototypeDataFingerprint,
+  recoverMissingLegacySops,
+  selectCpdWorkingData,
+  selectPrototypeDataSource,
+} from "./storageMigrationRules.js";
 import {
   applyStudentFaceUpload,
   markStudentFaceForRecapture,
@@ -158,6 +167,9 @@ import {
 } from "./studentFaceRules.js";
 
 const STORAGE_KEY = "xingchen-prototype-data-v22";
+const DATA_SOURCE_KEY = "xingchen-prototype-data-source-v1";
+const CPD_STORAGE_KEY = "xingchen-prototype-cpd-working-data-v1";
+const CPD_FINGERPRINT = prototypeDataFingerprint(currentPrototypeData);
 const LEGACY_STORAGE_KEYS = [
   "xingchen-prototype-data-v21",
   "xingchen-prototype-data-v20",
@@ -2843,6 +2855,39 @@ function cloneSeed() {
   return normalizePrototypeData(JSON.parse(JSON.stringify(seedData)));
 }
 
+function cloneCurrentPrototypeData() {
+  try {
+    const selected = selectPrototypeDataSource({
+      storage: null,
+      storageKey: STORAGE_KEY,
+      legacyStorageKeys: LEGACY_STORAGE_KEYS,
+      expectedVersion: seedData.version,
+      currentPrototypeData,
+    });
+    return selected.kind === "current-default"
+      ? normalizePrototypeData(selected.data)
+      : null;
+  } catch (error) {
+    console.warn("当前原型默认数据无法使用，已回退到开发兜底数据：", error);
+    return null;
+  }
+}
+
+function cloneDefaultData() {
+  return cloneCurrentPrototypeData() || cloneSeed();
+}
+
+function readSelectedDataSource() {
+  if (typeof window === "undefined") return PROTOTYPE_DATA_SOURCE_BROWSER;
+  try {
+    return normalizePrototypeDataSource(
+      window.localStorage.getItem(DATA_SOURCE_KEY),
+    );
+  } catch {
+    return PROTOTYPE_DATA_SOURCE_BROWSER;
+  }
+}
+
 function normalizePrototypeData(input) {
   const next = input;
   const sourceVersion = Number(next.version || 0);
@@ -3759,38 +3804,67 @@ function mergeLegacy(legacy) {
   return normalizePrototypeData(next);
 }
 
-function loadData() {
-  if (typeof window === "undefined") return cloneSeed();
+function loadBrowserData() {
   try {
-    const parseStored = (key) => {
-      try {
-        return JSON.parse(window.localStorage.getItem(key));
-      } catch {
-        return null;
-      }
-    };
-    const parsed = parseStored(STORAGE_KEY);
-    const legacyRecords = LEGACY_STORAGE_KEYS.map(parseStored).filter(Boolean);
-    if (parsed?.version === seedData.version)
+    const selected = selectPrototypeDataSource({
+      storage: window.localStorage,
+      storageKey: STORAGE_KEY,
+      legacyStorageKeys: LEGACY_STORAGE_KEYS,
+      expectedVersion: seedData.version,
+      currentPrototypeData,
+    });
+    if (selected.kind === "current-storage")
       return normalizePrototypeData(
-        recoverMissingLegacySops(parsed, legacyRecords),
+        recoverMissingLegacySops(selected.data, selected.legacyRecords),
       );
-    if (legacyRecords.length)
+    if (selected.kind === "legacy-storage")
       return normalizePrototypeData(
-        recoverMissingLegacySops(mergeLegacy(legacyRecords[0]), legacyRecords),
+        recoverMissingLegacySops(
+          mergeLegacy(selected.data),
+          selected.legacyRecords,
+        ),
       );
+    if (selected.kind === "current-default")
+      return normalizePrototypeData(selected.data);
     return cloneSeed();
-  } catch {
+  } catch (error) {
+    console.warn("浏览器原型数据无法使用，已加载默认原型数据：", error);
+    return cloneDefaultData();
+  }
+}
+
+function loadCpdData() {
+  try {
+    const selected = selectCpdWorkingData({
+      storage: typeof window === "undefined" ? null : window.localStorage,
+      storageKey: CPD_STORAGE_KEY,
+      fingerprint: CPD_FINGERPRINT,
+      currentPrototypeData,
+    });
+    return selected.kind === "seed"
+      ? cloneSeed()
+      : normalizePrototypeData(selected.data);
+  } catch (error) {
+    console.warn("CPD 原型数据无法使用，已回退到开发兜底数据：", error);
     return cloneSeed();
   }
+}
+
+function loadData(source = readSelectedDataSource()) {
+  if (source === PROTOTYPE_DATA_SOURCE_CPD) return loadCpdData();
+  if (typeof window === "undefined") return cloneDefaultData();
+  return loadBrowserData();
 }
 
 const PrototypeDataContext = createContext(null);
 
 export function PrototypeDataProvider({ children }) {
-  const [storedData, setData] = useState(loadData);
+  const [dataSource, setDataSource] = useState(readSelectedDataSource);
+  const [storedData, setData] = useState(() => loadData(dataSource));
   const data =
-    storedData?.version === seedData.version ? storedData : loadData();
+    storedData?.version === seedData.version
+      ? storedData
+      : loadData(dataSource);
 
   useEffect(() => {
     if (storedData?.version !== seedData.version) {
@@ -3798,20 +3872,39 @@ export function PrototypeDataProvider({ children }) {
       return;
     }
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      if (dataSource === PROTOTYPE_DATA_SOURCE_CPD) {
+        window.localStorage.setItem(
+          CPD_STORAGE_KEY,
+          JSON.stringify({ fingerprint: CPD_FINGERPRINT, data }),
+        );
+      } else {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      }
     } catch (error) {
       console.error("原型数据写入浏览器本地存储失败：", error);
     }
-  }, [data, storedData]);
+  }, [data, dataSource, storedData]);
 
   useEffect(() => {
     const syncFromAnotherTab = (event) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
+      const activeStorageKey =
+        dataSource === PROTOTYPE_DATA_SOURCE_CPD
+          ? CPD_STORAGE_KEY
+          : STORAGE_KEY;
+      if (event.key !== activeStorageKey || !event.newValue) return;
       try {
-        const incoming = JSON.parse(event.newValue);
+        const parsed = JSON.parse(event.newValue);
+        const incoming =
+          dataSource === PROTOTYPE_DATA_SOURCE_CPD
+            ? parsed?.fingerprint === CPD_FINGERPRINT
+              ? parsed.data
+              : null
+            : parsed;
         if (incoming?.version !== seedData.version) return;
         setData((current) =>
-          JSON.stringify(current) === event.newValue ? current : incoming,
+          JSON.stringify(current) === JSON.stringify(incoming)
+            ? current
+            : normalizePrototypeData(incoming),
         );
       } catch {
         // Ignore malformed external storage updates and keep the current valid data.
@@ -3819,7 +3912,7 @@ export function PrototypeDataProvider({ children }) {
     };
     window.addEventListener("storage", syncFromAnotherTab);
     return () => window.removeEventListener("storage", syncFromAnotherTab);
-  }, []);
+  }, [dataSource]);
 
   const value = useMemo(() => {
     const addAuditLog = (
@@ -10861,11 +10954,28 @@ export function PrototypeDataProvider({ children }) {
           })),
         }));
       },
+      dataSource,
+      switchDataSource(nextSource) {
+        const normalizedSource = normalizePrototypeDataSource(nextSource);
+        if (normalizedSource === dataSource) return false;
+        try {
+          window.localStorage.setItem(DATA_SOURCE_KEY, normalizedSource);
+        } catch (error) {
+          console.error("数据来源选择保存失败：", error);
+        }
+        setDataSource(normalizedSource);
+        setData(loadData(normalizedSource));
+        return true;
+      },
       resetDemoData() {
-        setData(cloneSeed());
+        setData(
+          dataSource === PROTOTYPE_DATA_SOURCE_CPD
+            ? cloneCurrentPrototypeData() || cloneSeed()
+            : cloneDefaultData(),
+        );
       },
     };
-  }, [data]);
+  }, [data, dataSource]);
 
   return (
     <PrototypeDataContext.Provider value={value}>

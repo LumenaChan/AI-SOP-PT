@@ -2830,7 +2830,7 @@ select:focus-visible {
   position: absolute;
   right: 0;
   top: calc(100% + 12px);
-  width: 280px;
+  width: 340px;
   padding: 16px;
   background: white;
   border: 1px solid var(--line);
@@ -2853,6 +2853,89 @@ select:focus-visible {
 .role-popover .button {
   width: 100%;
   margin-top: 8px;
+}
+.role-data-source {
+  margin: 14px 0 12px;
+  padding: 12px;
+  border: 1px solid #dce5f0;
+  border-radius: 8px;
+  background: #f7f9fc;
+}
+.role-data-source__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.role-data-source__heading > span {
+  color: #24364d;
+  font-size: 12px;
+  font-weight: 700;
+}
+.role-data-source__heading > small {
+  color: #708096;
+  font-size: 10px;
+}
+.role-data-source__options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.role-data-source__options > button {
+  min-width: 0;
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  color: #52637a;
+  text-align: left;
+  border: 1px solid #d8e1ec;
+  border-radius: 7px;
+  background: white;
+  cursor: pointer;
+}
+.role-data-source__options > button:hover {
+  border-color: #8ab9f5;
+  background: #f4f8ff;
+}
+.role-data-source__options > button.active {
+  color: #185ca9;
+  border-color: #5b9ce8;
+  background: #eaf3ff;
+  box-shadow: inset 0 0 0 1px rgba(43, 119, 205, 0.08);
+}
+.role-data-source__options svg {
+  font-size: 16px;
+}
+.role-data-source__options span,
+.role-data-source__options strong,
+.role-data-source__options small {
+  min-width: 0;
+  display: block;
+}
+.role-data-source__options strong {
+  margin: 0;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.role-data-source__options small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #78879a;
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-popover .role-data-source__note {
+  margin: 9px 0 0;
+  color: #718198;
+  font-size: 10px;
+  line-height: 1.45;
 }
 .avatar {
   width: 36px;

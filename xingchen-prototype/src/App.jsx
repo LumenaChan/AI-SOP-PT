@@ -1076,6 +1076,67 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   <span className="eyebrow">当前工作身份</span>
                   <strong>{admin ? "系统管理员" : "王老师 · 教师"}</strong>
                   <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>
+                  <div className="role-data-source">
+                    <div className="role-data-source__heading">
+                      <span>原型数据来源</span>
+                      <small>
+                        {store.dataSource === "cpd"
+                          ? "当前使用 CPD 演示数据"
+                          : "当前使用此浏览器的数据"}
+                      </small>
+                    </div>
+                    <div
+                      className="role-data-source__options"
+                      role="radiogroup"
+                      aria-label="选择原型数据来源"
+                    >
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={store.dataSource === "cpd"}
+                        className={store.dataSource === "cpd" ? "active" : ""}
+                        onClick={() => {
+                          const changed = store.switchDataSource("cpd");
+                          setRoleMenuOpen(false);
+                          if (changed) {
+                            setToast("已切换为 CPD 演示数据");
+                            window.setTimeout(() => setToast(""), 2200);
+                          }
+                        }}
+                      >
+                        <DatabaseOutlined aria-hidden="true" />
+                        <span>
+                          <strong>CPD 数据</strong>
+                          <small>项目默认演示数据</small>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={store.dataSource === "browser"}
+                        className={
+                          store.dataSource === "browser" ? "active" : ""
+                        }
+                        onClick={() => {
+                          const changed = store.switchDataSource("browser");
+                          setRoleMenuOpen(false);
+                          if (changed) {
+                            setToast("已切换为浏览器数据");
+                            window.setTimeout(() => setToast(""), 2200);
+                          }
+                        }}
+                      >
+                        <DesktopOutlined aria-hidden="true" />
+                        <span>
+                          <strong>浏览器数据</strong>
+                          <small>此浏览器原有数据</small>
+                        </span>
+                      </button>
+                    </div>
+                    <p className="role-data-source__note">
+                      两套数据独立保存，切换不会删除另一套数据。
+                    </p>
+                  </div>
                   <Button
                     disabled={!admin}
                     onClick={() => {
