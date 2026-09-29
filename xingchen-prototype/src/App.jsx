@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   BrowserRouter,
   Navigate,
@@ -11292,6 +11293,676 @@ function SopWorkstationEnablementSection({
         </>
       )}
     </section>
+  );
+}
+
+function AiConfigDisplayModeSwitch({ mode, onChange }) {
+  return (
+    <div
+      className="segmented segmented--small ai-config-display-mode"
+      role="group"
+      aria-label="AI能力配置展示模式"
+    >
+      <button
+        type="button"
+        className={mode === "tabs" ? "active" : ""}
+        aria-pressed={mode === "tabs"}
+        onClick={() => onChange("tabs")}
+      >
+        Tab分栏
+      </button>
+      <button
+        type="button"
+        className={mode === "waterfall" ? "active" : ""}
+        aria-pressed={mode === "waterfall"}
+        onClick={() => onChange("waterfall")}
+      >
+        瀑布流
+      </button>
+    </div>
+  );
+}
+
+function AiConfigLogicalAreaManager({ sopId }) {
+  const store = usePrototypeData();
+  const rawConfig = (store.data.aiCapabilityConfigs || []).find(
+    (item) => item.sopId === sopId,
+  );
+  const config = normalizeAiCapabilityConfig(rawConfig || { sopId });
+  const [form, setForm] = useState({ name: "", description: "" });
+  const [error, setError] = useState("");
+  const [pendingDeleteId, setPendingDeleteId] = useState("");
+  const referenceCount = (areaId) =>
+    config.judgementItems.reduce(
+      (count, item) =>
+        count +
+        (item.conditions || []).filter(
+          (condition) => condition.logicalAreaId === areaId,
+        ).length,
+      0,
+    );
+  const createArea = () => {
+    setError("");
+    try {
+      store.createAiLogicalArea(sopId, form);
+      setForm({ name: "", description: "" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "逻辑区域创建失败。");
+    }
+  };
+  const deleteArea = (areaId) => {
+    setError("");
+    try {
+      store.deleteAiLogicalArea(sopId, areaId);
+      setPendingDeleteId("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "逻辑区域删除失败。");
+    }
+  };
+  return (
+    <div className="ai-config-area-manager">
+      <div className="ai-config-area-manager__form">
+        <label className="field">
+          区域名称 <b className="required">必填</b>
+          <input
+            value={form.name}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, name: event.target.value }))
+            }
+            placeholder="例如：工具放置区"
+          />
+        </label>
+        <label className="field">
+          区域说明
+          <input
+            value={form.description}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                description: event.target.value,
+              }))
+            }
+            placeholder="说明该区域在业务中的用途"
+          />
+        </label>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          disabled={!form.name.trim()}
+          onClick={createArea}
+        >
+          新增区域
+        </Button>
+      </div>
+      <p className="hint">
+        逻辑区域是SOP层业务区域；具体摄像头画面坐标仍在工位验证中配置。
+      </p>
+      {error && <p className="form-error">{error}</p>}
+      <div className="ai-config-area-manager__list">
+        {config.logicalAreas.map((area) => {
+          const count = referenceCount(area.id);
+          return (
+            <article key={area.id}>
+              <div>
+                <strong>{area.name}</strong>
+                <p>{area.description || "暂无说明"}</p>
+                <small>被 {count} 个判断条件引用</small>
+              </div>
+              {pendingDeleteId === area.id ? (
+                <div className="row-actions">
+                  <Button onClick={() => setPendingDeleteId("")}>取消</Button>
+                  <Button
+                    type="danger"
+                    disabled={count > 0}
+                    onClick={() => deleteArea(area.id)}
+                  >
+                    确认删除
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="danger"
+                  disabled={count > 0}
+                  onClick={() => setPendingDeleteId(area.id)}
+                >
+                  删除
+                </Button>
+              )}
+            </article>
+          );
+        })}
+        {!config.logicalAreas.length && (
+          <div className="ai-config-area-manager__empty">
+            <ApartmentOutlined />
+            <p>暂无逻辑区域。仅在判断条件需要区域时创建。</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AiCapabilityConfigOverviewTab({
+  sop,
+  rawConfig,
+  config,
+  evaluation,
+  expectedCounts,
+  progress,
+  data,
+  store,
+  setModal,
+  onContinue,
+  onOpenWorkstations,
+}) {
+  const summary = deriveSopAiConfigurationSummary({
+    sop,
+    config: rawConfig,
+    workstationConfigs: data.sopWorkstationAiConfigs,
+    workstations: data.workstations,
+    devices: data.devices,
+    capabilities: data.aiCapabilities,
+  });
+  const relations = (data.sopWorkstationAiConfigs || []).filter(
+    (item) => item.sopAiConfigId === config.id,
+  );
+  const passedCount = relations.filter(
+    (item) => item.validationStatus === "passed",
+  ).length;
+  return (
+    <div className="ai-config-tab-stack">
+      <section className="panel ai-config-tab-overview">
+        <PanelTitle
+          title="配置概览"
+          action={<Status>{evaluation.statusLabel}</Status>}
+        />
+        <div className="ai-config-summary__grid ai-config-summary__grid--wide">
+          <div>
+            <small>SOP名称</small>
+            <strong>{sop.name || "未命名SOP"}</strong>
+          </div>
+          <div>
+            <small>创建教师</small>
+            <strong>{sop.owner || "未设置"}</strong>
+          </div>
+          <div>
+            <small>专业/课程</small>
+            <strong>
+              {[sop.major, sop.course].filter(Boolean).join(" / ") || "未设置"}
+            </strong>
+          </div>
+          <div>
+            <small>SOP状态</small>
+            <Status>{sop.status}</Status>
+          </div>
+          <div>
+            <small>步骤数</small>
+            <strong>{evaluation.totalSteps} 步</strong>
+          </div>
+          <div>
+            <small>教师期望评价方式</small>
+            <strong>
+              自动 {expectedCounts.automatic} · 辅助 {expectedCounts.assisted} ·
+              教师 {expectedCounts.teacher}
+            </strong>
+          </div>
+          <div>
+            <small>当前实际评价方式</small>
+            <strong>
+              自动 {evaluation.modeCounts.automatic} · 辅助{" "}
+              {evaluation.modeCounts.assisted}· 教师{" "}
+              {evaluation.modeCounts.teacher}
+            </strong>
+          </div>
+          <div>
+            <small>配置对象</small>
+            <strong>
+              判断项 {evaluation.judgementItemCount} · 能力{" "}
+              {evaluation.distinctCapabilityIds.length}· 区域{" "}
+              {evaluation.logicalAreaCount}
+            </strong>
+          </div>
+        </div>
+        <div className="ai-config-progress-row">
+          <span>
+            <small>配置完整度</small>
+            <strong>{progress}%</strong>
+          </span>
+          <div className="progress">
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <small>
+            {evaluation.configuredStepCount}/{evaluation.totalSteps}{" "}
+            个步骤已完成配置
+          </small>
+        </div>
+      </section>
+
+      <section className="panel ai-config-readiness">
+        <PanelTitle
+          title="配置完整性检查"
+          action={
+            <div className="row-actions">
+              {!evaluation.ready && (
+                <Button onClick={onContinue}>继续配置</Button>
+              )}
+              {evaluation.status === "pending_validation" && (
+                <Button onClick={onOpenWorkstations}>去工位验证</Button>
+              )}
+              <Button
+                type="primary"
+                disabled={
+                  !evaluation.ready ||
+                  evaluation.status === "pending_validation"
+                }
+                onClick={() =>
+                  setModal({
+                    title: "完成AI能力配置",
+                    content: (
+                      <p>
+                        完整性检查已通过。完成后配置进入“待验证”，后续需要在工位现场验证后才能启用。
+                      </p>
+                    ),
+                    confirmText: "确认完成",
+                    onConfirm: () => {
+                      store.completeAiCapabilityConfig(sop.id);
+                      return "AI能力配置已进入待验证";
+                    },
+                  })
+                }
+              >
+                完成配置
+              </Button>
+            </div>
+          }
+        />
+        {evaluation.ready ? (
+          <div className="evaluation-notice evaluation-notice--success">
+            <CheckCircleOutlined />
+            <span>所有步骤、规则、判断项、能力引用和条件均已通过检查。</span>
+          </div>
+        ) : (
+          <div className="ai-config-check-list">
+            {evaluation.issues.map((issue) => (
+              <p key={issue}>
+                <AlertOutlined /> {issue}
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel ai-config-tab-workstation-summary">
+        <PanelTitle
+          title="工位启用摘要"
+          action={<Button onClick={onOpenWorkstations}>查看工位</Button>}
+        />
+        <div className="ai-config-tab-stat-grid">
+          <div>
+            <small>目标工位</small>
+            <strong>{summary.workstationCount}</strong>
+          </div>
+          <div>
+            <small>验证通过</small>
+            <strong>{passedCount}</strong>
+          </div>
+          <div>
+            <small>已启用</small>
+            <strong>{summary.enabledWorkstationCount}</strong>
+          </div>
+          <div>
+            <small>可运行</small>
+            <strong>{summary.runnableWorkstationCount}</strong>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AiCapabilityConfigJudgementTab({
+  sop,
+  config,
+  evaluation,
+  capabilities,
+  store,
+  setModal,
+  nav,
+  selectedStepId,
+  setSelectedStepId,
+}) {
+  const steps = sop.steps || [];
+  const selectedIndex = Math.max(
+    0,
+    steps.findIndex((step) => step.id === selectedStepId),
+  );
+  const selectedStep = steps[selectedIndex];
+  const selectedResult = evaluation.stepResults.find(
+    (item) => item.stepId === selectedStep?.id,
+  ) || { status: "unconfigured", issues: [] };
+  const openAreaManager = () =>
+    setModal({
+      eyebrow: "AI判断配置",
+      title: "逻辑区域管理",
+      size: "large",
+      content: <AiConfigLogicalAreaManager sopId={sop.id} />,
+      confirmText: "完成",
+      hideCancel: true,
+      dismissOnly: true,
+    });
+  return (
+    <section className="panel ai-config-judgement-tab">
+      <PanelTitle
+        title="AI判断配置"
+        action={
+          <Button icon={<ApartmentOutlined />} onClick={openAreaManager}>
+            逻辑区域管理
+          </Button>
+        }
+      />
+      <p className="hint">
+        逐个步骤引用已发布AI能力，并配置评分与安全规则覆盖。
+      </p>
+      <div className="ai-config-judgement-layout">
+        <aside className="ai-config-step-nav" aria-label="SOP步骤导航">
+          <header>
+            <small>SOP步骤</small>
+            <strong>{steps.length} 个步骤</strong>
+          </header>
+          <div>
+            {steps.map((step, index) => {
+              const result = evaluation.stepResults.find(
+                (item) => item.stepId === step.id,
+              ) || { status: "unconfigured" };
+              const active = step.id === selectedStep?.id;
+              return (
+                <button
+                  type="button"
+                  key={step.id}
+                  className={active ? "is-active" : ""}
+                  aria-current={active ? "step" : undefined}
+                  onClick={() => setSelectedStepId(step.id)}
+                >
+                  <span
+                    className={`ai-config-step-nav__state is-${result.status}`}
+                  >
+                    {result.status === "complete"
+                      ? "✓"
+                      : result.status === "configuring"
+                        ? "!"
+                        : result.status === "no_ai"
+                          ? "—"
+                          : "○"}
+                  </span>
+                  <span>
+                    <small>Step {String(index + 1).padStart(2, "0")}</small>
+                    <strong>{step.name || "未命名步骤"}</strong>
+                    <em>{AI_CONFIG_STEP_STATUSES[result.status]}</em>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+        <div className="ai-config-tab-step">
+          {selectedStep ? (
+            <>
+              <header className="ai-config-tab-step__header">
+                <div>
+                  <small>
+                    当前步骤 · Step {String(selectedIndex + 1).padStart(2, "0")}
+                  </small>
+                  <h2>
+                    {selectedStep.id} · {selectedStep.name || "未命名步骤"}
+                  </h2>
+                  <p>教师期望：{aiExpectedModeLabel(selectedStep)}</p>
+                </div>
+                <Status>
+                  {AI_CONFIG_STEP_STATUSES[selectedResult.status]}
+                </Status>
+              </header>
+              <div className="ai-config-tab-step__content">
+                <AiConfigStepCard
+                  key={selectedStep.id}
+                  sop={sop}
+                  step={selectedStep}
+                  index={0}
+                  config={config}
+                  evaluation={evaluation}
+                  capabilities={capabilities}
+                  store={store}
+                  setModal={setModal}
+                  nav={nav}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              <AlertOutlined />
+              <h2>当前SOP没有可配置步骤</h2>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AiCapabilityConfigTabbedDetail({ setModal, onModeChange }) {
+  const store = usePrototypeData();
+  const { data } = store;
+  const { sopId } = useParams();
+  const sop = getConfigurableSops(data?.sops).find((item) => item.id === sopId);
+  if (!sop)
+    return <MissingState title="可配置的SOP不存在" backTo={AI_CONFIG_PATH} />;
+  return (
+    <AiCapabilityConfigTabbedWorkspace
+      sop={sop}
+      data={data}
+      store={store}
+      setModal={setModal}
+      onModeChange={onModeChange}
+    />
+  );
+}
+
+function AiCapabilityConfigTabbedWorkspace({
+  sop,
+  data,
+  store,
+  setModal,
+  onModeChange,
+}) {
+  const nav = useNavigate();
+  const [activeTab, setActiveTab] = useState("overview");
+  const rawConfig = (data.aiCapabilityConfigs || []).find(
+    (item) => item.sopId === sop.id,
+  );
+  const config = normalizeAiCapabilityConfig(rawConfig || { sopId: sop.id });
+  const allCapabilities = data.aiCapabilities || [];
+  const capabilities = allCapabilities.filter(
+    isCapabilityAvailableForConfiguration,
+  );
+  const evaluation = evaluateAiCapabilityConfig({
+    sop,
+    config: rawConfig,
+    capabilities: allCapabilities,
+  });
+  const expectedCounts = (sop.steps || []).reduce(
+    (counts, step) => {
+      const mode = step.expectedJudgementMode || step.judgementMode;
+      if (mode === "visual_auto") counts.automatic += 1;
+      else if (mode === "visual_assist_default_pass") counts.assisted += 1;
+      else counts.teacher += 1;
+      return counts;
+    },
+    { automatic: 0, assisted: 0, teacher: 0 },
+  );
+  const progress = evaluation.totalSteps
+    ? Math.round((evaluation.configuredStepCount / evaluation.totalSteps) * 100)
+    : 0;
+  const preferredStepId =
+    evaluation.stepResults.find((item) =>
+      ["unconfigured", "configuring"].includes(item.status),
+    )?.stepId ||
+    sop.steps?.[0]?.id ||
+    "";
+  const [selectedStepId, setSelectedStepId] = useState(preferredStepId);
+  useEffect(() => {
+    if (!(sop.steps || []).some((step) => step.id === selectedStepId))
+      setSelectedStepId(preferredStepId);
+  }, [preferredStepId, selectedStepId, sop.steps]);
+  const continueConfiguration = () => {
+    const firstIncomplete = evaluation.stepResults.find((item) =>
+      ["unconfigured", "configuring"].includes(item.status),
+    );
+    if (firstIncomplete) setSelectedStepId(firstIncomplete.stepId);
+    setActiveTab("judgement");
+  };
+  const clearAction = rawConfig ? (
+    <Button
+      type="danger"
+      onClick={() =>
+        setModal({
+          title: "清空当前AI能力配置",
+          content: (
+            <p>
+              将删除当前SOP的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师SOP或AI能力库内容。
+            </p>
+          ),
+          confirmText: "确认清空",
+          onConfirm: () => {
+            store.clearAiCapabilityConfig(sop.id);
+            return "当前AI能力配置已清空";
+          },
+        })
+      }
+    >
+      清空当前配置
+    </Button>
+  ) : null;
+  return (
+    <>
+      <PageHeader
+        title="AI能力配置"
+        subtitle={sop.name || "未命名SOP"}
+        actions={
+          <div className="row-actions ai-config-page-actions">
+            <AiConfigDisplayModeSwitch mode="tabs" onChange={onModeChange} />
+            {clearAction}
+            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+          </div>
+        }
+      />
+      <nav className="tabs ai-config-primary-tabs" aria-label="AI能力配置详情">
+        {[
+          ["overview", "配置概览"],
+          ["judgement", "AI判断配置"],
+          ["workstation", "工位启用与验证"],
+        ].map(([value, label]) => (
+          <button
+            type="button"
+            role="tab"
+            key={value}
+            className={activeTab === value ? "active" : ""}
+            aria-selected={activeTab === value}
+            onClick={() => setActiveTab(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      {activeTab === "overview" && (
+        <AiCapabilityConfigOverviewTab
+          sop={sop}
+          rawConfig={rawConfig}
+          config={config}
+          evaluation={evaluation}
+          expectedCounts={expectedCounts}
+          progress={progress}
+          data={data}
+          store={store}
+          setModal={setModal}
+          onContinue={continueConfiguration}
+          onOpenWorkstations={() => setActiveTab("workstation")}
+        />
+      )}
+      {activeTab === "judgement" && (
+        <AiCapabilityConfigJudgementTab
+          sop={sop}
+          config={config}
+          evaluation={evaluation}
+          capabilities={capabilities}
+          store={store}
+          setModal={setModal}
+          nav={nav}
+          selectedStepId={selectedStepId}
+          setSelectedStepId={setSelectedStepId}
+        />
+      )}
+      {activeTab === "workstation" &&
+        (!evaluation.ready || config.status === "configuring" ? (
+          <section className="panel empty-state ai-workstation-enablement ai-config-tab-workstation-empty">
+            <AlertOutlined />
+            <h2>当前SOP的AI能力配置尚未完成</h2>
+            <p>请先完成AI判断项和能力引用配置，再进入工位启用与现场验证。</p>
+            <Button type="primary" onClick={continueConfiguration}>
+              去AI判断配置
+            </Button>
+          </section>
+        ) : (
+          <SopWorkstationEnablementSection
+            sop={sop}
+            aiConfig={config}
+            evaluation={evaluation}
+            data={data}
+            store={store}
+            setModal={setModal}
+            nav={nav}
+          />
+        ))}
+    </>
+  );
+}
+
+function AiCapabilityConfigWaterfallMode({ setModal, onModeChange }) {
+  const rootRef = useRef(null);
+  const [actionTarget, setActionTarget] = useState(null);
+  useEffect(() => {
+    setActionTarget(
+      rootRef.current?.querySelector(".page-header__actions .row-actions") ||
+        null,
+    );
+  }, []);
+  return (
+    <div ref={rootRef} className="ai-config-waterfall-mode">
+      <AiCapabilityConfigDetail setModal={setModal} />
+      {actionTarget &&
+        createPortal(
+          <div className="ai-config-display-mode-portal">
+            <AiConfigDisplayModeSwitch
+              mode="waterfall"
+              onChange={onModeChange}
+            />
+          </div>,
+          actionTarget,
+        )}
+    </div>
+  );
+}
+
+function AiCapabilityConfigDetailModes({ setModal }) {
+  const [mode, setMode] = useState("tabs");
+  return mode === "waterfall" ? (
+    <AiCapabilityConfigWaterfallMode
+      setModal={setModal}
+      onModeChange={setMode}
+    />
+  ) : (
+    <AiCapabilityConfigTabbedDetail
+      setModal={setModal}
+      onModeChange={setMode}
+    />
   );
 }
 
@@ -25200,7 +25871,7 @@ function RoutedApp() {
               />
               <Route
                 path={`${AI_CONFIG_PATH}/:sopId`}
-                element={<AiCapabilityConfigDetail setModal={setModal} />}
+                element={<AiCapabilityConfigDetailModes setModal={setModal} />}
               />
               <Route
                 path={AI_LIBRARY_PATH}

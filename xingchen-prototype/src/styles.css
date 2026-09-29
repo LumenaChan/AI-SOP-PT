@@ -6208,6 +6208,245 @@ tbody tr:hover {
 .ai-config-list-table .data-table {
   min-width: 1200px;
 }
+.ai-config-display-mode {
+  flex: 0 0 auto;
+  min-width: 164px;
+}
+.ai-config-page-actions,
+.ai-config-waterfall-mode .page-header__actions .row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ai-config-display-mode-portal {
+  order: -1;
+}
+.ai-config-primary-tabs {
+  gap: 30px;
+  margin: -4px 0 16px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.ai-config-primary-tabs button {
+  padding-block: 14px;
+}
+.ai-config-tab-stack {
+  display: grid;
+  gap: 16px;
+}
+.ai-config-tab-stack .ai-config-readiness,
+.ai-config-tab-stack .ai-config-tab-workstation-summary {
+  margin-top: 0;
+}
+.ai-config-tab-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.ai-config-tab-stat-grid > div {
+  padding: 16px;
+  border: 1px solid #e4eaf2;
+  border-radius: 10px;
+  background: #f9fbfd;
+}
+.ai-config-tab-stat-grid small,
+.ai-config-tab-stat-grid strong {
+  display: block;
+}
+.ai-config-tab-stat-grid small {
+  color: var(--muted);
+}
+.ai-config-tab-stat-grid strong {
+  margin-top: 7px;
+  color: #263a52;
+  font-size: 24px;
+}
+.ai-config-judgement-tab > .hint {
+  margin: 8px 0 16px;
+}
+.ai-config-judgement-layout {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: 640px;
+  overflow: hidden;
+  border: 1px solid #dfe7f0;
+  border-radius: 11px;
+  background: #fff;
+}
+.ai-config-step-nav {
+  min-width: 0;
+  border-right: 1px solid #dfe7f0;
+  background: #f7f9fc;
+}
+.ai-config-step-nav > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ai-config-step-nav > header small {
+  color: var(--muted);
+}
+.ai-config-step-nav > div {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+.ai-config-step-nav button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  width: 100%;
+  padding: 11px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #4d5e73;
+  text-align: left;
+}
+.ai-config-step-nav button:hover {
+  background: #eef4fb;
+}
+.ai-config-step-nav button.is-active {
+  border-color: #c9ddf5;
+  background: #eaf3ff;
+  color: #245f9c;
+  box-shadow: 0 1px 4px rgba(31, 76, 124, 0.08);
+}
+.ai-config-step-nav button small,
+.ai-config-step-nav button strong,
+.ai-config-step-nav button em {
+  display: block;
+}
+.ai-config-step-nav button small {
+  color: #8391a4;
+  font-size: 10px;
+}
+.ai-config-step-nav button strong {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.ai-config-step-nav button em {
+  margin-top: 5px;
+  color: #728196;
+  font-size: 11px;
+  font-style: normal;
+}
+.ai-config-step-nav__state {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e7edf5;
+  color: #6b7a8e;
+  font-weight: 800;
+}
+.ai-config-step-nav__state.is-complete {
+  background: #def3e9;
+  color: #23805b;
+}
+.ai-config-step-nav__state.is-configuring {
+  background: #fff0d5;
+  color: #a1630b;
+}
+.ai-config-step-nav__state.is-no_ai {
+  background: #e8edf4;
+  color: #5f6c7d;
+}
+.ai-config-tab-step {
+  min-width: 0;
+  background: #fff;
+}
+.ai-config-tab-step__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #dfe7f0;
+  background: #f8fbff;
+}
+.ai-config-tab-step__header small,
+.ai-config-tab-step__header h2,
+.ai-config-tab-step__header p {
+  display: block;
+  margin: 0;
+}
+.ai-config-tab-step__header small,
+.ai-config-tab-step__header p {
+  color: var(--muted);
+}
+.ai-config-tab-step__header h2 {
+  margin-top: 4px;
+  font-size: 18px;
+}
+.ai-config-tab-step__header p {
+  margin-top: 5px;
+  font-size: 12px;
+}
+.ai-config-tab-step__content > .ai-config-step {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ai-config-tab-step__content > .ai-config-step > summary {
+  display: none;
+}
+.ai-config-area-manager {
+  display: grid;
+  gap: 14px;
+}
+.ai-config-area-manager__form {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.2fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d8e6f5;
+  border-radius: 10px;
+  background: #f6faff;
+}
+.ai-config-area-manager__list {
+  display: grid;
+  gap: 10px;
+}
+.ai-config-area-manager__list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid #e1e8f1;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.ai-config-area-manager__list article p,
+.ai-config-area-manager__list article small {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+.ai-config-area-manager__empty {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.ai-config-area-manager__empty svg {
+  font-size: 30px;
+}
+.ai-config-tab-workstation-empty {
+  margin-top: 0;
+}
 @media (max-width: 1280px) {
   .ai-config-step__body {
     grid-template-columns: 1fr;
@@ -6218,6 +6457,9 @@ tbody tr:hover {
   }
   .ai-config-footer-summary {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .ai-config-judgement-layout {
+    grid-template-columns: 240px minmax(0, 1fr);
   }
 }
 @media (max-width: 900px) {
@@ -6230,12 +6472,29 @@ tbody tr:hover {
   .ai-config-progress-row {
     grid-template-columns: 1fr;
   }
+  .ai-config-judgement-layout {
+    grid-template-columns: 1fr;
+  }
+  .ai-config-step-nav {
+    border-right: 0;
+    border-bottom: 1px solid #dfe7f0;
+  }
+  .ai-config-step-nav > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ai-config-area-manager__form {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 620px) {
   .ai-config-summary__grid--wide,
   .ai-config-area-list,
   .ai-config-readonly-grid,
   .ai-config-footer-summary {
+    grid-template-columns: 1fr;
+  }
+  .ai-config-tab-stat-grid,
+  .ai-config-step-nav > div {
     grid-template-columns: 1fr;
   }
   .ai-config-readonly-grid .wide {
