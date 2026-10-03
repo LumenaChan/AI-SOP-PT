@@ -11,7 +11,7 @@
       "duration": "3年",
       "headTeacher": "王伟",
       "status": "启用",
-      "studentCount": 28,
+      "studentCount": 29,
       "updatedAt": "2026-09-16 15:20",
       "notes": ""
     },
@@ -163,6 +163,21 @@
       "admissionYear": "2024",
       "updatedAt": "2026-09-14 16:30",
       "notes": "",
+      "faceStatus": "已采集",
+      "facePhotoDataUrl": "",
+      "faceUpdatedAt": ""
+    },
+    {
+      "id": "s-demo-exam",
+      "name": "周明轩",
+      "no": "20241006",
+      "classId": "class-nev-2401",
+      "status": "启用",
+      "face": "已采集",
+      "gender": "男",
+      "admissionYear": "2024",
+      "updatedAt": "2026-09-30 09:00",
+      "notes": "学生端考试流程演示账号",
       "faceStatus": "已采集",
       "facePhotoDataUrl": "",
       "faceUpdatedAt": ""
@@ -500,8 +515,8 @@
       "location": "A区-05",
       "status": "可入场",
       "supportedProject": "新能源汽车高压安全操作",
-      "currentArrangement": "无",
-      "updatedAt": "2026-09-18 09:56",
+      "currentArrangement": "新能源汽车高压安全操作演示考试",
+      "updatedAt": "2026-09-30 09:00",
       "notes": "",
       "aiBaseConfig": {
         "workstationId": "w5",
@@ -814,16 +829,16 @@
       "name": "CAM-005-A",
       "serial": "CAM-SN-005-A",
       "type": "全景摄像头",
-      "status": "离线",
+      "status": "在线",
       "workstationId": "w5",
       "address": "rtsp://10.20.5.21/main",
       "version": "FW 2.3",
-      "streamStatus": "不可用",
+      "streamStatus": "可用",
       "resolution": "1920 × 1080",
-      "lastHeartbeat": "2026-09-18 08:42",
-      "lastTestAt": "2026-09-18 09:56",
-      "updatedAt": "2026-09-18 09:56",
-      "notes": "等待检查网络连接"
+      "lastHeartbeat": "2026-09-30 09:00",
+      "lastTestAt": "2026-09-30 09:00",
+      "updatedAt": "2026-09-30 09:00",
+      "notes": "考试演示工位摄像头可用"
     },
     {
       "id": "d9",
@@ -29982,6 +29997,1473 @@
         }
       ],
       "teacherId": "t1"
+    },
+    {
+      "id": "e-demo-exam",
+      "type": "exam",
+      "name": "新能源汽车高压安全操作演示考试",
+      "sopId": "s1",
+      "status": "进行中",
+      "scheduleStart": "",
+      "entryEnd": "",
+      "studentIds": [
+        "s-demo-exam"
+      ],
+      "workstationIds": [
+        "w5"
+      ],
+      "openWorkstationIds": [
+        "w5"
+      ],
+      "snapshot": {
+        "sopId": "s1",
+        "sopSnapshot": {
+          "id": "s1",
+          "familyId": "sop-family-hv",
+          "name": "新能源汽车高压安全操作",
+          "owner": "王老师",
+          "version": "V3.2",
+          "status": "已发布",
+          "frozen": true,
+          "operation": "新能源汽车高压系统检修与拆装",
+          "basis": "新能源汽车高压作业安全规范（校内实训版）",
+          "conditions": "固定工位、双摄像头、绝缘防护用品及经校验工具",
+          "standardDuration": "25 分钟",
+          "publishedAt": "2026-09-15 14:30",
+          "signedBy": "王伟",
+          "updatedAt": "2026-09-15 14:30",
+          "steps": [
+            {
+              "id": "Step 01",
+              "name": "作业前安全检查",
+              "attribute": "必做",
+              "predecessor": "无",
+              "timeout": "02:00",
+              "score": 15,
+              "completionCondition": "确认工位隔离、工具完好并佩戴完整防护用品。",
+              "evidence": "全景画面与防护用品特写同时可见。",
+              "deductionRule": "每缺少一项扣 5 分。",
+              "redline": "未佩戴绝缘手套禁止继续作业。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "确认工位隔离、工具完好并佩戴完整防护用品。",
+              "keyPoints": "全景画面与防护用品特写同时可见。",
+              "commonMistakes": "每缺少一项扣 5 分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "每缺少一项扣 5 分。",
+              "legacySafetyNote": "未佩戴绝缘手套禁止继续作业。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              }
+            },
+            {
+              "id": "Step 02",
+              "name": "车辆下电与验电",
+              "attribute": "必做",
+              "predecessor": "Step 01",
+              "timeout": "05:00",
+              "score": 20,
+              "completionCondition": "按规定顺序完成下电、等待和二次验电。",
+              "evidence": "仪表读数、验电位置及人员动作完整可见。",
+              "deductionRule": "顺序错误扣 10 分，未二次验电不得分。",
+              "redline": "带电拆装触发立即终止。",
+              "confirmFrames": 5,
+              "minConfidence": "0.82",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按规定顺序完成下电、等待和二次验电。",
+              "keyPoints": "仪表读数、验电位置及人员动作完整可见。",
+              "commonMistakes": "顺序错误扣 10 分，未二次验电不得分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "顺序错误扣 10 分，未二次验电不得分。",
+              "legacySafetyNote": "带电拆装触发立即终止。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.82"
+              }
+            },
+            {
+              "id": "Step 03",
+              "name": "高压电池包断电",
+              "attribute": "必做",
+              "predecessor": "Step 02",
+              "timeout": "04:00",
+              "score": 15,
+              "completionCondition": "维修开关拆除并放置在指定安全区。",
+              "evidence": "维修开关和安全区标识清晰可见。",
+              "deductionRule": "放置区域错误扣 5 分。",
+              "redline": "未验电不得进入本步骤。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "维修开关拆除并放置在指定安全区。",
+              "keyPoints": "维修开关和安全区标识清晰可见。",
+              "commonMistakes": "放置区域错误扣 5 分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "放置区域错误扣 5 分。",
+              "legacySafetyNote": "未验电不得进入本步骤。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              }
+            },
+            {
+              "id": "Step 04",
+              "name": "拆卸高压接插件",
+              "attribute": "必做",
+              "predecessor": "Step 03",
+              "timeout": "05:00",
+              "score": 20,
+              "completionCondition": "按解锁结构完整拆卸并完成端口防护。",
+              "evidence": "双手动作、锁止结构和端口防护均可见。",
+              "deductionRule": "暴力拆卸扣 10 分，未防护扣 5 分。",
+              "redline": "禁止使用非绝缘金属工具撬动。",
+              "confirmFrames": 6,
+              "minConfidence": "0.84",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按解锁结构完整拆卸并完成端口防护。",
+              "keyPoints": "双手动作、锁止结构和端口防护均可见。",
+              "commonMistakes": "暴力拆卸扣 10 分，未防护扣 5 分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "暴力拆卸扣 10 分，未防护扣 5 分。",
+              "legacySafetyNote": "禁止使用非绝缘金属工具撬动。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 6,
+                "minConfidence": "0.84"
+              }
+            },
+            {
+              "id": "Step 05",
+              "name": "高压部件拆装",
+              "attribute": "必做",
+              "predecessor": "Step 04",
+              "timeout": "06:00",
+              "score": 20,
+              "completionCondition": "规范完成部件拆装与扭矩确认。",
+              "evidence": "工具、扭矩值和部件安装状态清晰可见。",
+              "deductionRule": "遗漏紧固点每处扣 5 分。",
+              "redline": "零部件跌落需停止并检查。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "default_pass_manual_deduction",
+              "judgementMode": "default_pass_manual_deduction",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "该要求无法仅凭摄像头画面可靠确认，系统默认通过；教师发现问题后可留痕扣分。",
+              "teachingInstruction": "规范完成部件拆装与扭矩确认。",
+              "keyPoints": "工具、扭矩值和部件安装状态清晰可见。",
+              "commonMistakes": "遗漏紧固点每处扣 5 分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "遗漏紧固点每处扣 5 分。",
+              "legacySafetyNote": "零部件跌落需停止并检查。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              }
+            },
+            {
+              "id": "Step 06",
+              "name": "复位与场地恢复",
+              "attribute": "必做",
+              "predecessor": "Step 05",
+              "timeout": "03:00",
+              "score": 10,
+              "completionCondition": "完成复位、工具清点和场地清洁。",
+              "evidence": "工具盘、设备状态与场地全景可见。",
+              "deductionRule": "工具遗漏或场地未恢复扣 5 分。",
+              "redline": "",
+              "confirmFrames": 5,
+              "minConfidence": "0.78",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "legacy_inferred",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "完成复位、工具清点和场地清洁。",
+              "keyPoints": "工具盘、设备状态与场地全景可见。",
+              "commonMistakes": "工具遗漏或场地未恢复扣 5 分。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "工具遗漏或场地未恢复扣 5 分。",
+              "legacySafetyNote": "",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.78"
+              }
+            }
+          ],
+          "history": [
+            {
+              "version": "V3.2",
+              "status": "已发布",
+              "time": "2026-09-15 14:30",
+              "actor": "王伟",
+              "note": "更新二次验电证据要求并完成教师签名"
+            },
+            {
+              "version": "V3.1",
+              "status": "已归档",
+              "time": "2026-06-20 10:10",
+              "actor": "王伟",
+              "note": "增加端口防护规则"
+            }
+          ],
+          "major": "新能源汽车技术",
+          "course": "新能源汽车高压系统检修与拆装",
+          "scoreRules": [],
+          "safetyRules": [],
+          "stepIdScope": "sop",
+          "usedStepIds": [
+            "Step 01",
+            "Step 02",
+            "Step 03",
+            "Step 04",
+            "Step 05",
+            "Step 06"
+          ]
+        },
+        "lockedAt": "2026-09-30 09:00"
+      },
+      "paused": false,
+      "startedAt": "2026-09-30 09:00",
+      "endedAt": "",
+      "updatedAt": "2026-09-30 09:00",
+      "sessions": [
+        {
+          "id": "session-e-demo-exam-w5",
+          "workstationId": "w5",
+          "studentId": "s-demo-exam",
+          "status": "可入场",
+          "elapsed": "00:00:00",
+          "currentStepId": "",
+          "score": 0,
+          "steps": [
+            {
+              "id": "Step 01",
+              "name": "作业前安全检查",
+              "attribute": "必做",
+              "predecessor": "无",
+              "timeout": "02:00",
+              "score": 0,
+              "completionCondition": "确认工位隔离、工具完好并佩戴完整防护用品。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "每缺少一项扣 5 分。",
+              "redline": "未佩戴绝缘手套禁止继续作业。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按标准完成第 1 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "每缺少一项扣 5 分。",
+              "legacySafetyNote": "未佩戴绝缘手套禁止继续作业。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 15,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-001",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": false,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "配置缺失",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            },
+            {
+              "id": "Step 02",
+              "name": "车辆下电与验电",
+              "attribute": "必做",
+              "predecessor": "Step 01",
+              "timeout": "05:00",
+              "score": 0,
+              "completionCondition": "按规定顺序完成下电、等待和二次验电。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "顺序错误扣 10 分，未二次验电不得分。",
+              "redline": "带电拆装触发立即终止。",
+              "confirmFrames": 5,
+              "minConfidence": "0.82",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按标准完成第 2 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "顺序错误扣 10 分，未二次验电不得分。",
+              "legacySafetyNote": "带电拆装触发立即终止。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.82"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 20,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-002",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": false,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "配置缺失",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            },
+            {
+              "id": "Step 03",
+              "name": "高压电池包断电",
+              "attribute": "必做",
+              "predecessor": "Step 02",
+              "timeout": "04:00",
+              "score": 0,
+              "completionCondition": "维修开关拆除并放置在指定安全区。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "放置区域错误扣 5 分。",
+              "redline": "未验电不得进入本步骤。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "visual_assist_default_pass",
+              "judgementMode": "visual_assist_default_pass",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "遮挡、低置信度或录像缺失时不做负向推断，系统默认通过并提示抽查。",
+              "teachingInstruction": "按标准完成第 3 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "放置区域错误扣 5 分。",
+              "legacySafetyNote": "未验电不得进入本步骤。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 15,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-003",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": true,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "证据中断",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            },
+            {
+              "id": "Step 04",
+              "name": "拆卸高压接插件",
+              "attribute": "必做",
+              "predecessor": "Step 03",
+              "timeout": "05:00",
+              "score": 0,
+              "completionCondition": "按解锁结构完整拆卸并完成端口防护。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "暴力拆卸扣 10 分，未防护扣 5 分。",
+              "redline": "禁止使用非绝缘金属工具撬动。",
+              "confirmFrames": 6,
+              "minConfidence": "0.84",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按标准完成第 4 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "暴力拆卸扣 10 分，未防护扣 5 分。",
+              "legacySafetyNote": "禁止使用非绝缘金属工具撬动。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 6,
+                "minConfidence": "0.84"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 20,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-004",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": false,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "配置缺失",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            },
+            {
+              "id": "Step 05",
+              "name": "高压部件拆装",
+              "attribute": "必做",
+              "predecessor": "Step 04",
+              "timeout": "06:00",
+              "score": 0,
+              "completionCondition": "规范完成部件拆装与扭矩确认。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "遗漏紧固点每处扣 5 分。",
+              "redline": "零部件跌落需停止并检查。",
+              "confirmFrames": 5,
+              "minConfidence": "0.80",
+              "expectedJudgementMode": "default_pass_manual_deduction",
+              "judgementMode": "default_pass_manual_deduction",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "该要求无法仅凭摄像头画面可靠确认，系统默认通过；教师发现问题后可留痕扣分。",
+              "teachingInstruction": "按标准完成第 5 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "遗漏紧固点每处扣 5 分。",
+              "legacySafetyNote": "零部件跌落需停止并检查。",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.80"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 20,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-005",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": true,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "证据中断",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            },
+            {
+              "id": "Step 06",
+              "name": "复位与场地恢复",
+              "attribute": "必做",
+              "predecessor": "Step 05",
+              "timeout": "03:00",
+              "score": 0,
+              "completionCondition": "完成复位、工具清点和场地清洁。",
+              "evidence": "尚未产生证据",
+              "deductionRule": "工具遗漏或场地未恢复扣 5 分。",
+              "redline": "",
+              "confirmFrames": 5,
+              "minConfidence": "0.78",
+              "expectedJudgementMode": "visual_auto",
+              "judgementMode": "visual_auto",
+              "judgementModeSource": "teacher_defined",
+              "incompletePolicy": "legacy_unspecified",
+              "flowPolicy": {
+                "wrongOrder": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "repeat": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                },
+                "timeout": {
+                  "treatment": "teacher_review",
+                  "scoreRuleId": ""
+                }
+              },
+              "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+              "teachingInstruction": "按标准完成第 6 步操作。",
+              "keyPoints": "尚未产生证据",
+              "commonMistakes": "顺序错误、动作遗漏或工具使用不规范。",
+              "standardMediaType": "示教图片",
+              "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+              "legacyScoringNote": "工具遗漏或场地未恢复扣 5 分。",
+              "legacySafetyNote": "",
+              "legacyFlowNote": "",
+              "legacyTechnicalConfig": {
+                "confirmFrames": 5,
+                "minConfidence": "0.78"
+              },
+              "state": "pending",
+              "result": "未进行",
+              "duration": "--",
+              "maxScore": 10,
+              "rawScore": 0,
+              "effectiveScore": 0,
+              "reviewStatus": "无需复核",
+              "ruleId": "RULE-006",
+              "timeRange": "尚未产生",
+              "evidenceStatus": "未产生",
+              "evidenceSources": [],
+              "observation": "等待进入步骤",
+              "executionState": "waiting",
+              "completionResult": "uncertain",
+              "observationWindow": {
+                "status": "pending",
+                "openedAt": "",
+                "closedAt": "",
+                "closeReason": ""
+              },
+              "scoreDisposition": {
+                "status": "normal",
+                "reason": "",
+                "resolvedBy": "",
+                "resolvedAt": ""
+              },
+              "evidenceMetadata": {
+                "clipStatus": "未产生",
+                "timeRange": "尚未产生",
+                "cameras": [],
+                "sopId": "s1",
+                "aiCapabilityConfigId": "ai-config-s1",
+                "sopWorkstationAiConfigId": "未配置",
+                "capabilityIds": [
+                  "cap-insulating-gloves"
+                ],
+                "validationId": "未验证",
+                "lockedAt": "2026-09-19 10:00",
+                "systemAnomaly": false,
+                "scoringPolicy": "按当前 SOP 判定方式处理"
+              },
+              "diagnostic": {
+                "triggerStatus": "未触发",
+                "checks": {
+                  "configComplete": false,
+                  "objectVisible": false,
+                  "actionSufficient": false,
+                  "roiMatched": true,
+                  "evidenceContinuous": false
+                },
+                "noTriggerReason": "配置缺失",
+                "recentFacts": [
+                  "等待进入步骤",
+                  "尚未产生证据"
+                ],
+                "rootCause": "",
+                "rootCauseNote": "",
+                "confirmedAt": "",
+                "confirmedBy": ""
+              }
+            }
+          ],
+          "events": [],
+          "runtime": {
+            "actorBinding": {
+              "status": "uncertain",
+              "primaryActorId": "s-demo-exam",
+              "trackId": "",
+              "history": []
+            },
+            "evaluationClock": {
+              "status": "idle",
+              "elapsedSeconds": 0,
+              "wallSeconds": 0,
+              "pausedSeconds": 0,
+              "pauseReason": "",
+              "history": []
+            },
+            "machineEvents": [],
+            "evaluationItemResults": [],
+            "aiObservations": [],
+            "aiJudgementResults": [],
+            "aiScoringApplications": [],
+            "technicalIncidents": [],
+            "safetyCandidates": [],
+            "assistanceWarnings": [],
+            "correctionContext": {
+              "status": "inactive",
+              "relatedRuleId": "",
+              "relatedStepId": "",
+              "startedAt": "",
+              "completedAt": ""
+            }
+          },
+          "scoreEngine": {
+            "baseScore": 100,
+            "deductions": 100,
+            "manualAdjustments": 0,
+            "effectiveScore": 0,
+            "scoreStatus": "final"
+          },
+          "recording": {
+            "status": "不可用",
+            "coveragePercent": 0,
+            "mainCamera": "未产生",
+            "assistCamera": "未产生",
+            "startedAt": "未开始",
+            "lastSegmentAt": "未产生",
+            "retentionDays": 180,
+            "retentionLabel": "180 天（考试策略）",
+            "storageStatus": "保留中",
+            "fullVideoAvailable": false,
+            "incidents": [
+              {
+                "time": "--:--",
+                "affectedStepId": "全部步骤",
+                "camera": "主视角 / 辅助视角",
+                "type": "尚未开始",
+                "detail": "会话尚未开始，当前没有录像片段。"
+              }
+            ]
+          },
+          "evaluationProfile": {
+            "aiRuntimeEnabled": false,
+            "automaticEvaluationEnabled": false,
+            "enabledStepCount": 0,
+            "automaticStepCount": 1,
+            "aiParticipatingStepCount": 1,
+            "automaticEvaluationStepCount": 1,
+            "assistedEvaluationStepCount": 0,
+            "safetyMonitoringStepCount": 0,
+            "judgementItemCount": 1,
+            "capabilityCount": 1,
+            "validationId": "未验证",
+            "validationStatus": "unvalidated",
+            "enableStatus": "not_enabled",
+            "runtimeStatus": "not_configured",
+            "runtimeLabel": "工位未配置",
+            "fallbackPolicy": "AI未配置、不可用、不确定或发生技术异常时转人工确认并安全降级，不直接形成学生负向结果。"
+          },
+          "evaluationSnapshot": {
+            "sopId": "s1",
+            "workstationId": "w5",
+            "sopSnapshot": {
+              "id": "s1",
+              "familyId": "sop-family-hv",
+              "name": "新能源汽车高压安全操作",
+              "owner": "王老师",
+              "version": "V3.2",
+              "status": "已发布",
+              "frozen": true,
+              "operation": "新能源汽车高压系统检修与拆装",
+              "basis": "新能源汽车高压作业安全规范（校内实训版）",
+              "conditions": "固定工位、双摄像头、绝缘防护用品及经校验工具",
+              "standardDuration": "25 分钟",
+              "publishedAt": "2026-09-15 14:30",
+              "signedBy": "王伟",
+              "updatedAt": "2026-09-15 14:30",
+              "steps": [
+                {
+                  "id": "Step 01",
+                  "name": "作业前安全检查",
+                  "attribute": "必做",
+                  "predecessor": "无",
+                  "timeout": "02:00",
+                  "score": 15,
+                  "completionCondition": "确认工位隔离、工具完好并佩戴完整防护用品。",
+                  "evidence": "全景画面与防护用品特写同时可见。",
+                  "deductionRule": "每缺少一项扣 5 分。",
+                  "redline": "未佩戴绝缘手套禁止继续作业。",
+                  "confirmFrames": 5,
+                  "minConfidence": "0.80",
+                  "expectedJudgementMode": "visual_auto",
+                  "judgementMode": "visual_auto",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+                  "teachingInstruction": "确认工位隔离、工具完好并佩戴完整防护用品。",
+                  "keyPoints": "全景画面与防护用品特写同时可见。",
+                  "commonMistakes": "每缺少一项扣 5 分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "每缺少一项扣 5 分。",
+                  "legacySafetyNote": "未佩戴绝缘手套禁止继续作业。",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 5,
+                    "minConfidence": "0.80"
+                  }
+                },
+                {
+                  "id": "Step 02",
+                  "name": "车辆下电与验电",
+                  "attribute": "必做",
+                  "predecessor": "Step 01",
+                  "timeout": "05:00",
+                  "score": 20,
+                  "completionCondition": "按规定顺序完成下电、等待和二次验电。",
+                  "evidence": "仪表读数、验电位置及人员动作完整可见。",
+                  "deductionRule": "顺序错误扣 10 分，未二次验电不得分。",
+                  "redline": "带电拆装触发立即终止。",
+                  "confirmFrames": 5,
+                  "minConfidence": "0.82",
+                  "expectedJudgementMode": "visual_auto",
+                  "judgementMode": "visual_auto",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+                  "teachingInstruction": "按规定顺序完成下电、等待和二次验电。",
+                  "keyPoints": "仪表读数、验电位置及人员动作完整可见。",
+                  "commonMistakes": "顺序错误扣 10 分，未二次验电不得分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "顺序错误扣 10 分，未二次验电不得分。",
+                  "legacySafetyNote": "带电拆装触发立即终止。",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 5,
+                    "minConfidence": "0.82"
+                  }
+                },
+                {
+                  "id": "Step 03",
+                  "name": "高压电池包断电",
+                  "attribute": "必做",
+                  "predecessor": "Step 02",
+                  "timeout": "04:00",
+                  "score": 15,
+                  "completionCondition": "维修开关拆除并放置在指定安全区。",
+                  "evidence": "维修开关和安全区标识清晰可见。",
+                  "deductionRule": "放置区域错误扣 5 分。",
+                  "redline": "未验电不得进入本步骤。",
+                  "confirmFrames": 5,
+                  "minConfidence": "0.80",
+                  "expectedJudgementMode": "visual_auto",
+                  "judgementMode": "visual_auto",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+                  "teachingInstruction": "维修开关拆除并放置在指定安全区。",
+                  "keyPoints": "维修开关和安全区标识清晰可见。",
+                  "commonMistakes": "放置区域错误扣 5 分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "放置区域错误扣 5 分。",
+                  "legacySafetyNote": "未验电不得进入本步骤。",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 5,
+                    "minConfidence": "0.80"
+                  }
+                },
+                {
+                  "id": "Step 04",
+                  "name": "拆卸高压接插件",
+                  "attribute": "必做",
+                  "predecessor": "Step 03",
+                  "timeout": "05:00",
+                  "score": 20,
+                  "completionCondition": "按解锁结构完整拆卸并完成端口防护。",
+                  "evidence": "双手动作、锁止结构和端口防护均可见。",
+                  "deductionRule": "暴力拆卸扣 10 分，未防护扣 5 分。",
+                  "redline": "禁止使用非绝缘金属工具撬动。",
+                  "confirmFrames": 6,
+                  "minConfidence": "0.84",
+                  "expectedJudgementMode": "visual_auto",
+                  "judgementMode": "visual_auto",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+                  "teachingInstruction": "按解锁结构完整拆卸并完成端口防护。",
+                  "keyPoints": "双手动作、锁止结构和端口防护均可见。",
+                  "commonMistakes": "暴力拆卸扣 10 分，未防护扣 5 分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "暴力拆卸扣 10 分，未防护扣 5 分。",
+                  "legacySafetyNote": "禁止使用非绝缘金属工具撬动。",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 6,
+                    "minConfidence": "0.84"
+                  }
+                },
+                {
+                  "id": "Step 05",
+                  "name": "高压部件拆装",
+                  "attribute": "必做",
+                  "predecessor": "Step 04",
+                  "timeout": "06:00",
+                  "score": 20,
+                  "completionCondition": "规范完成部件拆装与扭矩确认。",
+                  "evidence": "工具、扭矩值和部件安装状态清晰可见。",
+                  "deductionRule": "遗漏紧固点每处扣 5 分。",
+                  "redline": "零部件跌落需停止并检查。",
+                  "confirmFrames": 5,
+                  "minConfidence": "0.80",
+                  "expectedJudgementMode": "default_pass_manual_deduction",
+                  "judgementMode": "default_pass_manual_deduction",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "该要求无法仅凭摄像头画面可靠确认，系统默认通过；教师发现问题后可留痕扣分。",
+                  "teachingInstruction": "规范完成部件拆装与扭矩确认。",
+                  "keyPoints": "工具、扭矩值和部件安装状态清晰可见。",
+                  "commonMistakes": "遗漏紧固点每处扣 5 分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "遗漏紧固点每处扣 5 分。",
+                  "legacySafetyNote": "零部件跌落需停止并检查。",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 5,
+                    "minConfidence": "0.80"
+                  }
+                },
+                {
+                  "id": "Step 06",
+                  "name": "复位与场地恢复",
+                  "attribute": "必做",
+                  "predecessor": "Step 05",
+                  "timeout": "03:00",
+                  "score": 10,
+                  "completionCondition": "完成复位、工具清点和场地清洁。",
+                  "evidence": "工具盘、设备状态与场地全景可见。",
+                  "deductionRule": "工具遗漏或场地未恢复扣 5 分。",
+                  "redline": "",
+                  "confirmFrames": 5,
+                  "minConfidence": "0.78",
+                  "expectedJudgementMode": "visual_auto",
+                  "judgementMode": "visual_auto",
+                  "judgementModeSource": "legacy_inferred",
+                  "incompletePolicy": "legacy_unspecified",
+                  "flowPolicy": {
+                    "wrongOrder": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "repeat": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    },
+                    "timeout": {
+                      "treatment": "teacher_review",
+                      "scoreRuleId": ""
+                    }
+                  },
+                  "knownLimit": "关键动作和目标区域需要持续出现在画面内。",
+                  "teachingInstruction": "完成复位、工具清点和场地清洁。",
+                  "keyPoints": "工具盘、设备状态与场地全景可见。",
+                  "commonMistakes": "工具遗漏或场地未恢复扣 5 分。",
+                  "standardMediaType": "示教图片",
+                  "standardMediaUrl": "/assets/student-monitor-hand-tracking.png",
+                  "legacyScoringNote": "工具遗漏或场地未恢复扣 5 分。",
+                  "legacySafetyNote": "",
+                  "legacyFlowNote": "",
+                  "legacyTechnicalConfig": {
+                    "confirmFrames": 5,
+                    "minConfidence": "0.78"
+                  }
+                }
+              ],
+              "history": [
+                {
+                  "version": "V3.2",
+                  "status": "已发布",
+                  "time": "2026-09-15 14:30",
+                  "actor": "王伟",
+                  "note": "更新二次验电证据要求并完成教师签名"
+                },
+                {
+                  "version": "V3.1",
+                  "status": "已归档",
+                  "time": "2026-06-20 10:10",
+                  "actor": "王伟",
+                  "note": "增加端口防护规则"
+                }
+              ],
+              "major": "新能源汽车技术",
+              "course": "新能源汽车高压系统检修与拆装",
+              "scoreRules": [],
+              "safetyRules": [],
+              "stepIdScope": "sop",
+              "usedStepIds": [
+                "Step 01",
+                "Step 02",
+                "Step 03",
+                "Step 04",
+                "Step 05",
+                "Step 06"
+              ]
+            },
+            "aiCapabilityConfigSnapshot": {
+              "id": "ai-config-s1",
+              "sopId": "s1",
+              "status": "configuring",
+              "stepConfigs": [
+                {
+                  "stepId": "Step 01",
+                  "actualEvaluationMode": "visual_auto",
+                  "downgradeReason": "",
+                  "scoreRuleTreatments": [],
+                  "safetyRuleTreatments": []
+                }
+              ],
+              "judgementItems": [
+                {
+                  "id": "ai-judgement-s1-step1-gloves",
+                  "stepId": "Step 01",
+                  "name": "确认绝缘手套已佩戴",
+                  "purposes": [
+                    "completion"
+                  ],
+                  "scoreRuleIds": [],
+                  "safetyRuleIds": [],
+                  "combination": "all",
+                  "conditions": [
+                    {
+                      "id": "ai-condition-s1-step1-gloves",
+                      "capabilityId": "cap-insulating-gloves",
+                      "operator": "appears",
+                      "logicalAreaId": "",
+                      "minTargetCount": 2,
+                      "minDurationSeconds": 1,
+                      "minOccurrences": 1
+                    }
+                  ],
+                  "fallback": "AI结果不可靠、摄像头异常或证据不足时，标记为不确定并转人工确认，不直接形成学生负向结果。"
+                }
+              ],
+              "logicalAreas": [],
+              "createdBy": "系统管理员",
+              "createdAt": "2026-09-24 10:00",
+              "updatedAt": "2026-09-24 10:00"
+            },
+            "capabilitySnapshots": [
+              {
+                "id": "cap-insulating-gloves",
+                "name": "绝缘手套检测",
+                "type": "object_detection",
+                "targetName": "绝缘手套",
+                "status": "已发布",
+                "currentModelStatus": "已发布",
+                "currentPublishedModel": {
+                  "trainingTaskId": "ai-training-gloves-published",
+                  "modelArtifactId": "model-gloves-current",
+                  "publishedBy": "系统管理员",
+                  "publishedAt": "2026-09-20 15:30",
+                  "metricSummary": {
+                    "precision": 0.901,
+                    "recall": 0.872,
+                    "compositeMetric": 0.886,
+                    "testSampleCount": 18
+                  }
+                }
+              }
+            ],
+            "workstationAiBaseConfigSnapshot": {
+              "workstationId": "w5",
+              "primaryCameraId": "d8",
+              "fallbackCameraId": "",
+              "edgeDeviceId": "d9",
+              "lastCheckedAt": "2026-09-18 09:56",
+              "updatedAt": "2026-09-18 09:56",
+              "updatedBy": "系统管理员",
+              "lastAiCriticalChangeAt": "2026-09-11 11:10"
+            },
+            "runtimeStatus": "not_configured",
+            "runtimeLabel": "工位未配置",
+            "aiEnabled": false,
+            "lockedAt": "2026-09-30 09:00"
+          },
+          "examDurationMinutes": 30
+        }
+      ],
+      "teacherId": "t1",
+      "examDurationMinutes": 30
     }
   ],
   "auditLogs": [

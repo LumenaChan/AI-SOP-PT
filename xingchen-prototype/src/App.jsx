@@ -663,16 +663,33 @@ function PanelTitle({ title, action }) {
     </header>
   );
 }
-function Metric({ label, value, hint, icon, tone }) {
+function FieldLabel({ children, required = false }) {
   return (
-    <section className={`metric metric--${tone}`}>
+    <span className="field__label">
+      {required && (
+        <b className="field__required" aria-hidden="true">
+          *
+        </b>
+      )}
+      {children}
+    </span>
+  );
+}
+function Metric({ label, value, hint, icon, tone, onClick }) {
+  const Component = onClick ? "button" : "section";
+  return (
+    <Component
+      className={`metric metric--${tone}${onClick ? " metric--interactive" : ""}`}
+      onClick={onClick}
+      type={onClick ? "button" : undefined}
+    >
       <span className="metric__icon">{icon}</span>
       <div>
         <small>{label}</small>
         <strong>{value}</strong>
         <p>{hint}</p>
       </div>
-    </section>
+    </Component>
   );
 }
 function PageHeader({ title, subtitle, actions, back }) {
@@ -685,7 +702,6 @@ function PageHeader({ title, subtitle, actions, back }) {
             ← 返回
           </button>
         )}
-        <span className="eyebrow">兴辰智能 · 校内实训评价</span>
         <h1>{title}</h1>
         {subtitle && <p>{subtitle}</p>}
       </div>
@@ -1779,9 +1795,27 @@ function Dashboard() {
   const activeArrangements = data.arrangements.filter(
     (item) => !item.archivedRecord,
   );
-  const todayArrangements = data.arrangements
-    .filter((item) => item.type === "practice" && !item.archivedRecord)
-    .slice(0, 3);
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const todayArrangements = activeArrangements
+    .filter(
+      (item) => String(item.scheduleStart || "").slice(0, 10) === todayKey,
+    )
+    .sort((left, right) =>
+      String(left.scheduleStart || "").localeCompare(
+        String(right.scheduleStart || ""),
+      ),
+    );
+  const runningArrangements = activeArrangements.filter((item) =>
+    ["进行中", "已暂停"].includes(item.status),
+  );
+  const sessionContexts = activeArrangements.flatMap((arrangement) =>
+    (arrangement.sessions || []).map((session) => ({ arrangement, session })),
+  );
   const reviewTasks = activeArrangements.flatMap((arrangement) =>
     (arrangement.sessions || [])
       .filter(
@@ -1793,18 +1827,47 @@ function Dashboard() {
       )
       .map((session) => ({ arrangement, session })),
   );
+  const safetyTasks = sessionContexts.flatMap(({ arrangement, session }) => {
+    const candidates = (session.runtime?.safetyCandidates || [])
+      .filter((candidate) => candidate.status === "pending")
+      .map((candidate) => ({
+        arrangement,
+        session,
+        id: candidate.id,
+        detail: candidate.stepId
+          ? `${candidate.stepId} 安全候选待确认`
+          : "安全候选待确认",
+      }));
+    const events = teacherSessionEvents(session)
+      .filter((event) => event.category === "safety" && event.requiresAttention)
+      .map((event) => ({
+        arrangement,
+        session,
+        id: event.id,
+        detail: event.title,
+      }));
+    return [...candidates, ...events];
+  });
+  const helpTasks = sessionContexts.flatMap(({ arrangement, session }) =>
+    teacherSessionEvents(session)
+      .filter((event) =>
+        ["practice_help", "exam_incident"].includes(event.category),
+      )
+      .map((event) => ({ arrangement, session, event })),
+  );
   const pendingPublishExams = activeArrangements.filter(
     (item) => item.type === "exam" && item.status === "待发布",
   );
-  const publishedSops = data.sops.filter((item) => item.status === "已发布");
-  const availableAiSops = publishedSops.filter(
-    (item) => store.getSopAiCapabilityStatus(item.id).status === "已启用",
+  const pendingPublishScoreCount = pendingPublishExams.reduce(
+    (count, item) =>
+      count +
+      (item.sessions || []).filter(
+        (session) => session.resultStatus === "正式成绩",
+      ).length,
+    0,
   );
-  const partialAiSops = publishedSops.filter((item) =>
-    ["配置中", "待验证"].includes(
-      store.getSopAiCapabilityStatus(item.id).status,
-    ),
-  );
+  const pendingCount =
+    safetyTasks.length + helpTasks.length + reviewTasks.length;
   const scoredSessions = activeArrangements.flatMap((item) =>
     (item.sessions || []).filter(
       (session) =>
@@ -1844,37 +1907,105 @@ function Dashboard() {
     .slice(0, 3);
   const openArrangement = (item) => {
     const destination = arrangementDestination(item);
-    nav(`/teacher/practices/${item.id}/${destination}`);
+    const base = item.type === "exam" ? "exams" : "practices";
+    nav(`/teacher/${base}/${item.id}/${destination}`);
   };
+  const openSession = (arrangement, session) => {
+    const base = arrangement.type === "exam" ? "exams" : "practices";
+    nav(`/teacher/${base}/${arrangement.id}/stations/${session.workstationId}`);
+  };
+  const teacherTodos = [
+    ...safetyTasks.map((task) => ({
+      id: `safety-${task.id}`,
+      icon: <SafetyCertificateOutlined />,
+      title: "安全事件待处理",
+      detail: task.detail,
+      action: "立即处理",
+      onClick: () => openSession(task.arrangement, task.session),
+    })),
+    ...helpTasks.map(({ arrangement, session, event }) => {
+      const student = data.students.find(
+        (item) => item.id === session.studentId,
+      );
+      const workstation = data.workstations.find(
+        (item) => item.id === session.workstationId,
+      );
+      return {
+        id: `help-${event.id}`,
+        icon: <BellOutlined />,
+        title: event.category === "exam_incident" ? "考试异常求助" : "练习求助",
+        detail: `${workstation?.name || "工位"} · ${student?.name || "学生"} · ${event.reasonLabel || event.title}`,
+        action: "查看工位",
+        onClick: () => openSession(arrangement, session),
+      };
+    }),
+    ...reviewTasks.map(({ arrangement, session }) => {
+      const student = data.students.find(
+        (item) => item.id === session.studentId,
+      );
+      const needsEvidence = session.steps?.some(
+        (step) => step.reviewStatus === "待补充证据",
+      );
+      const base = arrangement.type === "exam" ? "exams" : "practices";
+      return {
+        id: `review-${session.id}`,
+        icon: <AlertOutlined />,
+        title: needsEvidence ? "步骤待补充证据" : "评价待复核",
+        detail: `${student?.name || "学生"} · ${arrangement.name}`,
+        action: "处理",
+        onClick: () =>
+          nav(
+            `/teacher/${base}/${arrangement.id}/students/${session.studentId}`,
+          ),
+      };
+    }),
+    ...pendingPublishExams.map((item) => ({
+      id: `publish-${item.id}`,
+      icon: <FileDoneOutlined />,
+      title: "考试待发布",
+      detail: `${item.name} · ${(item.sessions || []).filter((session) => session.resultStatus === "正式成绩").length} 份成绩`,
+      action: "查看",
+      onClick: () => nav(`/teacher/exams/${item.id}/results`),
+    })),
+  ];
   return (
     <>
       <PageHeader
         title="教师工作台"
         subtitle="上午好，王老师。这里汇总了今天的安排与需要处理的事项。"
         actions={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => nav("/teacher/practices/new")}
-          >
-            创建练习
-          </Button>
+          <>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => nav("/teacher/practices/new")}
+            >
+              创建练习
+            </Button>
+            <Button onClick={() => nav("/teacher/exams/new")}>创建考试</Button>
+            <Button onClick={() => nav("/teacher/sop/new")}>新建SOP</Button>
+          </>
         }
       />
       <div className="metric-grid">
         <Metric
-          label="全部安排"
-          value={activeArrangements.length}
-          hint={`${activeArrangements.filter((item) => ["进行中", "已暂停"].includes(item.status)).length} 场运行中`}
+          label="今日安排"
+          value={todayArrangements.length}
+          hint={`练习 ${todayArrangements.filter((item) => item.type === "practice").length} · 考试 ${todayArrangements.filter((item) => item.type === "exam").length}`}
           icon={<EditOutlined />}
           tone="blue"
         />
         <Metric
-          label="待复核评价"
-          value={reviewTasks.length}
-          hint={
-            reviewTasks.length ? "需逐项核对证据与规则" : "当前无待复核记录"
-          }
+          label="正在进行"
+          value={runningArrangements.length}
+          hint={`练习 ${runningArrangements.filter((item) => item.type === "practice").length} · 考试 ${runningArrangements.filter((item) => item.type === "exam").length}`}
+          icon={<PlayCircleFilled />}
+          tone="green"
+        />
+        <Metric
+          label="待处理"
+          value={pendingCount}
+          hint={`安全 ${safetyTasks.length} · 求助 ${helpTasks.length} · 复核 ${reviewTasks.length}`}
           icon={<AlertOutlined />}
           tone="amber"
         />
@@ -1883,28 +2014,24 @@ function Dashboard() {
           value={pendingPublishExams.length}
           hint={
             pendingPublishExams.length
-              ? "发布前仍需检查成绩状态"
+              ? `${pendingPublishScoreCount} 份成绩待确认`
               : "当前无待发布考试"
           }
           icon={<FileDoneOutlined />}
-          tone="green"
-        />
-        <Metric
-          label="已发布标准"
-          value={publishedSops.length}
-          hint={`AI评价可用 ${availableAiSops.length} · 配置中 ${partialAiSops.length}`}
-          icon={<BookOutlined />}
           tone="purple"
         />
       </div>
       <div className="dashboard-grid">
         <section className="panel panel--stretch">
           <PanelTitle
-            title="近期安排"
+            title="今日安排"
             action={
-              <button onClick={() => nav("/teacher/practices")}>
-                查看全部 →
-              </button>
+              <span className="panel-title__actions">
+                <button onClick={() => nav("/teacher/practices")}>
+                  练习管理
+                </button>
+                <button onClick={() => nav("/teacher/exams")}>考试管理</button>
+              </span>
             }
           />
           <div className="schedule-list">
@@ -1918,7 +2045,9 @@ function Dashboard() {
                   <span>
                     <strong>{item.name}</strong>
                     <small>
-                      {sop?.name || "SOP 已失效"} · {item.studentIds.length} 人
+                      {item.type === "exam" ? "考试" : "练习"} ·{" "}
+                      {sop?.name || "SOP 已失效"} ·{" "}
+                      {(item.studentIds || []).length} 人
                     </small>
                   </span>
                   <Status>{item.status}</Status>
@@ -1927,57 +2056,24 @@ function Dashboard() {
               );
             })}
             {!todayArrangements.length && (
-              <p className="hint">暂无练习安排，可从右上角创建。</p>
+              <p className="hint">今天暂无练习或考试安排。</p>
             )}
           </div>
         </section>
-        <section className="panel">
+        <section className="panel teacher-todo-card">
           <PanelTitle title="待办事项" />
           <div className="todo-list">
-            {reviewTasks.slice(0, 1).map(({ arrangement, session }) => {
-              const student = data.students.find(
-                (item) => item.id === session.studentId,
-              );
-              const base = arrangement.type === "exam" ? "exams" : "practices";
-              return (
-                <button
-                  key={session.id}
-                  onClick={() =>
-                    nav(
-                      `/teacher/${base}/${arrangement.id}/students/${session.studentId}`,
-                    )
-                  }
-                >
-                  <AlertOutlined />
-                  <span>
-                    <strong>{student?.name || "学生"}的评价等待复核</strong>
-                    <small>{arrangement.name} · 证据或规则待确认</small>
-                  </span>
-                  <b>处理</b>
-                </button>
-              );
-            })}
-            {pendingPublishExams.slice(0, 1).map((item) => (
-              <button
-                key={item.id}
-                onClick={() => nav(`/teacher/exams/${item.id}/results`)}
-              >
-                <FileDoneOutlined />
+            {teacherTodos.slice(0, 5).map((item) => (
+              <button key={item.id} onClick={item.onClick}>
+                {item.icon}
                 <span>
-                  <strong>{item.name}等待发布</strong>
-                  <small>
-                    {
-                      item.sessions.filter(
-                        (session) => session.resultStatus === "正式成绩",
-                      ).length
-                    }{" "}
-                    条正式成绩
-                  </small>
+                  <strong>{item.title}</strong>
+                  <small>{item.detail}</small>
                 </span>
-                <b>查看</b>
+                <b>{item.action}</b>
               </button>
             ))}
-            {!reviewTasks.length && !pendingPublishExams.length && (
+            {!teacherTodos.length && (
               <p className="hint">当前没有需要立即处理的事项。</p>
             )}
           </div>
@@ -2001,7 +2097,7 @@ function Dashboard() {
             </div>
           </div>
         </section>
-        <section className="panel">
+        <section className="panel teacher-error-card">
           <PanelTitle title="高频错误" />
           <div className="rank-list">
             {errorStats.map(([name, count], index) => (
@@ -2442,7 +2538,9 @@ const ExamIncidentHelpForm = forwardRef(function ExamIncidentHelpForm(_, ref) {
         ))}
       </div>
       <label className="field">
-        {reasonCode === "other" ? "异常说明（必填）" : "补充说明（选填）"}
+        <FieldLabel required={reasonCode === "other"}>
+          {reasonCode === "other" ? "异常说明" : "补充说明"}
+        </FieldLabel>
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
@@ -2850,7 +2948,7 @@ function WorkstationPage({ studentMode = false }) {
             <p>{policy.statusText}</p>
           </section>
           <div className="workstation-entry__grid">
-            <section className="workstation-card identity-card">
+            <section className="workstation-card workstation-identity-card">
               <h2>请确认本次身份与任务</h2>
               <div className="identity-summary">
                 <span className="student-avatar">
@@ -4231,6 +4329,81 @@ function StudentMonitorPage({ exam = false, setModal }) {
   );
 }
 
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
+
+function TablePagination({ total, page, pageSize, onPageChange, onPageSizeChange }) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <footer className="table-pagination" aria-label="列表分页">
+      <span>共 {total} 条</span>
+      <div className="table-pagination__controls">
+        <label>
+          每页
+          <select
+            aria-label="每页显示条数"
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option value={size} key={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+          条
+        </label>
+        <button
+          type="button"
+          disabled={page <= 1}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+        >
+          上一页
+        </button>
+        <span>
+          第 <strong>{page}</strong> / {pageCount} 页
+        </span>
+        <button
+          type="button"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, page + 1))}
+        >
+          下一页
+        </button>
+      </div>
+    </footer>
+  );
+}
+
+function useListPagination(items) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const identity = items
+    .map(
+      (item, index) =>
+        item?.id ?? item?.sourceVideoId ?? item?.categoryId ?? index,
+    )
+    .join("|");
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  useEffect(() => setPage(1), [identity]);
+  useEffect(
+    () => setPage((current) => Math.min(current, pageCount)),
+    [pageCount],
+  );
+  return {
+    pageItems: items.slice((page - 1) * pageSize, page * pageSize),
+    paginationProps: {
+      total: items.length,
+      page,
+      pageSize,
+      onPageChange: setPage,
+      onPageSizeChange: (nextPageSize) => {
+        setPageSize(nextPageSize);
+        setPage(1);
+      },
+    },
+  };
+}
+
 function DataTable({
   columns,
   rows,
@@ -4241,78 +4414,123 @@ function DataTable({
   viewLabel = "查看",
   emptyText = "暂无符合条件的记录",
   statusColumns = [2, 3, 4],
+  pagination = "auto",
 }) {
   const hasActions = Boolean(onRow || onView || onMore);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const paginationIdentity = rows
+    .map((row, index) => {
+      if (rowKey) return String(rowKey(row, index));
+      return `${String(row?.[0] ?? "row")}:${index}`;
+    })
+    .join("|");
+  const paginationEnabled =
+    pagination === true || (pagination === "auto" && rows.length > 10);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  useEffect(() => setPage(1), [paginationIdentity]);
+  useEffect(
+    () => setPage((current) => Math.min(current, pageCount)),
+    [pageCount],
+  );
+  const firstRowIndex = paginationEnabled ? (page - 1) * pageSize : 0;
+  const visibleRows = rows
+    .map((row, originalIndex) => ({ row, originalIndex }))
+    .slice(
+      firstRowIndex,
+      paginationEnabled ? firstRowIndex + pageSize : rows.length,
+    );
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            {columns.map((c) => (
-              <th key={c}>{c}</th>
-            ))}
-            {hasActions && <th>操作</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={rowKey ? rowKey(r, i) : i}>
-              {r.map((cell, j) => (
-                <td key={j}>
-                  {statusColumns.includes(j) &&
-                  /状态|发布|完成|待|启用|停用|在线|成功|故障|异常|进行|使用中|可入场|已采集|未采集|草稿|可导入|错误|重复|维护|完整|缺失|不可用/.test(
-                    String(cell),
-                  ) ? (
-                    <Status>{cell}</Status>
-                  ) : (
-                    cell
-                  )}
-                </td>
-              ))}
-              {hasActions && (
-                <td>
-                  {(onView || onRow) && (
-                    <button
-                      className="table-action"
-                      aria-label={`查看 ${r[0]}`}
-                      onClick={() => (onView || onRow)(r, i)}
-                    >
-                      {typeof viewLabel === "function"
-                        ? viewLabel(r, i)
-                        : viewLabel}
-                    </button>
-                  )}
-                  {onMore && (
-                    <button
-                      className="icon-button"
-                      aria-label={`更多操作：${r[0]}`}
-                      onClick={() => onMore(r, i)}
-                    >
-                      <MoreOutlined aria-hidden="true" />
-                    </button>
-                  )}
-                </td>
-              )}
-            </tr>
-          ))}
-          {!rows.length && (
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td
-                className="table-empty"
-                colSpan={columns.length + (hasActions ? 1 : 0)}
-              >
-                {emptyText}
-              </td>
+              {columns.map((c) => (
+                <th key={c}>{c}</th>
+              ))}
+              {hasActions && <th>操作</th>}
             </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {visibleRows.map(({ row: currentRow, originalIndex }) => (
+              <tr
+                key={
+                  rowKey ? rowKey(currentRow, originalIndex) : originalIndex
+                }
+              >
+                {currentRow.map((cell, columnIndex) => (
+                  <td key={columnIndex}>
+                    {statusColumns.includes(columnIndex) &&
+                    /状态|发布|完成|待|启用|停用|在线|成功|故障|异常|进行|使用中|可入场|已采集|未采集|草稿|可导入|错误|重复|维护|完整|缺失|不可用/.test(
+                      String(cell),
+                    ) ? (
+                      <Status>{cell}</Status>
+                    ) : (
+                      cell
+                    )}
+                  </td>
+                ))}
+                {hasActions && (
+                  <td>
+                    {(onView || onRow) && (
+                      <button
+                        className="table-action"
+                        aria-label={`查看 ${currentRow[0]}`}
+                        onClick={() =>
+                          (onView || onRow)(currentRow, originalIndex)
+                        }
+                      >
+                        {typeof viewLabel === "function"
+                          ? viewLabel(currentRow, originalIndex)
+                          : viewLabel}
+                      </button>
+                    )}
+                    {onMore && (
+                      <button
+                        className="icon-button"
+                        aria-label={`更多操作：${currentRow[0]}`}
+                        onClick={() => onMore(currentRow, originalIndex)}
+                      >
+                        <MoreOutlined aria-hidden="true" />
+                      </button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr>
+                <td
+                  className="table-empty"
+                  colSpan={columns.length + (hasActions ? 1 : 0)}
+                >
+                  {emptyText}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {paginationEnabled && (
+        <TablePagination
+          total={rows.length}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
+      )}
+    </>
   );
 }
 function Toolbar({
   primary,
   onPrimary,
+  children,
   placeholder = "搜索名称",
   filters = ["全部状态", "已发布", "草稿"],
   value = "",
@@ -4343,6 +4561,7 @@ function Toolbar({
           ))}
         </select>
       )}
+      {children}
       <Button icon={<ReloadOutlined />} onClick={onRefresh}>
         刷新
       </Button>
@@ -4902,6 +5121,7 @@ function SopList() {
           </Button>
         </div>
         <DataTable
+          pagination
           columns={[
             "SOP名称",
             "所属专业 / 课程",
@@ -5233,7 +5453,11 @@ function SopDetail({ setModal }) {
           tone={aiSummary.status === "已启用" ? "success" : "warning"}
         />
       </div>
-      <div className="tabs sop-detail-tabs" role="tablist" aria-label="SOP详情">
+      <div
+        className="tabs sop-detail-tabs sop-standard-detail-tabs"
+        role="tablist"
+        aria-label="SOP详情"
+      >
         {[
           ["overview", "标准概览"],
           ["steps", "步骤与评价"],
@@ -5251,7 +5475,7 @@ function SopDetail({ setModal }) {
         ))}
       </div>
       {tab === "overview" && (
-        <section className="panel">
+        <section className="panel sop-overview-panel">
           <PanelTitle title="标准概览" />
           <div className="definition-list sop-detail-overview">
             <span>
@@ -5377,7 +5601,7 @@ function SopDetail({ setModal }) {
         </div>
       )}
       {tab === "ai" && (
-        <section className="panel">
+        <section className="panel sop-ai-detail-panel">
           <div className="ai-capability-hero">
             <div>
               <small>当前实际 AI评价能力</small>
@@ -5444,6 +5668,7 @@ function SopDetail({ setModal }) {
             </span>
           </div>
           <DataTable
+            pagination
             columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]}
             statusColumns={[]}
             rows={sop.steps.map((step) => {
@@ -5877,7 +6102,7 @@ function SopEditor({ setModal }) {
                 </select>
               </label>
               <label className="field">
-                适用课程（选填）
+                <FieldLabel>适用课程</FieldLabel>
                 <input
                   value={draft.course || ""}
                   onChange={(event) =>
@@ -6439,7 +6664,7 @@ function SopEditor({ setModal }) {
                           )}
                         </div>
                         <label className="field">
-                          规则说明（选填）
+                          <FieldLabel>规则说明</FieldLabel>
                           <textarea
                             value={rule.description || ""}
                             onChange={(event) =>
@@ -6806,6 +7031,10 @@ function Learning({ setModal }) {
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
+  const {
+    pageItems: pagedSamples,
+    paginationProps: samplePagination,
+  } = useListPagination(visible);
   const reviewRef = useRef(null);
   const review = (sample) => {
     const sop = store.data.sops.find((item) => item.id === sample.sopId);
@@ -6974,7 +7203,7 @@ function Learning({ setModal }) {
               </tr>
             </thead>
             <tbody>
-              {visible.map((sample) => (
+              {pagedSamples.map((sample) => (
                 <tr key={sample.id}>
                   <td>
                     <input
@@ -7023,6 +7252,7 @@ function Learning({ setModal }) {
             </tbody>
           </table>
         </div>
+        <TablePagination {...samplePagination} />
       </section>
     </>
   );
@@ -7210,6 +7440,7 @@ function ArrangementList({ exam = false }) {
           }}
         />
         <DataTable
+          pagination
           columns={[
             `${name}名称`,
             "SOP",
@@ -7785,7 +8016,7 @@ const ReviewStepForm = forwardRef(function ReviewStepForm(
         </select>
       </label>
       <label className="field">
-        复核依据与说明 <b className="required">必填</b>
+        <FieldLabel required>复核依据与说明</FieldLabel>
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
@@ -7854,7 +8085,7 @@ const ScoreAdjustForm = forwardRef(function ScoreAdjustForm({ step }, ref) {
         />
       </label>
       <label className="field">
-        修改原因 <b className="required">必填</b>
+        <FieldLabel required>修改原因</FieldLabel>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
@@ -7915,7 +8146,7 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
         </label>
       )}
       <label className="field">
-        处置依据 <b className="required">必填</b>
+        <FieldLabel required>处置依据</FieldLabel>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
@@ -7991,11 +8222,11 @@ function ArrangementResultMetrics({ arrangement, exam = false }) {
 function WorkstationReleasePanel({ arrangement, store, onReset }) {
   const sessions = arrangement.sessions || [];
   return (
-    <section className="panel">
+    <section className="panel workstation-release-panel">
       <PanelTitle
         title="工位复位与释放"
         action={
-          <span>
+          <span className="panel-title__meta">
             已复位 {sessions.filter((item) => item.status === "已复位").length}{" "}
             / {sessions.length}
           </span>
@@ -8267,7 +8498,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           className={`panel publish-gate ${publishGate.passed ? "is-ready" : "is-blocked"}`}
         >
           <PanelTitle
-            title="Exam Publish Gate"
+            title="考试发布门槛"
             action={
               <Status tone={publishGate.passed ? "success" : "warning"}>
                 {publishGate.passed
@@ -8308,7 +8539,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         store={store}
         onReset={adminReadOnly ? undefined : reset}
       />
-      <section className="panel panel--table">
+      <section className="panel panel--table arrangement-student-results">
         <PanelTitle
           title="学生结果"
           action={
@@ -8325,6 +8556,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           }
         />
         <DataTable
+          pagination
           columns={["学生", "学号", "班级", "当前得分", "结果状态", "主要问题"]}
           rows={rows}
           rowKey={(row) => row[1]}
@@ -8566,7 +8798,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
       <div className="report-summary">
         <div>
           <span className="score-ring">
-            {session.score}
+            <strong>{session.score}</strong>
             <small>分</small>
           </span>
           <div>
@@ -8630,21 +8862,23 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               key={step.id}
             >
               <b>{i + 1}</b>
-              <span>
+              <span className="report-step__content">
                 <strong>{step.name}</strong>
-                <small>
-                  {["pending", "retest_required"].includes(
-                    step.scoreDisposition?.status,
-                  )
-                    ? SCORE_DISPOSITIONS[step.scoreDisposition.status]
-                    : step.reviewStatus === "无需复核"
-                      ? step.result
-                      : step.reviewStatus}
-                </small>
+                <span className="report-step__meta">
+                  <small>
+                    {["pending", "retest_required"].includes(
+                      step.scoreDisposition?.status,
+                    )
+                      ? SCORE_DISPOSITIONS[step.scoreDisposition.status]
+                      : step.reviewStatus === "无需复核"
+                        ? step.result
+                        : step.reviewStatus}
+                  </small>
+                  <em>
+                    {step.effectiveScore}/{step.maxScore}分
+                  </em>
+                </span>
               </span>
-              <em>
-                {step.effectiveScore}/{step.maxScore}分
-              </em>
             </button>
           ))}
         </aside>
@@ -9185,6 +9419,7 @@ function AiDatasetSamples({ sop, setModal }) {
         }}
       />
       <DataTable
+        pagination
         columns={["视频片段", "来源", "AI建议", "确认标签", "状态", "更新时间"]}
         rows={samples.map((sample) => [
           sample.fileName,
@@ -9219,7 +9454,7 @@ const MappingRejectForm = forwardRef(function MappingRejectForm(_, ref) {
   }));
   return (
     <label className="field">
-      修改意见<b className="required">必填</b>
+      <FieldLabel required>修改意见</FieldLabel>
       <textarea
         value={comment}
         onChange={(event) => setComment(event.target.value)}
@@ -9429,7 +9664,7 @@ const AiLogicalAreaForm = forwardRef(function AiLogicalAreaForm(_, ref) {
   return (
     <div className="form-stack">
       <label className="field">
-        区域名称 <b className="required">必填</b>
+        <FieldLabel required>区域名称</FieldLabel>
         <input
           value={form.name}
           onChange={(event) =>
@@ -9522,7 +9757,7 @@ const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
   return (
     <div className="form-stack ai-judgement-form">
       <label className="field">
-        判断项名称 <b className="required">必填</b>
+        <FieldLabel required>判断项名称</FieldLabel>
         <input
           value={form.name}
           onChange={(event) => update("name", event.target.value)}
@@ -9858,86 +10093,92 @@ function AiRuleTreatmentRow({
   );
   return (
     <article className="ai-config-rule-row">
-      <div>
+      <div className="ai-config-rule-row__identity">
         <strong>{rule.name || rule.id}</strong>
         <small>{rule.id}</small>
       </div>
-      <label className="field">
-        处理方式
-        <select
-          value={draft.mode}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              mode: event.target.value,
-              judgementItemId:
-                event.target.value === "teacher" ? "" : current.judgementItemId,
-            }))
-          }
-        >
-          <option value="">请选择</option>
-          <option value="ai">
-            {kind === "score" ? "由AI判断" : "AI辅助监测"}
-          </option>
-          <option value="teacher">由教师处理</option>
-        </select>
-      </label>
-      {draft.mode === "ai" && (
+      <div className="ai-config-rule-row__controls">
         <label className="field">
-          关联判断项
+          处理方式
           <select
-            value={draft.judgementItemId}
+            value={draft.mode}
             onChange={(event) =>
               setDraft((current) => ({
                 ...current,
-                judgementItemId: event.target.value,
+                mode: event.target.value,
+                judgementItemId:
+                  event.target.value === "teacher"
+                    ? ""
+                    : current.judgementItemId,
               }))
             }
           >
             <option value="">请选择</option>
-            {candidates.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
+            <option value="ai">
+              {kind === "score" ? "由AI判断" : "AI辅助监测"}
+            </option>
+            <option value="teacher">由教师处理</option>
           </select>
-          {!candidates.length && (
-            <small className="form-error">请先新增关联本规则的判断项。</small>
-          )}
         </label>
-      )}
-      {draft.mode === "teacher" && (
-        <label className="field">
-          教师处理原因
-          <input
-            value={draft.reason}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                reason: event.target.value,
-              }))
-            }
-            placeholder="请说明摄像头无法可靠判断的原因"
-          />
-        </label>
-      )}
-      <Button
-        disabled={
-          !draft.mode ||
-          (draft.mode === "teacher" && !draft.reason.trim()) ||
-          (draft.mode === "ai" && !draft.judgementItemId)
-        }
-        onClick={() =>
-          store.saveAiRuleTreatment(sopId, {
-            stepId,
-            kind,
-            ruleId: rule.id,
-            ...draft,
-          })
-        }
-      >
-        保存
-      </Button>
+        {draft.mode === "ai" && (
+          <label className="field">
+            关联判断项
+            <select
+              value={draft.judgementItemId}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  judgementItemId: event.target.value,
+                }))
+              }
+            >
+              <option value="">请选择</option>
+              {candidates.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {!candidates.length && (
+              <small className="form-error">
+                请先新增关联本规则的判断项。
+              </small>
+            )}
+          </label>
+        )}
+        {draft.mode === "teacher" && (
+          <label className="field">
+            教师处理原因
+            <input
+              value={draft.reason}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  reason: event.target.value,
+                }))
+              }
+              placeholder="请说明摄像头无法可靠判断的原因"
+            />
+          </label>
+        )}
+        <Button
+          disabled={
+            !draft.mode ||
+            (draft.mode === "teacher" && !draft.reason.trim()) ||
+            (draft.mode === "ai" && !draft.judgementItemId)
+          }
+          onClick={() =>
+            store.saveAiRuleTreatment(sopId, {
+              stepId,
+              kind,
+              ruleId: rule.id,
+              ...draft,
+            })
+          }
+        >
+          保存
+        </Button>
+      </div>
     </article>
   );
 }
@@ -10097,23 +10338,42 @@ function AiConfigStepCard({
             <Status>{AI_CONFIG_STEP_STATUSES[stepResult.status]}</Status>
           </header>
           <div className="ai-config-mode-editor">
-            <label className="field">
-              实际评价方式
-              <select
-                value={modeDraft}
-                onChange={(event) => setModeDraft(event.target.value)}
+            <div className="ai-config-mode-editor__primary">
+              <label className="field">
+                实际评价方式
+                <select
+                  value={modeDraft}
+                  onChange={(event) => setModeDraft(event.target.value)}
+                >
+                  <option value="">请选择</option>
+                  {allowedModes.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {AI_ACTUAL_EVALUATION_MODES[mode]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                type="primary"
+                disabled={
+                  !modeDraft ||
+                  (isEvaluationModeDowngraded(expected, modeDraft) &&
+                    !reasonDraft.trim())
+                }
+                onClick={() =>
+                  store.saveAiStepConfig(sop.id, {
+                    stepId: step.id,
+                    actualEvaluationMode: modeDraft,
+                    downgradeReason: reasonDraft,
+                  })
+                }
               >
-                <option value="">请选择</option>
-                {allowedModes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {AI_ACTUAL_EVALUATION_MODES[mode]}
-                  </option>
-                ))}
-              </select>
-            </label>
+                保存评价方式
+              </Button>
+            </div>
             {isEvaluationModeDowngraded(expected, modeDraft) && (
               <label className="field ai-config-downgrade-reason">
-                降级原因 <b className="required">必填</b>
+                <FieldLabel required>降级原因</FieldLabel>
                 <textarea
                   value={reasonDraft}
                   onChange={(event) => setReasonDraft(event.target.value)}
@@ -10121,23 +10381,6 @@ function AiConfigStepCard({
                 />
               </label>
             )}
-            <Button
-              type="primary"
-              disabled={
-                !modeDraft ||
-                (isEvaluationModeDowngraded(expected, modeDraft) &&
-                  !reasonDraft.trim())
-              }
-              onClick={() =>
-                store.saveAiStepConfig(sop.id, {
-                  stepId: step.id,
-                  actualEvaluationMode: modeDraft,
-                  downgradeReason: reasonDraft,
-                })
-              }
-            >
-              保存评价方式
-            </Button>
           </div>
           <div className="ai-config-subsection">
             <div className="ai-config-subsection__header">
@@ -10297,9 +10540,13 @@ function AiConfigStepCard({
 function AiCapabilityConfigList() {
   const nav = useNavigate();
   const { data } = usePrototypeData();
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("全部配置状态");
+  const [majorFilter, setMajorFilter] = useState("全部专业");
+  const [ownerFilter, setOwnerFilter] = useState("全部教师");
   const sops = getConfigurableSops(data?.sops);
   const capabilities = data?.aiCapabilities || [];
-  const rows = sops.map((sop) => {
+  const entries = sops.map((sop) => {
     const config = (data.aiCapabilityConfigs || []).find(
       (item) => item.sopId === sop.id,
     );
@@ -10332,29 +10579,49 @@ function AiCapabilityConfigList() {
         readiness: checks.readiness,
       }).runnable;
     }).length;
-    return [
-      sop.name || "未命名SOP",
-      [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
-      sop.owner || "未设置",
-      `${evaluation.totalSteps} 步`,
-      evaluation.statusLabel,
-      `${evaluation.configuredStepCount}/${evaluation.totalSteps}`,
-      `${evaluation.judgementItemCount} 项`,
-      `${evaluation.distinctCapabilityIds.length} 个`,
-      workstationConfigs.length
-        ? `${runnableCount}/${workstationConfigs.length} 个可运行`
-        : "尚未添加工位",
-      <button
-        className="table-action"
-        onClick={() => nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}`)}
-      >
-        {evaluation.status === "unconfigured"
-          ? "开始配置"
-          : evaluation.status === "enabled"
-            ? "查看"
-            : "进入配置"}
-      </button>,
-    ];
+    return {
+      sop,
+      evaluation,
+      row: [
+        sop.name || "未命名SOP",
+        [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
+        sop.owner || "未设置",
+        `${evaluation.totalSteps} 步`,
+        evaluation.statusLabel,
+        `${evaluation.configuredStepCount}/${evaluation.totalSteps}`,
+        `${evaluation.judgementItemCount} 项`,
+        `${evaluation.distinctCapabilityIds.length} 个`,
+        workstationConfigs.length
+          ? `${runnableCount}/${workstationConfigs.length} 个可运行`
+          : "尚未添加工位",
+        <button
+          className="table-action"
+          onClick={() =>
+            nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}`)
+          }
+        >
+          {evaluation.status === "unconfigured"
+            ? "开始配置"
+            : evaluation.status === "enabled"
+              ? "查看"
+              : "进入配置"}
+        </button>,
+      ],
+    };
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredEntries = entries.filter(({ sop, evaluation }) => {
+    const searchableText = [sop.name, sop.major, sop.course, sop.owner]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return (
+      (!normalizedQuery || searchableText.includes(normalizedQuery)) &&
+      (statusFilter === "全部配置状态" ||
+        evaluation.statusLabel === statusFilter) &&
+      (majorFilter === "全部专业" || sop.major === majorFilter) &&
+      (ownerFilter === "全部教师" || sop.owner === ownerFilter)
+    );
   });
   return (
     <>
@@ -10362,15 +10629,52 @@ function AiCapabilityConfigList() {
         title="AI能力配置"
         subtitle="按已发布SOP步骤组装AI判断项、已发布能力和教师业务规则。"
       />
-      <section className="panel">
-        <PanelTitle title="可配置的SOP" />
-        <p className="hint">
-          仅显示已发布且未停用的SOP；每个SOP只维护一套当前AI能力配置。
-        </p>
-      </section>
       {sops.length ? (
-        <section className="panel panel--table ai-entry-table ai-config-list-table">
+        <section className="panel panel--table ai-config-list-table">
+          <Toolbar
+            placeholder="搜索SOP名称、专业或课程"
+            filters={[
+              "全部配置状态",
+              ...new Set(entries.map(({ evaluation }) => evaluation.statusLabel)),
+            ]}
+            value={query}
+            filterValue={statusFilter}
+            onChange={setQuery}
+            onFilterChange={setStatusFilter}
+            onRefresh={() => {
+              setQuery("");
+              setStatusFilter("全部配置状态");
+              setMajorFilter("全部专业");
+              setOwnerFilter("全部教师");
+            }}
+          >
+            <select
+              aria-label="筛选专业"
+              value={majorFilter}
+              onChange={(event) => setMajorFilter(event.target.value)}
+            >
+              <option>全部专业</option>
+              {[...new Set(sops.map((sop) => sop.major).filter(Boolean))].map(
+                (major) => (
+                  <option key={major}>{major}</option>
+                ),
+              )}
+            </select>
+            <select
+              aria-label="筛选创建教师"
+              value={ownerFilter}
+              onChange={(event) => setOwnerFilter(event.target.value)}
+            >
+              <option>全部教师</option>
+              {[...new Set(sops.map((sop) => sop.owner).filter(Boolean))].map(
+                (owner) => (
+                  <option key={owner}>{owner}</option>
+                ),
+              )}
+            </select>
+          </Toolbar>
           <DataTable
+            pagination
             columns={[
               "SOP名称",
               "专业/课程",
@@ -10383,8 +10687,9 @@ function AiCapabilityConfigList() {
               "工位状态",
               "操作",
             ]}
-            rows={rows}
-            rowKey={(_, index) => sops[index].id}
+            rows={filteredEntries.map(({ row }) => row)}
+            rowKey={(_, index) => filteredEntries[index]?.sop.id || index}
+            emptyText="暂无符合筛选条件的SOP"
             statusColumns={[4, 8]}
           />
         </section>
@@ -10413,7 +10718,7 @@ const AiWorkstationSelectForm = forwardRef(function AiWorkstationSelectForm(
   return (
     <div className="ai-workstation-select-form">
       <label className="field">
-        目标工位 <b className="required">必选</b>
+        <FieldLabel required>目标工位</FieldLabel>
         <select
           value={workstationId}
           onChange={(event) => setWorkstationId(event.target.value)}
@@ -11076,6 +11381,7 @@ function AiWorkstationConfigWorkspace({
           <div className="ai-validation-records">
             <h3>验证记录</h3>
             <DataTable
+              pagination
               columns={["验证时间", "验证人", "案例", "通过", "失败", "结论"]}
               rows={normalized.validationRecords.map((record) => [
                 record.completedAt,
@@ -11424,7 +11730,7 @@ function AiConfigLogicalAreaManager({ sopId }) {
     <div className="ai-config-area-manager">
       <div className="ai-config-area-manager__form">
         <label className="field">
-          区域名称 <b className="required">必填</b>
+          <FieldLabel required>区域名称</FieldLabel>
           <input
             value={form.name}
             onChange={(event) =>
@@ -12539,6 +12845,7 @@ function AiCapabilityList({ setModal }) {
             </select>
           </div>
           <DataTable
+            pagination
             columns={[
               "能力名称",
               "能力类型",
@@ -12707,7 +13014,7 @@ function AiCapabilityForm() {
           />
         </label>
         <label className="field">
-          备注（选填）
+          <FieldLabel>备注</FieldLabel>
           <textarea
             value={draft.note}
             onChange={setField("note")}
@@ -13054,7 +13361,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
       </div>
       <div className="form-row">
         <label className="field">
-          拍摄工位（选填）
+          <FieldLabel>拍摄工位</FieldLabel>
           <select
             value={form.workstationId}
             onChange={(event) => update("workstationId", event.target.value)}
@@ -13068,7 +13375,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
           </select>
         </label>
         <label className="field">
-          拍摄日期（选填）
+          <FieldLabel>拍摄日期</FieldLabel>
           <input
             type="date"
             value={form.capturedAt}
@@ -13077,7 +13384,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
         </label>
       </div>
       <label className="field">
-        拍摄说明（选填）
+        <FieldLabel>拍摄说明</FieldLabel>
         <textarea
           rows={3}
           placeholder="例如：正面机位、弱光环境、有轻微遮挡"
@@ -13156,7 +13463,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
       </div>
       <div className="form-row">
         <label className="field">
-          拍摄工位（选填）
+          <FieldLabel>拍摄工位</FieldLabel>
           <select
             value={form.workstationId}
             onChange={(event) => update("workstationId", event.target.value)}
@@ -13170,7 +13477,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
           </select>
         </label>
         <label className="field">
-          拍摄日期（选填）
+          <FieldLabel>拍摄日期</FieldLabel>
           <input
             type="date"
             value={form.capturedAt}
@@ -13179,7 +13486,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
         </label>
       </div>
       <label className="field">
-        拍摄说明（选填）
+        <FieldLabel>拍摄说明</FieldLabel>
         <textarea
           rows={3}
           value={form.note}
@@ -13297,6 +13604,8 @@ function AiVideoManagement({ setModal }) {
   const [sourceFilter, setSourceFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [videoPage, setVideoPage] = useState(1);
+  const [videoPageSize, setVideoPageSize] = useState(10);
   const capabilities = Array.isArray(store.data.aiCapabilities)
     ? store.data.aiCapabilities
     : [];
@@ -13320,11 +13629,27 @@ function AiVideoManagement({ setModal }) {
       (!sourceFilter || item.sourceType === sourceFilter) &&
       (!statusFilter || item.processingStatus === statusFilter),
   );
+  const videoPageCount = Math.max(
+    1,
+    Math.ceil(visible.length / videoPageSize),
+  );
+  const pageVideos = visible.slice(
+    (videoPage - 1) * videoPageSize,
+    videoPage * videoPageSize,
+  );
   const stats = videoStats(videos);
   const workstationById = Object.fromEntries(
     (store.data.workstations || []).map((item) => [item.id, item]),
   );
   useEffect(() => setSelectedIds([]), [selectedId]);
+  useEffect(
+    () => setVideoPage(1),
+    [selectedId, query, categoryFilter, sourceFilter, statusFilter],
+  );
+  useEffect(
+    () => setVideoPage((current) => Math.min(current, videoPageCount)),
+    [videoPageCount],
+  );
 
   const openUpload = () => {
     if (!capability) return;
@@ -13444,9 +13769,9 @@ function AiVideoManagement({ setModal }) {
         ? current.filter((item) => item !== id)
         : [...current, id],
     );
-  const allVisibleSelected =
-    visible.length > 0 &&
-    visible.every((item) => selectedIds.includes(item.id));
+  const allPageVideosSelected =
+    pageVideos.length > 0 &&
+    pageVideos.every((item) => selectedIds.includes(item.id));
 
   return (
     <>
@@ -13632,20 +13957,20 @@ function AiVideoManagement({ setModal }) {
                   <tr>
                     <th>
                       <input
-                        aria-label="选择全部可见视频"
+                        aria-label="选择当前页全部视频"
                         type="checkbox"
-                        checked={allVisibleSelected}
+                        checked={allPageVideosSelected}
                         onChange={() =>
                           setSelectedIds((current) =>
-                            allVisibleSelected
+                            allPageVideosSelected
                               ? current.filter(
                                   (id) =>
-                                    !visible.some((item) => item.id === id),
+                                    !pageVideos.some((item) => item.id === id),
                                 )
                               : [
                                   ...new Set([
                                     ...current,
-                                    ...visible.map((item) => item.id),
+                                    ...pageVideos.map((item) => item.id),
                                   ]),
                                 ],
                           )
@@ -13666,7 +13991,7 @@ function AiVideoManagement({ setModal }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map((video) => {
+                  {pageVideos.map((video) => {
                     const workstation = workstationById[video.workstationId];
                     return (
                       <tr key={video.id}>
@@ -13740,6 +14065,16 @@ function AiVideoManagement({ setModal }) {
                 </tbody>
               </table>
             </div>
+            <TablePagination
+              total={visible.length}
+              page={videoPage}
+              pageSize={videoPageSize}
+              onPageChange={setVideoPage}
+              onPageSizeChange={(nextPageSize) => {
+                setVideoPageSize(nextPageSize);
+                setVideoPage(1);
+              }}
+            />
           </section>
         </>
       )}
@@ -13922,6 +14257,14 @@ function AiExtractionPage({ setModal }) {
       (!resultStatusFilter || item.processingStatus === resultStatusFilter) &&
       (!methodFilter || item.generationMethod === methodFilter),
   );
+  const {
+    pageItems: pagedExtractionTasks,
+    paginationProps: extractionTaskPagination,
+  } = useListPagination(tasks);
+  const {
+    pageItems: pagedResults,
+    paginationProps: resultPagination,
+  } = useListPagination(visibleResults);
   const processedVideoCount = videos.filter(
     (item) => item.processingStatus === "derived",
   ).length;
@@ -14587,7 +14930,7 @@ function AiExtractionPage({ setModal }) {
                         </label>
                       </div>
                       <label className="field">
-                        片段说明（选填）
+                        <FieldLabel>片段说明</FieldLabel>
                         <textarea
                           rows={3}
                           value={clipParams.note}
@@ -14684,7 +15027,7 @@ function AiExtractionPage({ setModal }) {
             <section className="panel ai-extraction-tasks">
               <PanelTitle title="处理任务" />
               <div className="ai-task-list">
-                {tasks.map((task) => (
+                {pagedExtractionTasks.map((task) => (
                   <article key={task.id}>
                     <div>
                       <strong>
@@ -14699,8 +15042,12 @@ function AiExtractionPage({ setModal }) {
                     <Status>
                       {EXTRACTION_TASK_STATUSES[task.status] || task.status}
                     </Status>
-                    <span>{task.progress || 0}%</span>
-                    <span>已生成 {task.generatedCount || 0} 条</span>
+                    <span className="ai-extraction-task__progress">
+                      {task.progress || 0}%
+                    </span>
+                    <span className="ai-extraction-task__result">
+                      已生成 {task.generatedCount || 0} 条
+                    </span>
                     {!!task.failures?.length &&
                       task.retryStatus !== "resolved" && (
                         <button
@@ -14728,6 +15075,7 @@ function AiExtractionPage({ setModal }) {
                   </article>
                 ))}
               </div>
+              <TablePagination {...extractionTaskPagination} />
             </section>
           )}
           <section className="panel ai-derived-results">
@@ -14819,7 +15167,7 @@ function AiExtractionPage({ setModal }) {
                 </div>
                 {mode === "frames" ? (
                   <div className="ai-frame-grid">
-                    {visibleResults.map((frame) => (
+                    {pagedResults.map((frame) => (
                       <article key={frame.id}>
                         <label>
                           <input
@@ -14909,7 +15257,7 @@ function AiExtractionPage({ setModal }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleResults.map((clip) => (
+                        {pagedResults.map((clip) => (
                           <tr key={clip.id}>
                             <td>
                               <input
@@ -14982,6 +15330,7 @@ function AiExtractionPage({ setModal }) {
                 {!visibleResults.length && (
                   <p className="table-empty">没有符合筛选条件的生成结果</p>
                 )}
+                <TablePagination {...resultPagination} />
               </>
             ) : (
               <div className="empty-state ai-derived-empty">
@@ -15129,6 +15478,14 @@ function AiAutoCleaningPage({ setModal }) {
       (!taskFilter || item.lastCleaningTaskId === taskFilter)
     );
   });
+  const {
+    pageItems: pagedCleaningTasks,
+    paginationProps: cleaningTaskPagination,
+  } = useListPagination(tasks);
+  const {
+    pageItems: pagedCleaningItems,
+    paginationProps: cleaningResultPagination,
+  } = useListPagination(visibleItems);
   const activeRuleLabels =
     mode === "frames"
       ? [
@@ -15590,8 +15947,8 @@ function AiAutoCleaningPage({ setModal }) {
             <section className="panel ai-cleaning-tasks">
               <PanelTitle title="清洗任务" />
               <div className="ai-task-list">
-                {tasks.map((task) => (
-                  <article key={task.id}>
+                {pagedCleaningTasks.map((task) => (
+                  <article className="ai-cleaning-task" key={task.id}>
                     <div>
                       <strong>自动清洗任务</strong>
                       <small>
@@ -15602,16 +15959,17 @@ function AiAutoCleaningPage({ setModal }) {
                     <Status tone="success">
                       {AUTO_CLEANING_TASK_STATUSES[task.status] || task.status}
                     </Status>
-                    <span>
+                    <span className="ai-cleaning-task__progress">
                       {task.processedCount}/{task.totalCount}
                     </span>
-                    <span>
+                    <span className="ai-cleaning-task__summary">
                       保留 {task.keepCount} · 剔除 {task.rejectCount} · 失败{" "}
                       {task.failedCount}
                     </span>
                   </article>
                 ))}
               </div>
+              <TablePagination {...cleaningTaskPagination} />
             </section>
           )}
           <section className="panel ai-cleaning-results">
@@ -15714,7 +16072,7 @@ function AiAutoCleaningPage({ setModal }) {
             )}
             {mode === "frames" ? (
               <div className="ai-cleaning-frame-grid">
-                {visibleItems.map((item) => {
+                {pagedCleaningItems.map((item) => {
                   const rejected = item.autoCleaningResult === "auto_reject";
                   return (
                     <article
@@ -15828,7 +16186,7 @@ function AiAutoCleaningPage({ setModal }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleItems.map((item) => {
+                    {pagedCleaningItems.map((item) => {
                       const rejected =
                         item.autoCleaningResult === "auto_reject";
                       return (
@@ -15935,6 +16293,7 @@ function AiAutoCleaningPage({ setModal }) {
             {!visibleItems.length && (
               <p className="table-empty">没有符合当前筛选条件的数据</p>
             )}
+            <TablePagination {...cleaningResultPagination} />
           </section>
         </>
       )}
@@ -16210,6 +16569,10 @@ function AiManualCleaningPage({ setModal }) {
       (!taskFilter || item.taskId === taskFilter)
     );
   });
+  const {
+    pageItems: pagedManualItems,
+    paginationProps: manualResultPagination,
+  } = useListPagination(visibleItems);
   const applyDecision = (ids, decision, details = {}) => {
     setPageError("");
     try {
@@ -16547,7 +16910,7 @@ function AiManualCleaningPage({ setModal }) {
             )}
             {mode === "frames" ? (
               <div className="manual-cleaning-frame-grid">
-                {visibleItems.map((item) => {
+                {pagedManualItems.map((item) => {
                   const manualStatus = item.manualCleaningStatus || "pending";
                   const autoResult = manualAutoResult(item);
                   return (
@@ -16666,7 +17029,7 @@ function AiManualCleaningPage({ setModal }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleItems.map((item) => {
+                    {pagedManualItems.map((item) => {
                       const manualStatus =
                         item.manualCleaningStatus || "pending";
                       const autoResult = manualAutoResult(item);
@@ -16779,6 +17142,7 @@ function AiManualCleaningPage({ setModal }) {
                 <p>可以切换人工状态或其他筛选条件继续查看。</p>
               </div>
             )}
+            <TablePagination {...manualResultPagination} />
           </section>
         </>
       )}
@@ -17487,7 +17851,7 @@ function AiAnnotationPage({ setModal }) {
         title="数据标注"
         subtitle="对人工清洗已保留的数据进行目标框或动作区间标注，产出可进入训练数据的数据候选。"
       />
-      <section className="panel ai-capability-context ai-annotation-context">
+      <section className="panel ai-capability-context ai-cleaning-context ai-annotation-context">
         <label className="field">
           当前AI能力
           <select
@@ -17586,7 +17950,7 @@ function AiAnnotationPage({ setModal }) {
             </div>
           </section>
           {summary.pending === 0 && (
-            <section className="manual-cleaning-complete">
+            <section className="manual-cleaning-complete annotation-complete">
               <CheckCircleFilled />
               <div>
                 <strong>当前能力的数据已全部标注</strong>
@@ -17831,6 +18195,10 @@ function AiTrainingDataPage({ setModal }) {
     capability,
     config,
   });
+  const {
+    pageItems: pagedTrainingGroups,
+    paginationProps: trainingGroupPagination,
+  } = useListPagination(groups);
   const readiness = buildTrainingReadiness({
     capability,
     candidates: candidateResult.candidates,
@@ -17954,7 +18322,7 @@ function AiTrainingDataPage({ setModal }) {
         title="训练数据"
         subtitle="整理当前AI能力已清洗、已标注的数据，并按来源视频划分训练集、验证集和测试集。"
       />
-      <section className="panel ai-capability-context training-data-context">
+      <section className="panel ai-capability-context ai-cleaning-context training-data-context">
         <label className="field">
           当前AI能力
           <select
@@ -18203,7 +18571,7 @@ function AiTrainingDataPage({ setModal }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.map((group) => (
+                  {pagedTrainingGroups.map((group) => (
                     <tr key={group.sourceVideoId}>
                       <td>
                         <strong>
@@ -18271,6 +18639,7 @@ function AiTrainingDataPage({ setModal }) {
                 </tbody>
               </table>
             </div>
+            <TablePagination {...trainingGroupPagination} />
           </section>
           <section className="panel training-distribution">
             <PanelTitle title="类别分布" />
@@ -18721,6 +19090,10 @@ function AiModelTrainingPage({ setModal }) {
   const tasks = (store.data.aiTrainingTasks || [])
     .filter((item) => item.capabilityId === capability?.id)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const {
+    pageItems: pagedTrainingTasks,
+    paginationProps: trainingTaskPagination,
+  } = useListPagination(tasks);
   const activeTask = tasks.find((item) =>
     ACTIVE_TRAINING_STATUSES.includes(item.status),
   );
@@ -19004,7 +19377,7 @@ function AiModelTrainingPage({ setModal }) {
                 title="训练任务记录"
                 action={<span>{tasks.length} 条</span>}
               />
-              {tasks.map((task) => (
+              {pagedTrainingTasks.map((task) => (
                 <button
                   key={task.id}
                   className={selectedTask?.id === task.id ? "is-active" : ""}
@@ -19028,6 +19401,7 @@ function AiModelTrainingPage({ setModal }) {
                   <p>训练数据准备完成后可以创建第一条任务。</p>
                 </div>
               )}
+              <TablePagination {...trainingTaskPagination} />
             </section>
             {selectedTask && (
               <section className="panel training-task-detail">
@@ -19210,6 +19584,10 @@ function AiModelPublishingPage({ setModal }) {
     .sort((left, right) =>
       String(right.publishedAt).localeCompare(String(left.publishedAt)),
     );
+  const {
+    pageItems: pagedPublicationRecords,
+    paginationProps: publicationPagination,
+  } = useListPagination(publicationRecords);
   const candidate = getCurrentCandidateTask(
     capability,
     tasks,
@@ -19577,7 +19955,7 @@ function AiModelPublishingPage({ setModal }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {publicationRecords.map((record) => (
+                  {pagedPublicationRecords.map((record) => (
                     <tr key={record.id}>
                       <td>{record.publishedAt}</td>
                       <td>{record.trainingTaskId}</td>
@@ -19605,6 +19983,7 @@ function AiModelPublishingPage({ setModal }) {
                 </tbody>
               </table>
             </div>
+            <TablePagination {...publicationPagination} />
           </section>
         </>
       )}
@@ -19796,6 +20175,7 @@ function AiEvaluationList() {
           }}
         />
         <DataTable
+          pagination
           columns={[
             "SOP",
             "版本",
@@ -19845,7 +20225,7 @@ const ModelValidationFailureForm = forwardRef(
     }));
     return (
       <label className="field">
-        未通过原因 <b className="required">必填</b>
+        <FieldLabel required>未通过原因</FieldLabel>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
@@ -20608,6 +20988,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
           保存完整源视频及来源信息；时间片段和标注均追溯到 Source Video。
         </p>
         <DataTable
+          pagination
           columns={["文件", "时长", "来源", "Mapping", "状态"]}
           rows={sourceVideos.map((video) => [
             video.fileName,
@@ -20643,6 +21024,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
           仅描述机器可确认的事实，不直接产生扣分。
         </p>
         <DataTable
+          pagination
           columns={[
             "Source Video",
             "时间片段",
@@ -20798,7 +21180,7 @@ const CompatibilityDecisionForm = forwardRef(function CompatibilityDecisionForm(
         </label>
       </div>
       <label className="field">
-        判断依据 <b className="required">必填</b>
+        <FieldLabel required>判断依据</FieldLabel>
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
@@ -21178,6 +21560,7 @@ function AiEvaluationDetail({ setModal }) {
               Package能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
             </p>
             <DataTable
+              pagination
               columns={[
                 "Step",
                 "教师设定",
@@ -21507,6 +21890,7 @@ function AiEvaluationDetail({ setModal }) {
             <section className="panel panel--table">
               <PanelTitle title="步骤与场景验证" />
               <DataTable
+                pagination
                 columns={["对象", "AI Package能力", "现场结果", "说明"]}
                 rows={[
                   ...sop.steps.map((step) => [
@@ -21695,6 +22079,7 @@ function AiEvaluationDetail({ setModal }) {
           <section className="panel panel--table">
             <PanelTitle title="现场验证记录" />
             <DataTable
+              pagination
               columns={[
                 "工位",
                 "结果",
@@ -21804,6 +22189,7 @@ function AiEvaluationDetail({ setModal }) {
           <section className="panel panel--table">
             <PanelTitle title="Compatibility Decision 记录" />
             <DataTable
+              pagination
               columns={["版本", "结论", "判断依据", "确认人", "时间"]}
               rows={compatibilityDecisions.map((decision) => [
                 `${decision.fromVersion} → ${decision.toVersion}`,
@@ -21824,6 +22210,7 @@ function AiEvaluationDetail({ setModal }) {
           <section className="panel panel--table">
             <PanelTitle title="Dataset 版本" />
             <DataTable
+              pagination
               columns={["版本", "状态", "样本", "基于", "更新时间"]}
               rows={datasets.map((item) => [
                 item.version,
@@ -21838,6 +22225,7 @@ function AiEvaluationDetail({ setModal }) {
           <section className="panel panel--table">
             <PanelTitle title="AI Package 版本" />
             <DataTable
+              pagination
               columns={["版本", "状态", "SOP", "Dataset", "更新时间"]}
               rows={models.map((item) => [
                 item.version,
@@ -21852,6 +22240,7 @@ function AiEvaluationDetail({ setModal }) {
           <section className="panel panel--table ai-history-wide">
             <PanelTitle title="适配操作记录" />
             <DataTable
+              pagination
               columns={["时间", "操作人", "动作", "对象", "结果"]}
               rows={store.data.auditLogs
                 .filter(
@@ -21880,28 +22269,254 @@ function AdminOverview() {
   const nav = useNavigate();
   const { data } = usePrototypeData();
   const [refreshedAt, setRefreshedAt] = useState("刚刚");
-  const activeArrangements = data.arrangements.filter(
+  const [todoPage, setTodoPage] = useState(1);
+  const [todoPageSize, setTodoPageSize] = useState(10);
+  const [servicePage, setServicePage] = useState(1);
+  const [servicePageSize, setServicePageSize] = useState(10);
+  const activeArrangements = (data.arrangements || []).filter(
     (item) =>
       !item.archivedRecord && ["进行中", "已暂停"].includes(item.status),
   );
-  const openIssues = data.issues.filter((item) => item.status !== "已关闭");
-  const onlineWorkstations = data.workstations.filter(
+  const currentArrangements = (data.arrangements || [])
+    .filter(
+      (item) =>
+        !item.archivedRecord &&
+        (["进行中", "已暂停", "可入场"].includes(item.status) ||
+          (item.sessions || []).some((session) => session.status === "可入场")),
+    )
+    .sort((left, right) =>
+      String(left.scheduleStart || "").localeCompare(
+        String(right.scheduleStart || ""),
+      ),
+    )
+    .slice(0, 5);
+  const openIssues = (data.issues || []).filter(
+    (item) => item.status !== "已关闭",
+  );
+  const onlineWorkstations = (data.workstations || []).filter(
     (item) => !["故障", "维护中", "停用"].includes(item.status),
   ).length;
-  const issueRows = data.issues.map((item) => [
+  const configurableSops = getConfigurableSops(data.sops);
+  const sopAiSummaries = configurableSops.map((sop) => ({
+    sop,
+    summary: getSopAiConfigurationSummary(data, sop),
+  }));
+  const workstationAiStates = sopAiSummaries.flatMap(({ sop, summary }) =>
+    (summary.runtimeStates || []).map((item) => ({ ...item, sop })),
+  );
+  const runnableAiCount = workstationAiStates.filter(
+    (item) => item.runtime.runnable,
+  ).length;
+  const pendingValidationCount = workstationAiStates.filter(
+    (item) =>
+      !["passed", "pending_revalidation"].includes(
+        item.relation.validationStatus,
+      ),
+  ).length;
+  const pendingRevalidationCount = workstationAiStates.filter(
+    (item) => item.runtime.code === "pending_revalidation",
+  ).length;
+  const notEnabledCount = workstationAiStates.filter(
+    (item) =>
+      ["passed"].includes(item.relation.validationStatus) &&
+      ["not_enabled", "disabled"].includes(item.runtime.code),
+  ).length;
+  const publishedCapabilities = (data.aiCapabilities || []).filter(
+    (item) => item.status === "已发布",
+  ).length;
+  const trainingTasks = data.aiTrainingTasks || [];
+  const trainingCount = trainingTasks.filter((item) =>
+    ACTIVE_TRAINING_STATUSES.includes(item.status),
+  ).length;
+  const pendingModelTasks = trainingTasks.filter((task) => {
+    if (task.status !== "completed") return false;
+    const capability = (data.aiCapabilities || []).find(
+      (item) => item.id === task.capabilityId,
+    );
+    return capability?.status !== "已发布";
+  });
+  const failedTrainingTasks = trainingTasks.filter(
+    (item) => item.status === "failed",
+  );
+  const sopStatusCounts = sopAiSummaries.reduce(
+    (counts, item) => {
+      const status = item.summary.status;
+      if (status === "已启用") counts.enabled += 1;
+      else if (status === "待验证") counts.pending += 1;
+      else if (status === "未配置") counts.unconfigured += 1;
+      else counts.configuring += 1;
+      return counts;
+    },
+    { enabled: 0, pending: 0, configuring: 0, unconfigured: 0 },
+  );
+  const faceRecaptureCount = (data.students || []).filter(
+    (item) => getStudentFaceStatus(item) === "待重采",
+  ).length;
+  const issueRows = (data.issues || []).map((item) => [
     item.occurredAt,
     item.type,
-    item.workstationIds.length
-      ? `${item.workstationIds.map((id) => data.workstations.find((entry) => entry.id === id)?.name || id).join("、")} / ${item.sessionIds.length}个会话`
+    (item.workstationIds || []).length
+      ? `${item.workstationIds.map((id) => data.workstations.find((entry) => entry.id === id)?.name || id).join("、")} / ${(item.sessionIds || []).length}个会话`
       : item.nodeId,
     item.status,
     item.handlingStatus,
   ]);
+  const latestBackup = [...(data.backups || [])]
+    .filter((item) => item.status === "成功")
+    .sort((left, right) =>
+      String(right.createdAt || right.time || "").localeCompare(
+        String(left.createdAt || left.time || ""),
+      ),
+    )[0];
+  const adminTodos = [
+    ...openIssues.map((issue) => ({
+      id: `issue-${issue.id}`,
+      icon: <AlertOutlined />,
+      title: issue.title || "系统异常待处理",
+      detail: (issue.workstationIds || []).length
+        ? `${issue.workstationIds.map((id) => data.workstations.find((item) => item.id === id)?.name || id).join("、")} · ${issue.handlingStatus}`
+        : issue.handlingStatus || issue.status,
+      action: "查看",
+      onClick: () => nav(`/admin/issues/${issue.id}`),
+    })),
+    ...workstationAiStates
+      .filter((item) => item.runtime.code === "pending_revalidation")
+      .map((item) => ({
+        id: `revalidation-${item.relation.id}`,
+        icon: <ReloadOutlined />,
+        title: "工位AI待重新验证",
+        detail: `${item.sop.name} · ${item.workstation?.name || "工位"}`,
+        action: "去验证",
+        onClick: () => nav(`${AI_CONFIG_PATH}/${item.sop.id}`),
+      })),
+    ...workstationAiStates
+      .filter(
+        (item) =>
+          !["passed", "pending_revalidation"].includes(
+            item.relation.validationStatus,
+          ),
+      )
+      .map((item) => ({
+        id: `validation-${item.relation.id}`,
+        icon: <SafetyCertificateOutlined />,
+        title: "工位AI待现场验证",
+        detail: `${item.sop.name} · ${item.workstation?.name || "工位"}`,
+        action: "去验证",
+        onClick: () => nav(`${AI_CONFIG_PATH}/${item.sop.id}`),
+      })),
+    ...sopAiSummaries
+      .filter(({ summary }) =>
+        ["未配置", "配置中", "配置不完整"].includes(summary.status),
+      )
+      .map(({ sop }) => ({
+        id: `config-${sop.id}`,
+        icon: <ApartmentOutlined />,
+        title: "AI能力配置未完成",
+        detail: sop.name,
+        action: "继续配置",
+        onClick: () => nav(`${AI_CONFIG_PATH}/${sop.id}`),
+      })),
+    ...failedTrainingTasks.map((task) => {
+      const capability = (data.aiCapabilities || []).find(
+        (item) => item.id === task.capabilityId,
+      );
+      return {
+        id: `training-failed-${task.id}`,
+        icon: <ExclamationCircleFilled />,
+        title: "模型训练失败",
+        detail: capability?.name || "AI能力训练任务",
+        action: "查看",
+        onClick: () => nav(`${AI_LIBRARY_PATH}/training`),
+      };
+    }),
+    ...pendingModelTasks.map((task) => {
+      const capability = (data.aiCapabilities || []).find(
+        (item) => item.id === task.capabilityId,
+      );
+      return {
+        id: `model-publish-${task.id}`,
+        icon: <CloudDownloadOutlined />,
+        title: "训练完成待发布",
+        detail: capability?.name || "AI能力模型",
+        action: "去发布",
+        onClick: () => nav(`${AI_LIBRARY_PATH}/publishing`),
+      };
+    }),
+    ...(faceRecaptureCount
+      ? [
+          {
+            id: "face-recapture",
+            icon: <UserOutlined />,
+            title: "学生人脸待重采",
+            detail: `${faceRecaptureCount} 名学生需要重新采集人脸`,
+            action: "查看学生",
+            onClick: () => nav("/admin/students"),
+          },
+        ]
+      : []),
+  ];
+  const todoPageCount = Math.max(
+    1,
+    Math.ceil(adminTodos.length / todoPageSize),
+  );
+  const pagedAdminTodos = adminTodos.slice(
+    (todoPage - 1) * todoPageSize,
+    todoPage * todoPageSize,
+  );
+  const systemServices = [
+    {
+      id: "management",
+      icon: <CheckCircleFilled />,
+      name: "中心管理服务",
+      detail: `正常 · ${refreshedAt} 更新`,
+      status: "正常",
+    },
+    {
+      id: "video",
+      icon: <CheckCircleFilled />,
+      name: "视频接入与集中存储",
+      detail: "视频服务正常",
+      status: "正常",
+    },
+    {
+      id: "edge",
+      icon: openIssues.length ? <AlertOutlined /> : <CheckCircleFilled />,
+      name: "工位边缘节点",
+      detail: openIssues[0]?.title || "当前无异常",
+      status: openIssues.length ? `${openIssues.length}项异常` : "正常",
+      warning: Boolean(openIssues.length),
+    },
+    {
+      id: "backup",
+      icon: <CheckCircleFilled />,
+      name: "自动备份",
+      detail: latestBackup
+        ? `最近成功：${latestBackup.createdAt || latestBackup.time}`
+        : "暂无成功备份记录",
+      status: latestBackup ? "正常" : "待检查",
+    },
+  ];
+  const servicePageCount = Math.max(
+    1,
+    Math.ceil(systemServices.length / servicePageSize),
+  );
+  const pagedSystemServices = systemServices.slice(
+    (servicePage - 1) * servicePageSize,
+    servicePage * servicePageSize,
+  );
+  useEffect(
+    () => setTodoPage((current) => Math.min(current, todoPageCount)),
+    [todoPageCount],
+  );
+  useEffect(
+    () => setServicePage((current) => Math.min(current, servicePageCount)),
+    [servicePageCount],
+  );
   return (
     <>
       <PageHeader
         title="运行概览"
-        subtitle="全校系统、工位与中心服务运行状态"
+        subtitle="平台运行、AI能力与工位状态总览"
         actions={
           <Button
             icon={<ReloadOutlined />}
@@ -21917,83 +22532,99 @@ function AdminOverview() {
       />
       <div className="metric-grid">
         <Metric
-          label="在线工位"
+          label="工位运行"
           value={`${onlineWorkstations}/${data.workstations.length}`}
-          hint={`${data.workstations.length - onlineWorkstations} 个工位不可用`}
+          hint={`正常 ${onlineWorkstations} · 异常 ${data.workstations.length - onlineWorkstations}`}
           icon={<DesktopOutlined />}
           tone="blue"
+          onClick={() => nav("/admin/workstations")}
         />
         <Metric
-          label="进行中安排"
+          label="当前安排"
           value={activeArrangements.length}
           hint={`练习 ${activeArrangements.filter((item) => item.type === "practice").length} · 考试 ${activeArrangements.filter((item) => item.type === "exam").length}`}
           icon={<PlayCircleFilled />}
           tone="green"
         />
         <Metric
-          label="边缘节点异常"
-          value={openIssues.length}
-          hint={
-            openIssues.length
-              ? `${openIssues[0].nodeId} 等待处置`
-              : "当前无异常"
-          }
-          icon={<LaptopOutlined />}
-          tone="amber"
+          label="AI运行就绪"
+          value={runnableAiCount}
+          hint={`待验证 ${pendingValidationCount} · 待重新验证 ${pendingRevalidationCount}`}
+          icon={<SafetyCertificateOutlined />}
+          tone="green"
         />
         <Metric
-          label="存储使用率"
-          value="68%"
-          hint="可用 12.4 TB"
-          icon={<DatabaseOutlined />}
-          tone="purple"
+          label="待处理事项"
+          value={adminTodos.length}
+          hint={`系统异常 ${openIssues.length} · AI相关 ${adminTodos.length - openIssues.length - (faceRecaptureCount ? 1 : 0)}`}
+          icon={<AlertOutlined />}
+          tone="amber"
         />
       </div>
       <div className="dashboard-grid">
-        <section className="panel">
-          <PanelTitle title="系统服务" />
-          <div className="service-list">
-            <span>
-              <CheckCircleFilled />
-              <div>
-                <b>中心管理服务</b>
-                <small>正常 · {refreshedAt} 更新</small>
-              </div>
-              <Status>正常</Status>
-            </span>
-            <span>
-              <CheckCircleFilled />
-              <div>
-                <b>视频接入与集中存储</b>
-                <small>正常 · 当前 42 路视频</small>
-              </div>
-              <Status>正常</Status>
-            </span>
-            <span className="warning">
-              <AlertOutlined />
-              <div>
-                <b>工位边缘节点</b>
-                <small>{openIssues[0]?.title || "当前无异常"}</small>
-              </div>
-              <Status>{openIssues.length}项异常</Status>
-            </span>
-            <span>
-              <CheckCircleFilled />
-              <div>
-                <b>自动备份</b>
-                <small>最近成功：2026-09-17 02:00</small>
-              </div>
-              <Status>正常</Status>
-            </span>
+        <section className="panel admin-ai-overview">
+          <PanelTitle
+            title="AI运行与建设状态"
+            action={
+              <span className="panel-title__actions">
+                <button onClick={() => nav(AI_CONFIG_PATH)}>AI能力配置</button>
+                <button onClick={() => nav(AI_LIBRARY_PATH)}>AI能力库</button>
+              </span>
+            }
+          />
+          <div className="overview-status-grid">
+            <article>
+              <strong>AI能力</strong>
+              <span>
+                已发布 <b>{publishedCapabilities}</b>
+              </span>
+              <span>
+                训练中 <b>{trainingCount}</b>
+              </span>
+              <span>
+                待发布 <b>{pendingModelTasks.length}</b>
+              </span>
+            </article>
+            <article>
+              <strong>SOP AI能力配置</strong>
+              <span>
+                已启用 <b>{sopStatusCounts.enabled}</b>
+              </span>
+              <span>
+                待验证 <b>{sopStatusCounts.pending}</b>
+              </span>
+              <span>
+                配置中 <b>{sopStatusCounts.configuring}</b>
+              </span>
+              <span>
+                未配置 <b>{sopStatusCounts.unconfigured}</b>
+              </span>
+            </article>
+            <article>
+              <strong>工位AI验证</strong>
+              <span>
+                可运行 <b>{runnableAiCount}</b>
+              </span>
+              <span>
+                待验证 <b>{pendingValidationCount}</b>
+              </span>
+              <span>
+                待重新验证 <b>{pendingRevalidationCount}</b>
+              </span>
+              <span>
+                未启用 <b>{notEnabledCount}</b>
+              </span>
+            </article>
           </div>
         </section>
         <section className="panel">
           <PanelTitle title="当前安排" />
           <div className="current-sessions">
-            {data.arrangements
-              .filter((item) => !item.archivedRecord)
-              .slice(0, 3)
-              .map((item) => (
+            {currentArrangements.map((item) => {
+              const teacher = (data.teachers || []).find(
+                (entry) => entry.id === item.teacherId,
+              );
+              return (
                 <button
                   key={item.id}
                   onClick={() =>
@@ -22003,21 +22634,86 @@ function AdminOverview() {
                   }
                 >
                   <b>{item.name}</b>
-                  <small>王老师 · {item.workstationIds.length}个工位</small>
+                  <small>
+                    {item.type === "exam" ? "考试" : "练习"}
+                    {teacher ? ` · ${teacher.name}` : ""} ·{" "}
+                    {(item.workstationIds || []).length}个工位
+                  </small>
                   <Status>{item.status}</Status>
                 </button>
-              ))}
+              );
+            })}
+            {!currentArrangements.length && (
+              <p className="hint">当前没有进行中、已暂停或可入场的安排。</p>
+            )}
           </div>
         </section>
       </div>
+      <section className="panel admin-overview-todos">
+        <PanelTitle title="待处理事项" />
+        <div className="todo-list">
+          {pagedAdminTodos.map((item) => (
+            <button key={item.id} onClick={item.onClick}>
+              {item.icon}
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.detail}</small>
+              </span>
+              <b>{item.action}</b>
+            </button>
+          ))}
+          {!adminTodos.length && (
+            <p className="hint">当前没有需要管理员处理的事项。</p>
+          )}
+        </div>
+        <TablePagination
+          total={adminTodos.length}
+          page={todoPage}
+          pageSize={todoPageSize}
+          onPageChange={setTodoPage}
+          onPageSizeChange={(nextPageSize) => {
+            setTodoPageSize(nextPageSize);
+            setTodoPage(1);
+          }}
+        />
+      </section>
       <section className="panel panel--table">
         <PanelTitle title="系统异常" />
         <DataTable
+          pagination
           columns={["发生时间", "异常类型", "影响范围", "事实状态", "人工处理"]}
           rows={issueRows}
           statusColumns={[3, 4]}
           rowKey={(_, index) => data.issues[index].id}
           onRow={(_, index) => nav(`/admin/issues/${data.issues[index].id}`)}
+        />
+      </section>
+      <section className="panel admin-system-services">
+        <PanelTitle title="系统服务" />
+        <div className="service-list">
+          {pagedSystemServices.map((service) => (
+            <span
+              className={service.warning ? "warning" : ""}
+              key={service.id}
+            >
+              {service.icon}
+              <div>
+                <b>{service.name}</b>
+                <small>{service.detail}</small>
+              </div>
+              <Status>{service.status}</Status>
+            </span>
+          ))}
+        </div>
+        <TablePagination
+          total={systemServices.length}
+          page={servicePage}
+          pageSize={servicePageSize}
+          onPageChange={setServicePage}
+          onPageSizeChange={(nextPageSize) => {
+            setServicePageSize(nextPageSize);
+            setServicePage(1);
+          }}
         />
       </section>
     </>
@@ -22077,7 +22773,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
     <div className="class-form">
       <div className="form-row">
         <label className={`field ${errors.name ? "field--error" : ""}`}>
-          班级名称 <b className="required">必填</b>
+          <FieldLabel required>班级名称</FieldLabel>
           <input
             value={form.name}
             onChange={(event) => setField("name", event.target.value)}
@@ -22086,7 +22782,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
           {fieldError("name")}
         </label>
         <label className={`field ${errors.code ? "field--error" : ""}`}>
-          班级标识 <b className="required">必填且唯一</b>
+          <FieldLabel required>班级标识</FieldLabel>
           <input
             value={form.code}
             onChange={(event) => setField("code", event.target.value)}
@@ -22097,7 +22793,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
       </div>
       <div className="form-row">
         <label className={`field ${errors.department ? "field--error" : ""}`}>
-          所属院系 <b className="required">必填</b>
+          <FieldLabel required>所属院系</FieldLabel>
           <select
             value={form.department}
             onChange={(event) => setField("department", event.target.value)}
@@ -22109,7 +22805,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
           {fieldError("department")}
         </label>
         <label className={`field ${errors.major ? "field--error" : ""}`}>
-          所属专业 <b className="required">必填</b>
+          <FieldLabel required>所属专业</FieldLabel>
           <select
             value={form.major}
             onChange={(event) => setField("major", event.target.value)}
@@ -22123,7 +22819,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
       </div>
       <div className="form-row">
         <label className={`field ${errors.entryYear ? "field--error" : ""}`}>
-          入学年份 <b className="required">必填</b>
+          <FieldLabel required>入学年份</FieldLabel>
           <input
             inputMode="numeric"
             value={form.entryYear}
@@ -22132,7 +22828,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
           {fieldError("entryYear")}
         </label>
         <label className={`field ${errors.duration ? "field--error" : ""}`}>
-          学制 <b className="required">必填</b>
+          <FieldLabel required>学制</FieldLabel>
           <select
             value={form.duration}
             onChange={(event) => setField("duration", event.target.value)}
@@ -22145,7 +22841,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
         </label>
       </div>
       <label className="field">
-        班主任 / 负责教师 <span className="optional">选填</span>
+        <FieldLabel>班主任 / 负责教师</FieldLabel>
         <input
           value={form.headTeacher}
           onChange={(event) => setField("headTeacher", event.target.value)}
@@ -22153,7 +22849,7 @@ const ClassForm = forwardRef(function ClassForm({ initial }, ref) {
         />
       </label>
       <label className="field">
-        备注 <span className="optional">选填</span>
+        <FieldLabel>备注</FieldLabel>
         <textarea
           maxLength={200}
           value={form.notes}
@@ -22226,6 +22922,7 @@ function ClassManagement({ setModal }) {
           }}
         />
         <DataTable
+          pagination
           columns={[
             "班级名称",
             "班级标识",
@@ -22248,10 +22945,6 @@ function ClassManagement({ setModal }) {
             if (target) nav(`/admin/classes/${target.id}`);
           }}
         />
-        <div className="table-footer-note">
-          共 {filtered.length}{" "}
-          条；新建和编辑结果会保存在当前浏览器的演示数据中。
-        </div>
       </section>
     </>
   );
@@ -22365,6 +23058,7 @@ function ClassDetail({ setModal }) {
           title={`班级学生（已加载示例 ${studentsInClass.length} / 班级人数 ${item.studentCount}）`}
         />
         <DataTable
+          pagination
           columns={["学生", "学号", "账号状态", "人脸资料"]}
           rows={studentsInClass.map((student) => [
             student.name,
@@ -22424,9 +23118,7 @@ function FacePhotoPicker({
         )}
       </div>
       <div className="face-photo-picker__body">
-        <strong>
-          人脸照片 <span className="optional">选填</span>
-        </strong>
+        <strong>人脸照片</strong>
         <p>支持 JPG、PNG、WebP，原图不超过 5MB；保存前自动压缩至 512px 内。</p>
         <label
           className={`button button--default ${busy ? "is-disabled" : ""}`}
@@ -22628,7 +23320,12 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       <div className="class-form">
         <div className="form-row">
           <label className={`field ${errors.name ? "field--error" : ""}`}>
-            教师姓名 <b className="required">必填</b>
+            <span className="field__label">
+              <b className="field__required" aria-hidden="true">
+                *
+              </b>
+              教师姓名
+            </span>
             <input
               value={form.name}
               onChange={(e) => setField("name", e.target.value)}
@@ -22637,7 +23334,12 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             {error("name")}
           </label>
           <label className={`field ${errors.employeeNo ? "field--error" : ""}`}>
-            教师工号 <b className="required">必填且唯一</b>
+            <span className="field__label">
+              <b className="field__required" aria-hidden="true">
+                *
+              </b>
+              教师工号
+            </span>
             <input
               value={form.employeeNo}
               onChange={(e) => setField("employeeNo", e.target.value)}
@@ -22648,7 +23350,12 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         </div>
         <div className="form-row">
           <label className={`field ${errors.account ? "field--error" : ""}`}>
-            登录账号 <b className="required">必填且唯一</b>
+            <span className="field__label">
+              <b className="field__required" aria-hidden="true">
+                *
+              </b>
+              登录账号
+            </span>
             <input
               value={form.account}
               onChange={(e) => setField("account", e.target.value)}
@@ -22657,7 +23364,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             {error("account")}
           </label>
           <label className={`field ${errors.phone ? "field--error" : ""}`}>
-            联系电话 <span className="optional">选填</span>
+            <span className="field__label">联系电话</span>
             <input
               value={form.phone}
               onChange={(e) => setField("phone", e.target.value)}
@@ -22668,7 +23375,12 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         </div>
         <div className="form-row">
           <label className="field">
-            所属院系 <b className="required">必填</b>
+            <span className="field__label">
+              <b className="field__required" aria-hidden="true">
+                *
+              </b>
+              所属院系
+            </span>
             <select
               value={form.department}
               onChange={(e) => setField("department", e.target.value)}
@@ -22679,7 +23391,12 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             </select>
           </label>
           <label className="field">
-            所属专业 <b className="required">必填</b>
+            <span className="field__label">
+              <b className="field__required" aria-hidden="true">
+                *
+              </b>
+              所属专业
+            </span>
             <select
               value={form.major}
               onChange={(e) => setField("major", e.target.value)}
@@ -22691,7 +23408,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           </label>
         </div>
         <label className="field">
-          备注 <span className="optional">选填</span>
+          <span className="field__label">备注</span>
           <textarea
             maxLength={200}
             value={form.notes}
@@ -22708,7 +23425,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       <div className="class-form">
         <div className="form-row">
           <label className={`field ${errors.name ? "field--error" : ""}`}>
-            学生姓名 <b className="required">必填</b>
+            <FieldLabel required>学生姓名</FieldLabel>
             <input
               value={form.name}
               onChange={(e) => setField("name", e.target.value)}
@@ -22717,7 +23434,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             {error("name")}
           </label>
           <label className={`field ${errors.no ? "field--error" : ""}`}>
-            学号 <b className="required">必填且唯一</b>
+            <FieldLabel required>学号</FieldLabel>
             <input
               inputMode="numeric"
               value={form.no}
@@ -22729,7 +23446,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         </div>
         <div className="form-row">
           <label className={`field ${errors.classId ? "field--error" : ""}`}>
-            所属班级 <b className="required">必填</b>
+            <FieldLabel required>所属班级</FieldLabel>
             <select
               value={form.classId}
               onChange={(e) => setField("classId", e.target.value)}
@@ -22748,7 +23465,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             {error("classId")}
           </label>
           <label className="field">
-            性别 <span className="optional">选填</span>
+            <FieldLabel>性别</FieldLabel>
             <select
               value={form.gender}
               onChange={(e) => setField("gender", e.target.value)}
@@ -22763,7 +23480,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           <label
             className={`field ${errors.admissionYear ? "field--error" : ""}`}
           >
-            入学年份 <b className="required">必填</b>
+            <FieldLabel required>入学年份</FieldLabel>
             <input
               inputMode="numeric"
               value={form.admissionYear}
@@ -22792,7 +23509,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         />
         {error("facePhotoDataUrl")}
         <label className="field">
-          备注 <span className="optional">选填</span>
+          <FieldLabel>备注</FieldLabel>
           <textarea
             maxLength={200}
             value={form.notes}
@@ -22809,7 +23526,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       <div className="class-form">
         <div className="form-row">
           <label className={`field ${errors.name ? "field--error" : ""}`}>
-            工位名称 <b className="required">必填</b>
+            <FieldLabel required>工位名称</FieldLabel>
             <input
               value={form.name}
               onChange={(e) => setField("name", e.target.value)}
@@ -22818,7 +23535,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             {error("name")}
           </label>
           <label className={`field ${errors.code ? "field--error" : ""}`}>
-            工位标识 <b className="required">必填且唯一</b>
+            <FieldLabel required>工位标识</FieldLabel>
             <input
               value={form.code}
               onChange={(e) => setField("code", e.target.value)}
@@ -22829,7 +23546,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         </div>
         <div className="form-row">
           <label className={`field ${errors.location ? "field--error" : ""}`}>
-            实训室位置 <b className="required">必填</b>
+            <FieldLabel required>实训室位置</FieldLabel>
             <input
               value={form.location}
               onChange={(e) => setField("location", e.target.value)}
@@ -22840,7 +23557,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           <label
             className={`field ${errors.supportedProject ? "field--error" : ""}`}
           >
-            支持项目 <b className="required">必填</b>
+            <FieldLabel required>支持项目</FieldLabel>
             <input
               value={form.supportedProject}
               onChange={(e) => setField("supportedProject", e.target.value)}
@@ -22849,7 +23566,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           </label>
         </div>
         <label className="field">
-          备注 <span className="optional">选填</span>
+          <FieldLabel>备注</FieldLabel>
           <textarea
             maxLength={200}
             value={form.notes}
@@ -22865,7 +23582,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
     <div className="class-form">
       <div className="form-row">
         <label className={`field ${errors.name ? "field--error" : ""}`}>
-          设备标识 <b className="required">必填且唯一</b>
+          <FieldLabel required>设备标识</FieldLabel>
           <input
             value={form.name}
             onChange={(e) => setField("name", e.target.value)}
@@ -22874,7 +23591,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           {error("name")}
         </label>
         <label className={`field ${errors.serial ? "field--error" : ""}`}>
-          设备序列号 <b className="required">必填且唯一</b>
+          <FieldLabel required>设备序列号</FieldLabel>
           <input
             value={form.serial}
             onChange={(e) => setField("serial", e.target.value)}
@@ -22885,7 +23602,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       </div>
       <div className="form-row">
         <label className="field">
-          设备类型 <b className="required">必填</b>
+          <FieldLabel required>设备类型</FieldLabel>
           <select
             value={form.type}
             onChange={(e) => setField("type", e.target.value)}
@@ -22896,7 +23613,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           </select>
         </label>
         <label className="field">
-          绑定工位 <span className="optional">可暂不绑定</span>
+          <FieldLabel>绑定工位</FieldLabel>
           <select
             value={form.workstationId}
             onChange={(e) => setField("workstationId", e.target.value)}
@@ -22912,8 +23629,11 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       </div>
       <div className="form-row">
         <label className={`field ${errors.address ? "field--error" : ""}`}>
-          {form.type.includes("摄像头") ? "视频流地址" : "连接地址 / 接入方式"}{" "}
-          <b className="required">必填</b>
+          <FieldLabel required>
+            {form.type.includes("摄像头")
+              ? "视频流地址"
+              : "连接地址 / 接入方式"}
+          </FieldLabel>
           <input
             value={form.address}
             onChange={(e) => setField("address", e.target.value)}
@@ -22924,7 +23644,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           {error("address")}
         </label>
         <label className={`field ${errors.version ? "field--error" : ""}`}>
-          当前版本 <b className="required">必填</b>
+          <FieldLabel required>当前版本</FieldLabel>
           <input
             value={form.version}
             onChange={(e) => setField("version", e.target.value)}
@@ -22934,7 +23654,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         </label>
       </div>
       <label className="field">
-        备注 <span className="optional">选填</span>
+        <FieldLabel>备注</FieldLabel>
         <textarea
           maxLength={200}
           value={form.notes}
@@ -23024,7 +23744,10 @@ const StudentImportForm = forwardRef(function StudentImportForm(_, ref) {
         </label>
       </div>
       <label className="field">
-        导入内容 <b className="required">每行：姓名,学号,班级标识</b>
+        <span className="field__label">
+          导入内容
+          <small className="field__label-hint">每行：姓名,学号,班级标识</small>
+        </span>
         <textarea
           rows={5}
           value={raw}
@@ -23037,6 +23760,7 @@ const StudentImportForm = forwardRef(function StudentImportForm(_, ref) {
       <section className="import-preview">
         <PanelTitle title={`导入预览 · ${rows.length} 行`} />
         <DataTable
+          pagination
           columns={["姓名", "学号", "班级标识", "校验结果"]}
           rows={rows.map((row) => [
             row.name || "--",
@@ -23241,24 +23965,22 @@ function AdminList({ type, setModal }) {
             setStatusFilter("全部状态");
             setFaceFilter("全部人脸状态");
           }}
-        />
-        {type === "students" && (
-          <div className="student-face-filter">
-            <label>
-              人脸资料状态
-              <select
-                value={faceFilter}
-                onChange={(event) => setFaceFilter(event.target.value)}
-              >
-                <option>全部人脸状态</option>
-                <option>已采集</option>
-                <option>未采集</option>
-                <option>待重采</option>
-              </select>
-            </label>
-          </div>
-        )}
+        >
+          {type === "students" && (
+            <select
+              aria-label="筛选人脸资料状态"
+              value={faceFilter}
+              onChange={(event) => setFaceFilter(event.target.value)}
+            >
+              <option>全部人脸状态</option>
+              <option>已采集</option>
+              <option>未采集</option>
+              <option>待重采</option>
+            </select>
+          )}
+        </Toolbar>
         <DataTable
+          pagination
           columns={config.columns}
           rows={filtered.map(config.row)}
           rowKey={(row) => row[1]}
@@ -23272,9 +23994,6 @@ function AdminList({ type, setModal }) {
             if (target) nav(`/admin/${type}/${target.id}`);
           }}
         />
-        <div className="table-footer-note">
-          共 {filtered.length} 条；保存结果会同步到详情、关联对象和操作日志。
-        </div>
       </section>
     </>
   );
@@ -23709,7 +24428,7 @@ const WorkstationAiBaseConfigForm = forwardRef(
       <div className="workstation-ai-form">
         <div className="form-row">
           <label className="field">
-            主摄像头 <b className="required">AI运行必需</b>
+            <FieldLabel required>主摄像头</FieldLabel>
             <select
               value={form.primaryCameraId}
               onChange={(event) =>
@@ -23732,7 +24451,7 @@ const WorkstationAiBaseConfigForm = forwardRef(
             </select>
           </label>
           <label className="field">
-            备用摄像头 <span className="optional">选填</span>
+            <FieldLabel>备用摄像头</FieldLabel>
             <select
               value={form.fallbackCameraId}
               onChange={(event) =>
@@ -23754,7 +24473,7 @@ const WorkstationAiBaseConfigForm = forwardRef(
           </label>
         </div>
         <label className="field">
-          边缘设备 <b className="required">AI运行必需</b>
+          <FieldLabel required>边缘设备</FieldLabel>
           <select
             value={form.edgeDeviceId}
             onChange={(event) =>
@@ -24391,6 +25110,7 @@ function AdminDetail({ type, setModal }) {
         <section className="panel panel--table">
           <PanelTitle title="负责班级与教学范围" />
           <DataTable
+            pagination
             columns={["班级", "专业", "学生人数", "状态"]}
             rows={data.classes
               .filter((candidate) => candidate.headTeacher === item.name)
@@ -24408,6 +25128,7 @@ function AdminDetail({ type, setModal }) {
         <section className="panel panel--table">
           <PanelTitle title="最近参与记录" />
           <DataTable
+            pagination
             columns={["时间", "类型", "项目", "结果"]}
             rows={[
               ["2026-09-16", "考试", "新能源汽车高压安全操作", "待发布"],
@@ -24420,6 +25141,7 @@ function AdminDetail({ type, setModal }) {
         <section className="panel panel--table">
           <PanelTitle title="已绑定设备" />
           <DataTable
+            pagination
             columns={[
               "设备",
               "序列号",
@@ -24461,9 +25183,10 @@ function AdminDetail({ type, setModal }) {
           </p>
         </section>
       )}
-      <section className="panel panel--table">
+      <section className="panel panel--table admin-detail-audit-table">
         <PanelTitle title="最近审计记录" />
         <DataTable
+          pagination
           columns={["时间", "操作者", "操作", "结果"]}
           rows={relatedLogs.map((log) => [
             log.time,
@@ -24568,6 +25291,7 @@ function AdminRecords({ exam = false, setModal }) {
           }}
         />
         <DataTable
+          pagination
           columns={["安排名称", "负责教师", "SOP", "人数", "状态", "日期"]}
           rows={filteredRecords.map((row) => row.slice(0, 6))}
           onView={(row) => {
@@ -24577,10 +25301,6 @@ function AdminRecords({ exam = false, setModal }) {
           }}
         />
       </section>
-      <p className="readonly-note">
-        <EyeOutlined />{" "}
-        当前为管理员只读视图，不提供开始、暂停、改分、发布或复位操作。
-      </p>
     </>
   );
 }
@@ -24628,7 +25348,7 @@ function SessionDiagnosticPanel({ record, store }) {
   }, [selectedSession?.id, selectedStep?.id]);
   if (!selectedSession || !selectedStep)
     return (
-      <section className="panel">
+      <section className="panel diagnostic-panel">
         <PanelTitle title="实施诊断" />
         <p className="hint">当前安排尚未产生可诊断的 Session。</p>
       </section>
@@ -24921,9 +25641,10 @@ function AdminRecordDetail({ exam = false }) {
       </div>
       <ArrangementResultMetrics arrangement={record} exam={exam} />
       <WorkstationReleasePanel arrangement={record} store={store} />
-      <section className="panel panel--table">
+      <section className="panel panel--table admin-student-results">
         <PanelTitle title="学生结果（只读）" />
         <DataTable
+          pagination
           columns={[
             "学生",
             "学号",
@@ -25186,6 +25907,7 @@ function SettingsPage({ setModal }) {
 function BackupPage({ setModal }) {
   const store = usePrototypeData();
   const { backups, exportJobs } = store.data;
+  const [activeRecordTab, setActiveRecordTab] = useState("backups");
   const latest = backups.find((item) => item.status === "成功");
   const downloadManifest = (backup) => {
     const fileName = `${backup.id}-校验清单.json`;
@@ -25219,7 +25941,7 @@ function BackupPage({ setModal }) {
       title: `备份详情 · ${backup.createdAt}`,
       size: "large",
       content: (
-        <div className="definition-list">
+        <div className="definition-list backup-detail-grid">
           <div>
             <small>范围</small>
             <strong>{backup.scope}</strong>
@@ -25279,43 +26001,79 @@ function BackupPage({ setModal }) {
           查看与下载
         </Button>
       </div>
-      <section className="panel panel--table">
-        <PanelTitle title="备份记录" />
-        <DataTable
-          columns={["备份时间", "范围", "状态", "大小", "校验结果"]}
-          rows={backups.map((item) => [
-            item.createdAt,
-            item.scope,
-            item.status,
-            item.size,
-            item.status === "失败" ? item.failureReason : item.verification,
-          ])}
-          statusColumns={[2, 4]}
-          rowKey={(_, index) => backups[index].id}
-          onView={(_, index) => openBackup(backups[index])}
-        />
-      </section>
-      <section className="panel">
-        <PanelTitle title="下载记录" />
-        <div className="export-list">
-          {exportJobs
-            .filter((item) => item.scope === "备份校验清单")
-            .map((item) => (
-              <article key={item.id}>
-                <FileTextOutlined />
-                <div>
-                  <strong>{item.fileName}</strong>
-                  <small>
-                    {item.createdAt} · {item.scoreVersion}
-                  </small>
-                </div>
-                <Status>{item.status}</Status>
-              </article>
-            ))}
-          {!exportJobs.some((item) => item.scope === "备份校验清单") && (
-            <p className="hint">尚未下载备份校验清单。</p>
-          )}
+      <section className="panel panel--table backup-records-panel">
+        <div
+          className="tabs backup-record-tabs"
+          role="tablist"
+          aria-label="备份与下载记录"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRecordTab === "backups"}
+            aria-controls="backup-records-pane"
+            className={activeRecordTab === "backups" ? "active" : ""}
+            onClick={() => setActiveRecordTab("backups")}
+          >
+            备份记录
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRecordTab === "downloads"}
+            aria-controls="backup-downloads-pane"
+            className={activeRecordTab === "downloads" ? "active" : ""}
+            onClick={() => setActiveRecordTab("downloads")}
+          >
+            下载记录
+          </button>
         </div>
+        {activeRecordTab === "backups" ? (
+          <div id="backup-records-pane" role="tabpanel">
+            <DataTable
+              pagination
+              columns={["备份时间", "范围", "状态", "大小", "校验结果"]}
+              rows={backups.map((item) => [
+                item.createdAt,
+                item.scope,
+                item.status,
+                item.size,
+                item.status === "失败"
+                  ? item.failureReason
+                  : item.verification,
+              ])}
+              statusColumns={[2, 4]}
+              rowKey={(_, index) => backups[index].id}
+              onView={(_, index) => openBackup(backups[index])}
+            />
+          </div>
+        ) : (
+          <div
+            id="backup-downloads-pane"
+            className="backup-downloads-pane"
+            role="tabpanel"
+          >
+            <div className="export-list">
+              {exportJobs
+                .filter((item) => item.scope === "备份校验清单")
+                .map((item) => (
+                  <article key={item.id}>
+                    <FileTextOutlined />
+                    <div>
+                      <strong>{item.fileName}</strong>
+                      <small>
+                        {item.createdAt} · {item.scoreVersion}
+                      </small>
+                    </div>
+                    <Status>{item.status}</Status>
+                  </article>
+                ))}
+              {!exportJobs.some(
+                (item) => item.scope === "备份校验清单",
+              ) && <p className="hint">尚未下载备份校验清单。</p>}
+            </div>
+          </div>
+        )}
       </section>
     </>
   );
@@ -25403,6 +26161,7 @@ function Logs({ setModal }) {
           }}
         />
         <DataTable
+          pagination
           columns={["时间", "操作者", "角色", "操作", "对象", "结果"]}
           rows={filteredRows}
           statusColumns={[5]}
@@ -25432,12 +26191,12 @@ function Logs({ setModal }) {
                       <strong>{item.target}</strong>
                     </div>
                     <div>
-                      <small>处理结果</small>
-                      <Status>{item.result}</Status>
-                    </div>
-                    <div>
                       <small>业务版本</small>
                       <strong>{item.businessVersion || "当前有效版本"}</strong>
+                    </div>
+                    <div>
+                      <small>处理结果</small>
+                      <Status>{item.result}</Status>
                     </div>
                     <div>
                       <small>原因</small>

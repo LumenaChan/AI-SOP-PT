@@ -2,7 +2,7 @@
 
 set -u
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="/Users/chenxuguang/Documents/ChatGPT/AI SOP 实训评价/xingchen-prototype"
 NODE_BIN="/Users/chenxuguang/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
 VITE_ENTRY="$PROJECT_DIR/node_modules/vite/bin/vite.js"
 PORT="5173"
