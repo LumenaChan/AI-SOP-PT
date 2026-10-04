@@ -1,7 +1,9 @@
+import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+
 const WAITING_SESSION_STATUSES = new Set(["待开始", "可入场"]);
 
 function displayTime(value) {
-  const text = String(value || "");
+  const text = ensureDateTimeSeconds(String(value || ""));
   if (!text) return "时间未知";
   if (text.includes("T")) {
     const instant = new Date(text);
@@ -10,10 +12,11 @@ function displayTime(value) {
         timeZone: "Asia/Shanghai",
         hour: "2-digit",
         minute: "2-digit",
+        second: "2-digit",
         hour12: false,
       }).format(instant);
   }
-  const dateTimeMatch = text.match(/(?:T|\s)(\d{2}:\d{2})/);
+  const dateTimeMatch = text.match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/);
   if (dateTimeMatch) return dateTimeMatch[1];
   const shortTimeMatch = text.match(/\b(\d{2}:\d{2})\b/);
   return shortTimeMatch?.[1] || text;

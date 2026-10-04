@@ -42,6 +42,7 @@ import {
   HistoryOutlined,
   HomeOutlined,
   LaptopOutlined,
+  LeftOutlined,
   LockOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -51,6 +52,7 @@ import {
   PlusOutlined,
   ProductOutlined,
   ReloadOutlined,
+  RightOutlined,
   SafetyCertificateOutlined,
   ScissorOutlined,
   SearchOutlined,
@@ -67,6 +69,8 @@ import {
   PrototypeDataProvider,
   usePrototypeData,
 } from "./prototypeData.jsx";
+import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+import DataScreen from "./DataScreen.jsx";
 import {
   buildStudentIdentityVerification,
   clearStudentIdentitySession,
@@ -664,6 +668,31 @@ function PanelTitle({ title, action }) {
     </header>
   );
 }
+
+function DashboardCardPager({ page, totalPages, onChange }) {
+  return (
+    <span className="dashboard-card-pager">
+      <button
+        type="button"
+        aria-label="上一页"
+        title="上一页"
+        disabled={page === 0}
+        onClick={() => onChange(page - 1)}
+      >
+        <LeftOutlined />
+      </button>
+      <button
+        type="button"
+        aria-label="下一页"
+        title="下一页"
+        disabled={page >= totalPages - 1}
+        onClick={() => onChange(page + 1)}
+      >
+        <RightOutlined />
+      </button>
+    </span>
+  );
+}
 function FieldLabel({ children, required = false }) {
   return (
     <span className="field__label">
@@ -851,7 +880,6 @@ function Shell({ children, modal, setModal, toast, setToast }) {
   const [collapsed, setCollapsed] = useState(
       () => typeof window !== "undefined" && window.innerWidth < 1180,
     ),
-    [wide, setWide] = useState(false),
     [aiLibraryOpen, setAiLibraryOpen] = useState(true),
     [roleMenuOpen, setRoleMenuOpen] = useState(false),
     [notificationOpen, setNotificationOpen] = useState(false),
@@ -904,7 +932,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
   };
   return (
     <div
-      className={`app ${collapsed ? "app--collapsed" : ""} ${wide ? "app--wide" : ""}`}
+      className={`app ${collapsed ? "app--collapsed" : ""}`}
     >
       <aside className="sidebar">
         <button
@@ -1027,12 +1055,14 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             <span className="clock" title="当前系统时间">
               {clockText}
             </span>
-            <button
-              className={`screen-mode ${wide ? "active" : ""}`}
-              onClick={() => setWide(!wide)}
+            <a
+              className="screen-mode"
+              href={`/data-screen?scope=${admin ? "school" : "teacher"}`}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              <DesktopOutlined /> 大屏模式
-            </button>
+              <DesktopOutlined /> 数据大屏
+            </a>
             <div className="notification-wrap">
               <button
                 className="notification"
@@ -1669,7 +1699,9 @@ function StudentCurrentPage() {
     .map((task) => getStudentTaskDetails(store.data, task))
     .filter(Boolean);
   const formatSchedule = (value) =>
-    value ? String(value).replace("T", " ").slice(0, 16) : "以教师现场安排为准";
+    value
+      ? ensureDateTimeSeconds(String(value)).replace("T", " ")
+      : "以教师现场安排为准";
   return (
     <section className="student-current-page">
       <header className="student-current-heading">
@@ -1805,6 +1837,9 @@ function Dashboard() {
   const nav = useNavigate();
   const store = usePrototypeData();
   const { data } = store;
+  const [schedulePage, setSchedulePage] = useState(0);
+  const [todoPage, setTodoPage] = useState(0);
+  const [errorPage, setErrorPage] = useState(0);
   const activeArrangements = data.arrangements.filter(
     (item) => !item.archivedRecord,
   );
@@ -1823,6 +1858,81 @@ function Dashboard() {
         String(right.scheduleStart || ""),
       ),
     );
+  const demoTodayArrangements = [
+    {
+      id: "dashboard-demo-practice",
+      type: "practice",
+      name: "新能源汽车高压安全操作练习",
+      scheduleStart: `${todayKey}T09:00:00`,
+      status: "进行中",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 28,
+      demoOnly: true,
+    },
+    {
+      id: "dashboard-demo-practice-morning",
+      type: "practice",
+      name: "绝缘防护用品规范穿戴练习",
+      scheduleStart: `${todayKey}T10:30:00`,
+      status: "待开始",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 26,
+      demoOnly: true,
+    },
+    {
+      id: "dashboard-demo-practice-noon",
+      type: "practice",
+      name: "高压作业区域安全布置练习",
+      scheduleStart: `${todayKey}T13:30:00`,
+      status: "待开始",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 25,
+      demoOnly: true,
+    },
+    {
+      id: "dashboard-demo-exam",
+      type: "exam",
+      name: "新能源汽车高压安全操作阶段考试",
+      scheduleStart: `${todayKey}T14:30:00`,
+      status: "待开始",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 28,
+      demoOnly: true,
+    },
+    {
+      id: "dashboard-demo-practice-afternoon",
+      type: "practice",
+      name: "高压电池包断电强化练习",
+      scheduleStart: `${todayKey}T16:00:00`,
+      status: "待开始",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 24,
+      demoOnly: true,
+    },
+    {
+      id: "dashboard-demo-exam-afternoon",
+      type: "exam",
+      name: "高压作业安全规范随堂测试",
+      scheduleStart: `${todayKey}T17:30:00`,
+      status: "待开始",
+      sopName: "新能源汽车高压安全操作",
+      studentCount: 26,
+      demoOnly: true,
+    },
+  ];
+  const displayedTodayArrangements = todayArrangements.length
+    ? todayArrangements
+    : demoTodayArrangements;
+  const schedulePageSize = 3;
+  const schedulePageCount = Math.max(
+    1,
+    Math.ceil(displayedTodayArrangements.length / schedulePageSize),
+  );
+  const safeSchedulePage = Math.min(schedulePage, schedulePageCount - 1);
+  const visibleTodayArrangements = displayedTodayArrangements.slice(
+    safeSchedulePage * schedulePageSize,
+    (safeSchedulePage + 1) * schedulePageSize,
+  );
   const runningArrangements = activeArrangements.filter((item) =>
     ["进行中", "已暂停"].includes(item.status),
   );
@@ -1916,8 +2026,7 @@ function Dashboard() {
       return counts;
     }, {});
   const errorStats = Object.entries(errorCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
+    .sort((a, b) => b[1] - a[1]);
   const openArrangement = (item) => {
     const destination = arrangementDestination(item);
     const base = item.type === "exam" ? "exams" : "practices";
@@ -1981,6 +2090,81 @@ function Dashboard() {
       onClick: () => nav(`/teacher/exams/${item.id}/results`),
     })),
   ];
+  const demoTeacherTodos = [
+    {
+      id: "dashboard-demo-evidence",
+      icon: <AlertOutlined />,
+      title: "步骤证据待补充",
+      detail: "李思雨 · 高压电池包断电强化练习",
+      action: "处理",
+      onClick: () => nav("/teacher/practices"),
+    },
+    {
+      id: "dashboard-demo-help",
+      icon: <BellOutlined />,
+      title: "练习求助",
+      detail: "3号工位 · 陈宇 · 操作步骤需要指导",
+      action: "查看",
+      onClick: () => nav("/teacher/practices"),
+    },
+    {
+      id: "dashboard-demo-safety",
+      icon: <SafetyCertificateOutlined />,
+      title: "安全事件待处理",
+      detail: "5号工位 · 绝缘手套佩戴状态待确认",
+      action: "处理",
+      onClick: () => nav("/teacher/practices"),
+    },
+    {
+      id: "dashboard-demo-publish",
+      icon: <FileDoneOutlined />,
+      title: "考试待发布",
+      detail: "高压电池包检修阶段考试 · 2 份成绩",
+      action: "查看",
+      onClick: () => nav("/teacher/exams"),
+    },
+  ];
+  const displayedTeacherTodos = [...teacherTodos];
+  demoTeacherTodos.forEach((item) => {
+    if (displayedTeacherTodos.length < 6) displayedTeacherTodos.push(item);
+  });
+  const todoPageSize = 3;
+  const todoPageCount = Math.max(
+    1,
+    Math.ceil(displayedTeacherTodos.length / todoPageSize),
+  );
+  const safeTodoPage = Math.min(todoPage, todoPageCount - 1);
+  const visibleTeacherTodos = displayedTeacherTodos.slice(
+    safeTodoPage * todoPageSize,
+    (safeTodoPage + 1) * todoPageSize,
+  );
+  const demoErrorStats = [
+    ["绝缘手套气密性检查", 4],
+    ["高压互锁连接确认", 3],
+    ["维修开关复位遗漏", 2],
+    ["验电器使用前自检", 2],
+    ["高压线束端口防护", 1],
+    ["作业区域警示设置", 1],
+  ];
+  const displayedErrorStats = [...errorStats];
+  demoErrorStats.forEach((item) => {
+    if (
+      displayedErrorStats.length < 6 &&
+      !displayedErrorStats.some(([name]) => name === item[0])
+    ) {
+      displayedErrorStats.push(item);
+    }
+  });
+  const errorPageSize = 3;
+  const errorPageCount = Math.max(
+    1,
+    Math.ceil(displayedErrorStats.length / errorPageSize),
+  );
+  const safeErrorPage = Math.min(errorPage, errorPageCount - 1);
+  const visibleErrorStats = displayedErrorStats.slice(
+    safeErrorPage * errorPageSize,
+    (safeErrorPage + 1) * errorPageSize,
+  );
   return (
     <>
       <PageHeader
@@ -2003,8 +2187,8 @@ function Dashboard() {
       <div className="metric-grid">
         <Metric
           label="今日安排"
-          value={todayArrangements.length}
-          hint={`练习 ${todayArrangements.filter((item) => item.type === "practice").length} · 考试 ${todayArrangements.filter((item) => item.type === "exam").length}`}
+          value={displayedTodayArrangements.length}
+          hint={`练习 ${displayedTodayArrangements.filter((item) => item.type === "practice").length} · 考试 ${displayedTodayArrangements.filter((item) => item.type === "exam").length}`}
           icon={<EditOutlined />}
           tone="blue"
         />
@@ -2039,44 +2223,65 @@ function Dashboard() {
           <PanelTitle
             title="今日安排"
             action={
-              <span className="panel-title__actions">
-                <button onClick={() => nav("/teacher/practices")}>
-                  练习管理
-                </button>
-                <button onClick={() => nav("/teacher/exams")}>考试管理</button>
-              </span>
+              <DashboardCardPager
+                page={safeSchedulePage}
+                totalPages={schedulePageCount}
+                onChange={setSchedulePage}
+              />
             }
           />
           <div className="schedule-list">
-            {todayArrangements.map((item) => {
+            {visibleTodayArrangements.map((item) => {
               const sop = data.sops.find((entry) => entry.id === item.sopId);
-              return (
-                <button key={item.id} onClick={() => openArrangement(item)}>
+              const scheduleContent = (
+                <>
                   <span className="schedule-time">
-                    {item.scheduleStart?.slice(11, 16) || "待定"}
+                    {item.scheduleStart
+                      ? ensureDateTimeSeconds(item.scheduleStart).slice(11, 19)
+                      : "待定"}
                   </span>
                   <span>
                     <strong>{item.name}</strong>
                     <small>
                       {item.type === "exam" ? "考试" : "练习"} ·{" "}
-                      {sop?.name || "SOP 已失效"} ·{" "}
-                      {(item.studentIds || []).length} 人
+                      {item.sopName || sop?.name || "SOP 已失效"} ·{" "}
+                      {item.studentCount ?? (item.studentIds || []).length} 人
                     </small>
                   </span>
                   <Status>{item.status}</Status>
-                  <b>进入 →</b>
+                  {!item.demoOnly && <b>进入 →</b>}
+                </>
+              );
+
+              if (item.demoOnly) {
+                return (
+                  <article key={item.id} className="schedule-list__demo">
+                    {scheduleContent}
+                  </article>
+                );
+              }
+
+              return (
+                <button key={item.id} onClick={() => openArrangement(item)}>
+                  {scheduleContent}
                 </button>
               );
             })}
-            {!todayArrangements.length && (
-              <p className="hint">今天暂无练习或考试安排。</p>
-            )}
           </div>
         </section>
         <section className="panel teacher-todo-card">
-          <PanelTitle title="待办事项" />
+          <PanelTitle
+            title="待办事项"
+            action={
+              <DashboardCardPager
+                page={safeTodoPage}
+                totalPages={todoPageCount}
+                onChange={setTodoPage}
+              />
+            }
+          />
           <div className="todo-list">
-            {teacherTodos.slice(0, 5).map((item) => (
+            {visibleTeacherTodos.map((item) => (
               <button key={item.id} onClick={item.onClick}>
                 {item.icon}
                 <span>
@@ -2086,7 +2291,7 @@ function Dashboard() {
                 <b>{item.action}</b>
               </button>
             ))}
-            {!teacherTodos.length && (
+            {!displayedTeacherTodos.length && (
               <p className="hint">当前没有需要立即处理的事项。</p>
             )}
           </div>
@@ -2111,16 +2316,25 @@ function Dashboard() {
           </div>
         </section>
         <section className="panel teacher-error-card">
-          <PanelTitle title="高频错误" />
+          <PanelTitle
+            title="高频错误"
+            action={
+              <DashboardCardPager
+                page={safeErrorPage}
+                totalPages={errorPageCount}
+                onChange={setErrorPage}
+              />
+            }
+          />
           <div className="rank-list">
-            {errorStats.map(([name, count], index) => (
+            {visibleErrorStats.map(([name, count], index) => (
               <span key={name}>
-                <b>{index + 1}</b>
+                <b>{safeErrorPage * errorPageSize + index + 1}</b>
                 {name}
                 <em>{count} 条记录</em>
               </span>
             ))}
-            {!errorStats.length && (
+            {!displayedErrorStats.length && (
               <p className="hint">当前没有有效扣分记录。</p>
             )}
           </div>
@@ -2172,6 +2386,9 @@ function MonitorPage({ exam = false, setModal }) {
     const shouldPause = arrangement.status === "进行中";
     setModal({
       title: shouldPause ? `暂停本次${exam ? "考试" : "练习"}` : "恢复本次安排",
+      className: exam
+        ? "teacher-exam-pause-modal"
+        : "teacher-practice-pause-modal",
       content: (
         <p>
           {shouldPause
@@ -2189,6 +2406,9 @@ function MonitorPage({ exam = false, setModal }) {
   const finish = () =>
     setModal({
       title: `结束本次${exam ? "考试" : "练习"}`,
+      className: exam
+        ? "teacher-exam-end-modal"
+        : "teacher-practice-end-modal",
       size: "large",
       content: <EndArrangementForm ref={endRef} arrangement={arrangement} />,
       confirmText: "确认结束并生成结果",
@@ -4480,7 +4700,7 @@ function DataTable({
                     ) ? (
                       <Status>{cell}</Status>
                     ) : (
-                      cell
+                      ensureDateTimeSeconds(cell)
                     )}
                   </td>
                 ))}
@@ -5095,33 +5315,30 @@ function SopList() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <label>
-            <span>SOP状态</span>
-            <select
-              aria-label="SOP状态"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              {["全部", "草稿", "已发布", "已停用"].map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>AI评价</span>
-            <select
-              aria-label="AI评价"
-              value={aiFilter}
-              onChange={(event) => setAiFilter(event.target.value)}
-            >
-              {["全部", "—", "未配置", "配置中", "待验证", "已启用"].map(
-                (item) => (
-                  <option key={item}>{item}</option>
-                ),
-              )}
-            </select>
-          </label>
-          <span />
+          <select
+            aria-label="SOP状态"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            {["全部", "草稿", "已发布", "已停用"].map((item) => (
+              <option key={item} value={item}>
+                {item === "全部" ? "全部状态" : item}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="AI评价"
+            value={aiFilter}
+            onChange={(event) => setAiFilter(event.target.value)}
+          >
+            {["全部", "—", "未配置", "配置中", "待验证", "已启用"].map(
+              (item) => (
+                <option key={item} value={item}>
+                  {item === "全部" ? "全部AI评价" : item}
+                </option>
+              ),
+            )}
+          </select>
           <Button
             icon={<ReloadOutlined />}
             onClick={() => {
@@ -5130,7 +5347,7 @@ function SopList() {
               setAiFilter("全部");
             }}
           >
-            重置
+            刷新
           </Button>
         </div>
         <DataTable
@@ -5358,6 +5575,7 @@ function SopDetail({ setModal }) {
   const deactivate = () =>
     setModal({
       title: "停用 SOP",
+      className: "teacher-sop-deactivate-modal",
       content: (
         <p>
           停用后该 SOP 不再用于新建练习、考试和新的 AI
@@ -5912,6 +6130,7 @@ function SopEditor({ setModal }) {
   const save = () =>
     setModal({
       title: "保存 SOP 草稿",
+      className: "teacher-sop-save-modal",
       content: (
         <p>只保存当前 SOP 草稿，不影响已发布标准和正在进行的教学安排。</p>
       ),
@@ -6030,6 +6249,7 @@ function SopEditor({ setModal }) {
   const deleteDraft = () =>
     setModal({
       title: "删除 SOP 草稿",
+      className: "teacher-sop-delete-modal",
       content: (
         <p>
           确认删除“{source?.name}
@@ -7414,8 +7634,8 @@ function ArrangementList({ exam = false }) {
       `${item.studentIds.length}人`,
       item.status,
       item.type === "exam" && item.entryEnd
-        ? `${item.scheduleStart.replace("T", " ")}—${item.entryEnd.slice(11)}`
-        : item.scheduleStart.replace("T", " "),
+        ? `${ensureDateTimeSeconds(item.scheduleStart).replace("T", " ")}—${ensureDateTimeSeconds(item.entryEnd).slice(11)}`
+        : ensureDateTimeSeconds(item.scheduleStart).replace("T", " "),
     ];
   });
   const openArrangement = (_, index) => {
@@ -7531,6 +7751,8 @@ function ArrangementForm({ exam = false, setModal }) {
   const submit = (finalize) =>
     setModal({
       title: finalize ? `完成${name}配置` : `保存${name}草稿`,
+      className:
+        !exam && !finalize ? "teacher-practice-draft-save-modal" : "",
       content: (
         <p>
           {finalize
@@ -8377,6 +8599,9 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
   const exportResults = () =>
     setModal({
       title: `导出${exam ? "考试" : "练习"}结果`,
+      className: exam
+        ? "teacher-exam-export-modal"
+        : "teacher-practice-export-modal",
       content: (
         <div className="form-stack">
           <p>
@@ -8410,6 +8635,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
     if (blockers.length) {
       setModal({
         title: "暂不能发布成绩",
+        className: "teacher-exam-publish-modal",
         content: (
           <div className="alert-block">
             <strong>
@@ -8437,6 +8663,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
     }
     setModal({
       title: "统一发布考试成绩",
+      className: "teacher-exam-publish-modal",
       content: (
         <p>
           将发布{" "}
@@ -11242,15 +11469,6 @@ function AiWorkstationConfigWorkspace({
         />
         {normalized.validationStatus !== "validating" ? (
           <div className="ai-validation-start">
-            {normalized.validationStatus === "pending_revalidation" && (
-              <div className="evaluation-notice evaluation-notice--warning">
-                <AlertOutlined />
-                <span>
-                  {normalized.validationInvalidationReason ||
-                    "关键配置已经变化，需要重新验证。"}
-                </span>
-              </div>
-            )}
             <div className="form-row">
               <label className="field">
                 验证人
@@ -11321,15 +11539,26 @@ function AiWorkstationConfigWorkspace({
                     note: event.target.value,
                   }))
                 }
-              />
-            </label>
-            <Button
-              type="primary"
-              disabled={!checks.ready}
-              onClick={startValidation}
-            >
-              开始现场验证
-            </Button>
+                />
+              </label>
+            <div className="ai-validation-actions">
+              {normalized.validationStatus === "pending_revalidation" && (
+                <div className="evaluation-notice evaluation-notice--warning">
+                  <AlertOutlined />
+                  <span>
+                    {normalized.validationInvalidationReason ||
+                      "关键配置已经变化，需要重新验证。"}
+                  </span>
+                </div>
+              )}
+              <Button
+                type="primary"
+                disabled={!checks.ready}
+                onClick={startValidation}
+              >
+                开始现场验证
+              </Button>
+            </div>
           </div>
         ) : (
           <>
@@ -12012,6 +12241,7 @@ function AiCapabilityConfigJudgementTab({
   selectedStepId,
   setSelectedStepId,
 }) {
+  const stepNavRef = useRef(null);
   const steps = sop.steps || [];
   const selectedIndex = Math.max(
     0,
@@ -12021,6 +12251,17 @@ function AiCapabilityConfigJudgementTab({
   const selectedResult = evaluation.stepResults.find(
     (item) => item.stepId === selectedStep?.id,
   ) || { status: "unconfigured", issues: [] };
+  useEffect(() => {
+    const navigation = stepNavRef.current;
+    const activeButton = navigation?.querySelector('[aria-current="step"]');
+    if (!activeButton) return;
+    const navigationRect = navigation.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    if (buttonRect.left < navigationRect.left + 8)
+      navigation.scrollLeft += buttonRect.left - navigationRect.left - 8;
+    else if (buttonRect.right > navigationRect.right - 8)
+      navigation.scrollLeft += buttonRect.right - navigationRect.right + 8;
+  }, [selectedStep?.id]);
   const openAreaManager = () =>
     setModal({
       eyebrow: "AI判断配置",
@@ -12050,7 +12291,7 @@ function AiCapabilityConfigJudgementTab({
             <small>SOP步骤</small>
             <strong>{steps.length} 个步骤</strong>
           </header>
-          <div>
+          <div ref={stepNavRef}>
             {steps.map((step, index) => {
               const result = evaluation.stepResults.find(
                 (item) => item.stepId === step.id,
@@ -12857,6 +13098,16 @@ function AiCapabilityList({ setModal }) {
                 </option>
               ))}
             </select>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setQuery("");
+                setTypeFilter("");
+                setStatusFilter("");
+              }}
+            >
+              刷新
+            </Button>
           </div>
           <DataTable
             pagination
@@ -22299,6 +22550,7 @@ function AdminOverview() {
   const nav = useNavigate();
   const { data } = usePrototypeData();
   const [refreshedAt, setRefreshedAt] = useState("刚刚");
+  const [arrangementPage, setArrangementPage] = useState(0);
   const [todoPage, setTodoPage] = useState(1);
   const [todoPageSize, setTodoPageSize] = useState(10);
   const [servicePage, setServicePage] = useState(1);
@@ -22318,8 +22570,46 @@ function AdminOverview() {
       String(left.scheduleStart || "").localeCompare(
         String(right.scheduleStart || ""),
       ),
-    )
-    .slice(0, 5);
+    );
+  const demoCurrentArrangements = [
+    {
+      id: "admin-overview-demo-practice",
+      type: "practice",
+      name: "高压电池包断电强化练习",
+      status: "可入场",
+      teacherName: "王伟",
+      workstationCount: 3,
+      demoOnly: true,
+    },
+    {
+      id: "admin-overview-demo-exam",
+      type: "exam",
+      name: "高压作业安全规范阶段考试",
+      status: "已暂停",
+      teacherName: "王伟",
+      workstationCount: 2,
+      demoOnly: true,
+    },
+  ];
+  const displayedCurrentArrangements = [...currentArrangements];
+  demoCurrentArrangements.forEach((item) => {
+    if (displayedCurrentArrangements.length < 4) {
+      displayedCurrentArrangements.push(item);
+    }
+  });
+  const arrangementPageSize = 3;
+  const arrangementPageCount = Math.max(
+    1,
+    Math.ceil(displayedCurrentArrangements.length / arrangementPageSize),
+  );
+  const safeArrangementPage = Math.min(
+    arrangementPage,
+    arrangementPageCount - 1,
+  );
+  const pagedCurrentArrangements = displayedCurrentArrangements.slice(
+    safeArrangementPage * arrangementPageSize,
+    (safeArrangementPage + 1) * arrangementPageSize,
+  );
   const openIssues = (data.issues || []).filter(
     (item) => item.status !== "已关闭",
   );
@@ -22571,8 +22861,8 @@ function AdminOverview() {
         />
         <Metric
           label="当前安排"
-          value={activeArrangements.length}
-          hint={`练习 ${activeArrangements.filter((item) => item.type === "practice").length} · 考试 ${activeArrangements.filter((item) => item.type === "exam").length}`}
+          value={displayedCurrentArrangements.length}
+          hint={`练习 ${displayedCurrentArrangements.filter((item) => item.type === "practice").length} · 考试 ${displayedCurrentArrangements.filter((item) => item.type === "exam").length}`}
           icon={<PlayCircleFilled />}
           tone="green"
         />
@@ -22648,12 +22938,45 @@ function AdminOverview() {
           </div>
         </section>
         <section className="panel">
-          <PanelTitle title="当前安排" />
+          <PanelTitle
+            title="当前安排"
+            action={
+              <DashboardCardPager
+                page={safeArrangementPage}
+                totalPages={arrangementPageCount}
+                onChange={setArrangementPage}
+              />
+            }
+          />
           <div className="current-sessions">
-            {currentArrangements.map((item) => {
+            {pagedCurrentArrangements.map((item) => {
               const teacher = (data.teachers || []).find(
                 (entry) => entry.id === item.teacherId,
               );
+              const content = (
+                <>
+                  <b>{item.name}</b>
+                  <small>
+                    {item.type === "exam" ? "考试" : "练习"}
+                    {item.teacherName || teacher
+                      ? ` · ${item.teacherName || teacher?.name}`
+                      : ""} ·{" "}
+                    {item.workstationCount ??
+                      (item.workstationIds || []).length}
+                    个工位
+                  </small>
+                  <Status>{item.status}</Status>
+                </>
+              );
+
+              if (item.demoOnly) {
+                return (
+                  <article key={item.id} className="current-sessions__demo">
+                    {content}
+                  </article>
+                );
+              }
+
               return (
                 <button
                   key={item.id}
@@ -22663,17 +22986,11 @@ function AdminOverview() {
                     )
                   }
                 >
-                  <b>{item.name}</b>
-                  <small>
-                    {item.type === "exam" ? "考试" : "练习"}
-                    {teacher ? ` · ${teacher.name}` : ""} ·{" "}
-                    {(item.workstationIds || []).length}个工位
-                  </small>
-                  <Status>{item.status}</Status>
+                  {content}
                 </button>
               );
             })}
-            {!currentArrangements.length && (
+            {!displayedCurrentArrangements.length && (
               <p className="hint">当前没有进行中、已暂停或可入场的安排。</p>
             )}
           </div>
@@ -23014,6 +23331,7 @@ function ClassDetail({ setModal }) {
   const toggleArchive = () =>
     setModal({
       title: item.status === "已归档" ? "恢复班级" : "归档班级",
+      className: "class-archive-modal",
       content: (
         <p>
           {item.status === "已归档"
@@ -24735,6 +25053,14 @@ function AdminDetail({ type, setModal }) {
   const toggleStatus = () =>
     setModal({
       title: statusConfig.actionLabel,
+      className:
+        type === "teacher"
+          ? "teacher-status-modal"
+          : type === "student"
+            ? "student-status-modal"
+            : type === "workstation"
+              ? "workstation-status-modal"
+              : "device-status-modal",
       content: <p>{statusConfig.warning}</p>,
       confirmText: `确认${statusConfig.actionLabel}`,
       onConfirm: () => {
@@ -24831,6 +25157,7 @@ function AdminDetail({ type, setModal }) {
     setModal({
       eyebrow: "工位AI基础配置",
       title: `${item.name} · 选择运行设备`,
+      className: "workstation-ai-config-modal",
       size: "large",
       content: (
         <WorkstationAiBaseConfigForm
@@ -24855,6 +25182,7 @@ function AdminDetail({ type, setModal }) {
     setModal({
       eyebrow: "学生人脸资料",
       title: `${item.name} · ${item.facePhotoDataUrl ? "重新上传" : "上传照片"}`,
+      className: "student-face-upload-modal",
       size: "large",
       confirmText: "保存人脸照片",
       content: <StudentFaceUploadForm ref={faceUploadRef} student={item} />,
@@ -24868,6 +25196,7 @@ function AdminDetail({ type, setModal }) {
     setModal({
       eyebrow: "学生人脸资料",
       title: "确认发起人脸重采？",
+      className: "student-face-reset-modal",
       content: (
         <div className="student-face-reset-warning">
           <ExclamationCircleFilled />
@@ -24903,6 +25232,12 @@ function AdminDetail({ type, setModal }) {
                 onClick={() =>
                   setModal({
                     title: secondary.title,
+                    className:
+                      type === "teacher"
+                        ? "teacher-account-reset-modal"
+                        : type === "workstation"
+                          ? "workstation-reset-modal"
+                          : "device-connection-test-modal",
                     content: <p>{secondary.text}</p>,
                     confirmText: secondary.confirm,
                     onConfirm: secondary.run,
@@ -24934,6 +25269,12 @@ function AdminDetail({ type, setModal }) {
             <h2>{value}</h2>
           </section>
         ))}
+        {type === "teacher" && item.notes && (
+          <section className="panel class-notes teacher-detail-notes">
+            <PanelTitle title="备注" />
+            <p>{item.notes}</p>
+          </section>
+        )}
       </div>
       {type === "student" && (
         <section className="panel student-face-card">
@@ -25008,7 +25349,7 @@ function AdminDetail({ type, setModal }) {
           </div>
         </section>
       )}
-      {item.notes && (
+      {type !== "teacher" && item.notes && (
         <section className="panel class-notes">
           <PanelTitle title="备注" />
           <p>{item.notes}</p>
@@ -25251,7 +25592,9 @@ function AdminRecords({ exam = false, setModal }) {
       sop?.name || "标准已失效",
       `${item.studentIds.length}人`,
       item.status,
-      item.scheduleStart?.replace("T", " ") || "待定",
+      item.scheduleStart
+        ? ensureDateTimeSeconds(item.scheduleStart).replace("T", " ")
+        : "待定",
       item.id,
     ];
   });
@@ -25662,7 +26005,12 @@ function AdminRecordDetail({ exam = false }) {
           ],
           ["参与人数", `${record.studentIds.length}人`],
           ["状态", record.status],
-          ["日期", record.scheduleStart?.replace("T", " ") || "待定"],
+          [
+            "日期",
+            record.scheduleStart
+              ? ensureDateTimeSeconds(record.scheduleStart).replace("T", " ")
+              : "待定",
+          ],
         ].map(([label, value]) => (
           <section className="panel" key={label}>
             <small>{label}</small>
@@ -26548,6 +26896,7 @@ function RoutedApp() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/data-screen" element={<DataScreen />} />
       <Route
         path="/student/login"
         element={

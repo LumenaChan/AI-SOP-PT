@@ -150,6 +150,7 @@ import {
   validateSystemSettings,
 } from "./domainRules.js";
 import currentPrototypeData from "./data/currentPrototypeData.json";
+import { normalizeDateTimeSeconds } from "./dateTimeRules.js";
 import {
   normalizePrototypeDataSource,
   PROTOTYPE_DATA_SOURCE_BROWSER,
@@ -3509,7 +3510,7 @@ function normalizePrototypeData(input) {
       sessions,
     };
   });
-  return next;
+  return normalizeDateTimeSeconds(next);
 }
 
 function timestamp() {
@@ -3520,6 +3521,7 @@ function timestamp() {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   })
     .format(new Date())
@@ -3861,6 +3863,7 @@ const PrototypeDataContext = createContext(null);
 export function PrototypeDataProvider({ children }) {
   const [dataSource, setDataSource] = useState(readSelectedDataSource);
   const [storedData, setData] = useState(() => loadData(dataSource));
+  const [dataSyncError, setDataSyncError] = useState("");
   const data =
     storedData?.version === seedData.version
       ? storedData
@@ -3891,7 +3894,11 @@ export function PrototypeDataProvider({ children }) {
         dataSource === PROTOTYPE_DATA_SOURCE_CPD
           ? CPD_STORAGE_KEY
           : STORAGE_KEY;
-      if (event.key !== activeStorageKey || !event.newValue) return;
+      if (event.key !== activeStorageKey && event.key !== null) return;
+      if (!event.newValue) {
+        setDataSyncError("业务数据已移除，保留最后成功快照");
+        return;
+      }
       try {
         const parsed = JSON.parse(event.newValue);
         const incoming =
@@ -3900,14 +3907,20 @@ export function PrototypeDataProvider({ children }) {
               ? parsed.data
               : null
             : parsed;
-        if (incoming?.version !== seedData.version) return;
+        if (incoming?.version !== seedData.version) {
+          setDataSyncError("数据版本不兼容，保留最后成功快照");
+          return;
+        }
+        const normalizedIncoming = normalizePrototypeData(incoming);
         setData((current) =>
-          JSON.stringify(current) === JSON.stringify(incoming)
+          JSON.stringify(current) === JSON.stringify(normalizedIncoming)
             ? current
-            : normalizePrototypeData(incoming),
+            : normalizedIncoming,
         );
+        setDataSyncError("");
       } catch {
         // Ignore malformed external storage updates and keep the current valid data.
+        setDataSyncError("数据读取失败，保留最后成功快照");
       }
     };
     window.addEventListener("storage", syncFromAnotherTab);
@@ -10955,6 +10968,7 @@ export function PrototypeDataProvider({ children }) {
         }));
       },
       dataSource,
+      dataSyncError,
       switchDataSource(nextSource) {
         const normalizedSource = normalizePrototypeDataSource(nextSource);
         if (normalizedSource === dataSource) return false;
@@ -10965,6 +10979,7 @@ export function PrototypeDataProvider({ children }) {
         }
         setDataSource(normalizedSource);
         setData(loadData(normalizedSource));
+        setDataSyncError("");
         return true;
       },
       resetDemoData() {
@@ -10975,7 +10990,7 @@ export function PrototypeDataProvider({ children }) {
         );
       },
     };
-  }, [data, dataSource]);
+  }, [data, dataSource, dataSyncError]);
 
   return (
     <PrototypeDataContext.Provider value={value}>

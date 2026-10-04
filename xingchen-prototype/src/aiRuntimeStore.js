@@ -280,7 +280,7 @@ export function createAiRuntimeStore(initialData = {}, options = {}) {
                   title: "考试开始",
                   detail: "考试计时已开始，时长已按本次安排锁定。",
                   createdAt: startedAt,
-                  time: startedAt.slice(11, 16),
+                  time: startedAt.slice(11, 19),
                   level: "info",
                   scoreImpact: "none",
                 },
@@ -574,7 +574,7 @@ export function createAiRuntimeStore(initialData = {}, options = {}) {
                 : "exam_manual_submitted"
               : "student_finished",
             createdAt: endedAt,
-            time: endedAt.slice(11, 16),
+            time: endedAt.slice(11, 19),
             level: submitReason === "time_expired" ? "warning" : "green",
             title:
               submitReason === "time_expired"

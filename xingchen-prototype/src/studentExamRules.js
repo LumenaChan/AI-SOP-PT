@@ -1,3 +1,5 @@
+import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+
 export const DEFAULT_EXAM_DURATION_MINUTES = 30;
 export const MIN_EXAM_DURATION_MINUTES = 5;
 export const MAX_EXAM_DURATION_MINUTES = 240;
@@ -10,8 +12,8 @@ export const EXAM_INCIDENT_REASONS = [
 ];
 
 function studentEventTime(value) {
-  const text = String(value || "");
-  const match = text.match(/(?:T|\s)(\d{2}:\d{2})/);
+  const text = ensureDateTimeSeconds(String(value || ""));
+  const match = text.match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/);
   return match?.[1] || text;
 }
 
@@ -210,8 +212,10 @@ export function appendExamIncidentHelpRequest(
 
 export function formatExamEntryWindow(scheduleStart, entryEnd) {
   if (!scheduleStart) return "以教师现场安排为准";
-  const start = String(scheduleStart).replace("T", " ").slice(0, 16);
-  const end = entryEnd ? String(entryEnd).replace("T", " ").slice(11, 16) : "";
+  const start = ensureDateTimeSeconds(String(scheduleStart)).replace("T", " ");
+  const end = entryEnd
+    ? ensureDateTimeSeconds(String(entryEnd)).replace("T", " ").slice(11, 19)
+    : "";
   return end ? `${start} - ${end}` : start;
 }
 
