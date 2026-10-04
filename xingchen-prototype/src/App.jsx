@@ -30,6 +30,7 @@ import {
   ClockCircleOutlined,
   CloudDownloadOutlined,
   DatabaseOutlined,
+  DeleteOutlined,
   DesktopOutlined,
   EditOutlined,
   ExclamationCircleFilled,
@@ -776,7 +777,13 @@ function Modal({ data, close, done }) {
       <section
         ref={dialogRef}
         tabIndex={-1}
-        className={`modal ${data.size === "large" ? "modal--large" : ""}`}
+        className={[
+          "modal",
+          data.size === "large" ? "modal--large" : "",
+          data.className || "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -910,7 +917,6 @@ function Shell({ children, modal, setModal, toast, setToast }) {
               <span>AI视觉实训操作流程</span>
               <span>智能评测系统</span>
             </strong>
-            <small>兴辰智能 · AI赋能职业教育</small>
           </span>
         </button>
         <nav className={admin ? "sidebar__nav--admin" : ""}>
@@ -995,9 +1001,14 @@ function Shell({ children, modal, setModal, toast, setToast }) {
           ))}
         </nav>
         <div className="sidebar__footer">
-          让技能更安全
-          <br />
-          让教育更智能
+          <span className="sidebar__footer-slogan">
+            让技能更安全
+            <br />
+            让教育更智能
+          </span>
+          <span className="sidebar__footer-brand">
+            兴辰智能 · AI赋能职业教育
+          </span>
         </div>
       </aside>
       <section className="app-main">
@@ -1207,30 +1218,29 @@ function Shell({ children, modal, setModal, toast, setToast }) {
 }
 function LoginPage() {
   const nav = useNavigate();
-  const [role, setRole] = useState("teacher");
   const [account, setAccount] = useState("wanglaoshi");
   const [password, setPassword] = useState("12345678");
   const [error, setError] = useState("");
-  const changeRole = (nextRole) => {
-    setRole(nextRole);
-    setAccount(nextRole === "teacher" ? "wanglaoshi" : "admin");
-    setError("");
-  };
   return (
     <div className="login-page">
       <section className="login-brand">
         <div className="brand-lockup">
-          <span className="brand__mark brand__mark--large">
-            <ProductOutlined />
-          </span>
           <div>
-            <h1>兴辰智能</h1>
-            <p>通用实训操作过程智能评价系统</p>
+            <h1>AI视觉实训操作流程智能评测系统</h1>
+            <p>实训过程识别 · 操作步骤评测 · 证据闭环追溯</p>
           </div>
         </div>
+        <figure className="login-hero-figure">
+          <img
+            src="/assets/login-ai-vision-training.png"
+            alt="AI视觉系统识别新能源汽车高压实训操作过程"
+          />
+        </figure>
         <div className="login-visual">
-          <SafetyCertificateOutlined />
-          <h2>每一次评价都有依据</h2>
+          <div className="login-visual__headline">
+            <SafetyCertificateOutlined />
+            <h2>每一次评价都有依据</h2>
+          </div>
           <p>用标准、过程与证据，帮助教师更轻松地管理实训现场。</p>
         </div>
       </section>
@@ -1242,41 +1252,35 @@ function LoginPage() {
               setError("该演示账号已停用，请联系系统管理员。");
               return;
             }
-            const expected = role === "teacher" ? "wanglaoshi" : "admin";
-            if (account.trim() !== expected || password !== "12345678") {
-              setError("账号、密码或所选角色不匹配，请检查后重试。");
+            const normalizedAccount = account.trim();
+            const accountRole =
+              normalizedAccount === "wanglaoshi"
+                ? "teacher"
+                : normalizedAccount === "admin"
+                  ? "admin"
+                  : "";
+            if (!accountRole || password !== "12345678") {
+              setError("账号或密码错误，请检查后重试。");
               return;
             }
-            nav(role === "teacher" ? "/teacher/dashboard" : "/admin/overview");
+            nav(
+              accountRole === "teacher"
+                ? "/teacher/dashboard"
+                : "/admin/overview",
+            );
           }}
         >
           <span className="eyebrow">校内业务入口</span>
           <h2>欢迎登录</h2>
-          <p>请选择角色并输入账号信息</p>
-          <div className="segmented">
-            <button
-              type="button"
-              className={role === "teacher" ? "active" : ""}
-              onClick={() => changeRole("teacher")}
-            >
-              教师
-            </button>
-            <button
-              type="button"
-              className={role === "admin" ? "active" : ""}
-              onClick={() => changeRole("admin")}
-            >
-              管理员
-            </button>
-            <button type="button" onClick={() => nav("/student/login")}>
-              学生
-            </button>
-          </div>
+          <p>请输入账号信息，系统将自动识别身份角色</p>
           <label>
             账号
             <input
               value={account}
-              onChange={(event) => setAccount(event.target.value)}
+              onChange={(event) => {
+                setAccount(event.target.value);
+                setError("");
+              }}
               aria-describedby={error ? "login-error" : undefined}
             />
           </label>
@@ -1285,7 +1289,10 @@ function LoginPage() {
             <input
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError("");
+              }}
               aria-describedby={error ? "login-error" : undefined}
             />
           </label>
@@ -1297,8 +1304,17 @@ function LoginPage() {
           <Button htmlType="submit" type="primary">
             登录系统
           </Button>
-          <small>原型演示账号已预填；输入 disabled-demo 可查看停用分支</small>
+          <button
+            type="button"
+            className="login-student-link"
+            onClick={() => nav("/student/login")}
+          >
+            学生登录 →
+          </button>
         </form>
+        <small className="login-company-name">
+          兴辰智能（北京）科技有限公司
+        </small>
       </section>
     </div>
   );
@@ -1329,11 +1345,8 @@ function StudentShell({ children }) {
           }
           aria-label="返回学生端首页"
         >
-          <span className="brand__mark">
-            <ProductOutlined />
-          </span>
           <span>
-            <strong>兴辰智能</strong>
+            <strong>AI视觉实训操作流程智能评测系统</strong>
             <small>学生端</small>
           </span>
         </button>
@@ -7749,6 +7762,7 @@ function PrepPage({ exam = false, setModal }) {
     if (!readiness.ok) {
       setModal({
         title: `${workstation.name} 暂不能开放`,
+        className: "workstation-blocked-modal",
         content: (
           <div className="alert-block">
             <strong>
@@ -8463,7 +8477,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
     });
   };
   return (
-    <>
+    <div className={adminReadOnly ? "admin-record-detail" : undefined}>
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}${adminReadOnly ? "记录" : "结果"}：${arrangement.name}`}
@@ -8609,7 +8623,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       {adminReadOnly && (
         <SessionDiagnosticPanel record={arrangement} store={store} />
       )}
-    </>
+    </div>
   );
 }
 function timestampForFile() {
@@ -15169,20 +15183,31 @@ function AiExtractionPage({ setModal }) {
                   <div className="ai-frame-grid">
                     {pagedResults.map((frame) => (
                       <article key={frame.id}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={selectedResultIds.includes(frame.id)}
-                            onChange={() =>
-                              setSelectedResultIds((current) =>
-                                current.includes(frame.id)
-                                  ? current.filter((id) => id !== frame.id)
-                                  : [...current, frame.id],
-                              )
-                            }
-                          />
-                          选择
-                        </label>
+                        <div className="ai-frame-card__header">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={selectedResultIds.includes(frame.id)}
+                              onChange={() =>
+                                setSelectedResultIds((current) =>
+                                  current.includes(frame.id)
+                                    ? current.filter((id) => id !== frame.id)
+                                    : [...current, frame.id],
+                                )
+                              }
+                            />
+                            选择
+                          </label>
+                          <button
+                            className="ai-frame-card__delete"
+                            type="button"
+                            aria-label={`删除图片帧 ${formatDerivedTimecode(frame.sourceTimeMs / 1000, true)}`}
+                            title="删除"
+                            onClick={() => requestDeleteResults([frame])}
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
                         <button
                           className="ai-frame-thumbnail"
                           onClick={() => openResultPreview(frame)}
@@ -15224,18 +15249,6 @@ function AiExtractionPage({ setModal }) {
                               ? "已自动清洗"
                               : "未清洗"}
                           </Status>
-                          <button
-                            className="table-action"
-                            onClick={() => openResultPreview(frame)}
-                          >
-                            查看大图
-                          </button>
-                          <button
-                            className="table-action"
-                            onClick={() => requestDeleteResults([frame])}
-                          >
-                            删除
-                          </button>
                         </div>
                       </article>
                     ))}
@@ -16079,22 +16092,35 @@ function AiAutoCleaningPage({ setModal }) {
                       key={item.id}
                       className={rejected ? "is-rejected" : ""}
                     >
-                      <label>
-                        <input
-                          type="checkbox"
-                          aria-label={`选择清洗结果 ${item.id}`}
-                          disabled={!rejected}
-                          checked={selectedIds.includes(item.id)}
-                          onChange={() =>
-                            setSelectedIds((current) =>
-                              current.includes(item.id)
-                                ? current.filter((id) => id !== item.id)
-                                : [...current, item.id],
-                            )
-                          }
-                        />
-                        选择恢复
-                      </label>
+                      <div className="ai-cleaning-card__header">
+                        <label>
+                          <input
+                            type="checkbox"
+                            aria-label={`选择清洗结果 ${item.id}`}
+                            disabled={!rejected}
+                            checked={selectedIds.includes(item.id)}
+                            onChange={() =>
+                              setSelectedIds((current) =>
+                                current.includes(item.id)
+                                  ? current.filter((id) => id !== item.id)
+                                  : [...current, item.id],
+                              )
+                            }
+                          />
+                          选择恢复
+                        </label>
+                        {rejected && (
+                          <button
+                            className="ai-cleaning-card__restore"
+                            type="button"
+                            aria-label={`恢复清洗图片 ${formatDerivedTimecode(item.sourceTimeMs / 1000, true)}`}
+                            title="恢复"
+                            onClick={() => requestRestore([item.id])}
+                          >
+                            <ReloadOutlined />
+                          </button>
+                        )}
+                      </div>
                       <button
                         className="ai-frame-thumbnail"
                         onClick={() => openPreview(item)}
@@ -16151,22 +16177,6 @@ function AiAutoCleaningPage({ setModal }) {
                             仍命中规则，已按人工恢复保护
                           </p>
                         )}
-                      <div className="ai-capability-row-actions">
-                        <button
-                          className="table-action"
-                          onClick={() => openPreview(item)}
-                        >
-                          查看
-                        </button>
-                        {rejected && (
-                          <button
-                            className="table-action"
-                            onClick={() => requestRestore([item.id])}
-                          >
-                            恢复
-                          </button>
-                        )}
-                      </div>
                     </article>
                   );
                 })}
@@ -16915,21 +16925,55 @@ function AiManualCleaningPage({ setModal }) {
                   const autoResult = manualAutoResult(item);
                   return (
                     <article key={item.id} className={`is-${manualStatus}`}>
-                      <label>
-                        <input
-                          aria-label={`选择人工清洗数据 ${item.id}`}
-                          type="checkbox"
-                          checked={selectedIds.includes(item.id)}
-                          onChange={() =>
-                            setSelectedIds((current) =>
-                              current.includes(item.id)
-                                ? current.filter((id) => id !== item.id)
-                                : [...current, item.id],
-                            )
-                          }
-                        />
-                        选择
-                      </label>
+                      <div className="manual-cleaning-card__header">
+                        <label>
+                          <input
+                            aria-label={`选择人工清洗数据 ${item.id}`}
+                            type="checkbox"
+                            checked={selectedIds.includes(item.id)}
+                            onChange={() =>
+                              setSelectedIds((current) =>
+                                current.includes(item.id)
+                                  ? current.filter((id) => id !== item.id)
+                                  : [...current, item.id],
+                              )
+                            }
+                          />
+                          选择
+                        </label>
+                        <div className="manual-cleaning-card__actions">
+                          <button
+                            className={manualStatus === "kept" ? "is-active" : ""}
+                            type="button"
+                            aria-label={
+                              manualStatus === "rejected"
+                                ? "恢复为保留"
+                                : "保留"
+                            }
+                            title={
+                              manualStatus === "rejected"
+                                ? "恢复为保留"
+                                : "保留"
+                            }
+                            onClick={() => requestKeep([item.id])}
+                          >
+                            <CheckCircleOutlined />
+                          </button>
+                          <button
+                            className={`is-reject ${manualStatus === "rejected" ? "is-active" : ""}`}
+                            type="button"
+                            aria-label={
+                              manualStatus === "kept" ? "改为剔除" : "剔除"
+                            }
+                            title={
+                              manualStatus === "kept" ? "改为剔除" : "剔除"
+                            }
+                            onClick={() => requestReject([item.id])}
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      </div>
                       <button
                         className="ai-frame-thumbnail"
                         onClick={() => openPreview(item)}
@@ -16989,26 +17033,6 @@ function AiManualCleaningPage({ setModal }) {
                           {item.rejectionNote ? ` · ${item.rejectionNote}` : ""}
                         </p>
                       )}
-                      <div className="ai-capability-row-actions">
-                        <button
-                          className="table-action"
-                          onClick={() => openPreview(item)}
-                        >
-                          查看大图
-                        </button>
-                        <button
-                          className="table-action"
-                          onClick={() => requestKeep([item.id])}
-                        >
-                          {manualStatus === "rejected" ? "恢复为保留" : "保留"}
-                        </button>
-                        <button
-                          className="table-action"
-                          onClick={() => requestReject([item.id])}
-                        >
-                          {manualStatus === "kept" ? "改为剔除" : "剔除"}
-                        </button>
-                      </div>
                     </article>
                   );
                 })}
@@ -17549,7 +17573,9 @@ function ObjectAnnotationWorkbench({
                 className={selectedBoxId === box.id ? "is-selected" : ""}
                 onClick={() => setSelectedBoxId(box.id)}
               >
-                <b>框 {index + 1}</b>
+                <b aria-label={`目标框 ${index + 1}`} title={`目标框 ${index + 1}`}>
+                  {index + 1}
+                </b>
                 <select
                   value={box.categoryId}
                   onClick={(event) => event.stopPropagation()}
@@ -17570,6 +17596,9 @@ function ObjectAnnotationWorkbench({
                   ))}
                 </select>
                 <button
+                  type="button"
+                  aria-label={`删除目标框 ${index + 1}`}
+                  title="删除目标框"
                   onClick={(event) => {
                     event.stopPropagation();
                     setBoxes((currentBoxes) =>
@@ -17577,7 +17606,7 @@ function ObjectAnnotationWorkbench({
                     );
                   }}
                 >
-                  删除
+                  <DeleteOutlined />
                 </button>
               </article>
             ))}
@@ -18088,20 +18117,21 @@ function AiAnnotationPage({ setModal }) {
                             "来源视频不存在"}
                         </small>
                       </span>
-                      <Status
-                        tone={
-                          item.annotationStatus === "completed"
-                            ? "success"
-                            : "warning"
-                        }
-                      >
-                        {
-                          ANNOTATION_STATUSES[
-                            item.annotationStatus || "not_started"
-                          ]
-                        }
-                      </Status>
+                      {item.annotationStatus !== "completed" && (
+                        <Status tone="warning">
+                          {
+                            ANNOTATION_STATUSES[
+                              item.annotationStatus || "not_started"
+                            ]
+                          }
+                        </Status>
+                      )}
                     </button>
+                    {item.annotationStatus === "completed" && (
+                      <span className="annotation-queue__completed-ribbon">
+                        已标注
+                      </span>
+                    )}
                   </article>
                 ))}
                 {!visibleItems.length && (
@@ -25171,7 +25201,7 @@ function AdminDetail({ type, setModal }) {
         </section>
       )}
       {type === "device" && (
-        <section className="panel">
+        <section className="panel device-binding-note">
           <PanelTitle title="绑定与健康说明" />
           <p>
             {workstation
@@ -25237,6 +25267,7 @@ function AdminRecords({ exam = false, setModal }) {
   const exportRecords = () =>
     setModal({
       title: `导出当前${exam ? "考试" : "练习"}记录`,
+      className: "admin-record-export-modal",
       content: (
         <p>
           将按当前搜索与状态筛选导出 {filteredRecords.length} 条只读记录，格式为
@@ -25610,7 +25641,7 @@ function AdminRecordDetail({ exam = false }) {
       </section>
     );
   return (
-    <>
+    <div className="admin-record-detail">
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}记录 · ${record.name}`}
@@ -25692,7 +25723,7 @@ function AdminRecordDetail({ exam = false }) {
         />
       </section>
       <SessionDiagnosticPanel record={record} store={store} />
-    </>
+    </div>
   );
 }
 function SettingsPage({ setModal }) {
