@@ -71,6 +71,7 @@ import {
 } from "./prototypeData.jsx";
 import { ensureDateTimeSeconds } from "./dateTimeRules.js";
 import DataScreen from "./DataScreen.jsx";
+import { createLoginCaptcha, matchesLoginCaptcha, readRememberedLogin, saveRememberedLogin } from "./loginRules.js";
 import {
   buildStudentIdentityVerification,
   clearStudentIdentitySession,
@@ -1248,11 +1249,62 @@ function Shell({ children, modal, setModal, toast, setToast }) {
 }
 function LoginPage() {
   const nav = useNavigate();
-  const [account, setAccount] = useState("wanglaoshi");
-  const [password, setPassword] = useState("12345678");
+  const [remembered] = useState(() => {
+    try {
+      return readRememberedLogin(window.localStorage);
+    } catch {
+      return null;
+    }
+  });
+  const [account, setAccount] = useState(remembered?.account || "wanglaoshi");
+  const [password, setPassword] = useState(remembered?.password || "12345678");
+  const [rememberPassword, setRememberPassword] = useState(Boolean(remembered));
+  const [captcha, setCaptcha] = useState(createLoginCaptcha);
+  const [captchaInput, setCaptchaInput] = useState("");
   const [error, setError] = useState("");
+  const captchaCanvas = useRef(null),
+    captchaField = useRef(null);
+  const refreshCaptcha = () => {
+    let next = createLoginCaptcha();
+    while (next === captcha) next = createLoginCaptcha();
+    setCaptcha(next);
+    setCaptchaInput("");
+  };
+  useEffect(() => {
+    const context = captchaCanvas.current.getContext("2d");
+    if (!context) return;
+    context.fillStyle = "#eff5fc";
+    context.fillRect(0, 0, 264, 84);
+    context.strokeStyle = "#c7d7eb";
+    context.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      context.beginPath();
+      context.moveTo(0, 12 + i * 16);
+      context.lineTo(264, 72 - i * 14);
+      context.stroke();
+    }
+    context.font = "600 44px Arial, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    Array.from(captcha).forEach((character, i) => {
+      context.save();
+      context.translate(43 + i * 59, 43);
+      context.rotate((i % 2 ? 1 : -1) * 0.09);
+      context.fillStyle = i % 2 ? "#32699c" : "#234b77";
+      context.fillText(character, 0, 0);
+      context.restore();
+    });
+  }, [captcha]);
   return (
     <div className="login-page">
+      <figure className="login-hero-figure">
+        <div className="login-hero-panorama">
+          <img
+            src="/assets/login-ai-vision-training.png"
+            alt="AI视觉系统识别新能源汽车高压实训操作过程"
+          />
+        </div>
+      </figure>
       <section className="login-brand">
         <div className="brand-lockup">
           <div>
@@ -1260,24 +1312,22 @@ function LoginPage() {
             <p>实训过程识别 · 操作步骤评测 · 证据闭环追溯</p>
           </div>
         </div>
-        <figure className="login-hero-figure">
-          <img
-            src="/assets/login-ai-vision-training.png"
-            alt="AI视觉系统识别新能源汽车高压实训操作过程"
-          />
-        </figure>
-        <div className="login-visual">
-          <div className="login-visual__headline">
-            <SafetyCertificateOutlined />
-            <h2>每一次评价都有依据</h2>
-          </div>
-          <p>用标准、过程与证据，帮助教师更轻松地管理实训现场。</p>
-        </div>
       </section>
       <section className="login-panel">
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (!captchaInput.trim()) {
+              setError("请输入验证码。");
+              captchaField.current.focus();
+              return;
+            }
+            if (!matchesLoginCaptcha(captchaInput, captcha)) {
+              setError("验证码错误，请重新输入。");
+              refreshCaptcha();
+              captchaField.current.focus();
+              return;
+            }
             if (account.trim() === "disabled-demo") {
               setError("该演示账号已停用，请联系系统管理员。");
               return;
@@ -1291,7 +1341,17 @@ function LoginPage() {
                   : "";
             if (!accountRole || password !== "12345678") {
               setError("账号或密码错误，请检查后重试。");
+              refreshCaptcha();
               return;
+            }
+            try {
+              saveRememberedLogin(window.localStorage, {
+                account: normalizedAccount,
+                password,
+                remember: rememberPassword,
+              });
+            } catch {
+              /* Storage restrictions must not prevent prototype login. */
             }
             nav(
               accountRole === "teacher"
@@ -1300,12 +1360,12 @@ function LoginPage() {
             );
           }}
         >
-          <span className="eyebrow">校内业务入口</span>
           <h2>欢迎登录</h2>
-          <p>请输入账号信息，系统将自动识别身份角色</p>
           <label>
             账号
             <input
+              name="username"
+              autoComplete="username"
               value={account}
               onChange={(event) => {
                 setAccount(event.target.value);
@@ -1318,6 +1378,8 @@ function LoginPage() {
             密码
             <input
               type="password"
+              name="password"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
@@ -1325,6 +1387,60 @@ function LoginPage() {
               }}
               aria-describedby={error ? "login-error" : undefined}
             />
+          </label>
+          <label htmlFor="login-captcha">验证码</label>
+          <div className="login-captcha-row">
+            <input
+              id="login-captcha"
+              ref={captchaField}
+              value={captchaInput}
+              maxLength={4}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="请输入验证码"
+              aria-describedby={error ? "login-error" : undefined}
+              onChange={(event) => {
+                setCaptchaInput(event.target.value);
+                setError("");
+              }}
+            />
+            <button
+              type="button"
+              className="login-captcha-image"
+              aria-label="刷新验证码"
+              title="点击刷新验证码"
+              onClick={() => {
+                refreshCaptcha();
+                setError("");
+              }}
+            >
+              <canvas
+                ref={captchaCanvas}
+                width="264"
+                height="84"
+                role="img"
+                aria-label="四位图形验证码"
+              />
+            </button>
+          </div>
+          <label className="login-remember">
+            <input
+              type="checkbox"
+              checked={rememberPassword}
+              onChange={(event) => {
+                setRememberPassword(event.target.checked);
+                if (!event.target.checked) {
+                  try {
+                    saveRememberedLogin(window.localStorage, {
+                      remember: false,
+                    });
+                  } catch {
+                    /* Keep the checkbox usable when storage is unavailable. */
+                  }
+                }
+              }}
+            />
+            <span>记住密码</span>
           </label>
           {error && (
             <p className="form-error" id="login-error" role="alert">
@@ -1334,18 +1450,36 @@ function LoginPage() {
           <Button htmlType="submit" type="primary">
             登录系统
           </Button>
-          <button
-            type="button"
-            className="login-student-link"
-            onClick={() => nav("/student/login")}
-          >
-            学生登录 →
-          </button>
+          <div className="login-secondary-links">
+            <button
+              type="button"
+              className="login-entry-link"
+              onClick={() => nav("/student/login")}
+            >
+              学生登录
+            </button>
+            <a
+              className="login-entry-link"
+              href="/data-screen?scope=school"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              数据大屏
+            </a>
+          </div>
         </form>
+      </section>
+      <footer className="login-footer">
+        <p className="login-visual">
+          <SafetyCertificateOutlined />
+          <span>
+            每一次评价都有依据，用AI、标准、过程与证据，帮助教师更轻松地管理实训现场。
+          </span>
+        </p>
         <small className="login-company-name">
           兴辰智能（北京）科技有限公司
         </small>
-      </section>
+      </footer>
     </div>
   );
 }
