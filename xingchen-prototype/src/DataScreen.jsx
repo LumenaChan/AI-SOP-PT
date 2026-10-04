@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DesktopOutlined, FullscreenOutlined, FullscreenExitOutlined, PauseOutlined, PlayCircleOutlined, SettingOutlined, SafetyCertificateOutlined, VideoCameraOutlined, ApartmentOutlined, BookOutlined, TeamOutlined, ExperimentOutlined, FileDoneOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { DesktopOutlined, FullscreenOutlined, FullscreenExitOutlined, PauseOutlined, PlayCircleOutlined, SettingOutlined, SafetyCertificateOutlined, VideoCameraOutlined, ApartmentOutlined, BookOutlined, TeamOutlined, ExperimentOutlined, FileDoneOutlined, CheckCircleOutlined, CloseOutlined } from "@ant-design/icons";
 import { usePrototypeData } from "./prototypeData.jsx";
 import { buildDataScreenSnapshot, createDataScreenDemo, schoolDay } from "./dataScreenRules.js";
 import "./data-screen.css";
@@ -13,6 +13,15 @@ const time = (value) => {
 };
 const tone = (status) => status === "实训中" ? "mint" : ["故障", "停用"].includes(status) ? "red" : ["已暂停", "维护中"].includes(status) ? "gold" : "blue";
 const colors = { mint: "#3de4cd", red: "#ff7c8c", gold: "#efbb66", blue: "#4d9fff" };
+const heatStops = [[18, 45, 62], [27, 60, 80], [40, 75, 94], [53, 90, 108], [65, 104, 121]];
+const heatGradient = `linear-gradient(90deg, ${heatStops.map((rgb, i) => `rgb(${rgb.join(",")}) ${i * 25}%`).join(", ")})`;
+const heatColor = (rate) => {
+  if (rate == null || !Number.isFinite(Number(rate))) return "#132233";
+  const position = Math.max(0, Math.min(100, Number(rate))) / 25;
+  const index = Math.min(heatStops.length - 2, Math.floor(position));
+  const rgb = heatStops[index].map((value, channel) => Math.round(value + (heatStops[index + 1][channel] - value) * (position - index)));
+  return `rgb(${rgb.join(",")})`;
+};
 const empty = <div className="ds-empty">尚无有效数据</div>;
 
 function Panel({ title, label, children, className = "", meta }) {
@@ -62,7 +71,7 @@ function IsoBox({ x, z, width, depth, height, elevation = 0, color, opacity = 1 
 }
 
 function WorkstationScene({ stations, selectedId, onSelect }) {
-  return <svg viewBox="0 -100 1020 460" className="ds-scene" role="img" aria-label="工位运行空间示意，非建筑实际平面">
+  return <svg viewBox="28 -100 1020 460" className="ds-scene" role="img" aria-label="工位运行空间示意，非建筑实际平面">
     <defs>
       <radialGradient id="ds-floor-glow"><stop stopColor="#1f7682" stopOpacity=".27" /><stop offset="1" stopColor="#092334" stopOpacity="0" /></radialGradient>
       <linearGradient id="ds-floor" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#153e54" stopOpacity=".45" /><stop offset="1" stopColor="#0a2332" /></linearGradient>
@@ -101,25 +110,44 @@ function WorkstationScene({ stations, selectedId, onSelect }) {
   </svg>;
 }
 
-function WorkstationPreview({ station }) {
+function WorkstationPreview({ station, onInteract }) {
   const preview = station?.preview;
   const [imageFailed, setImageFailed] = useState(false);
+  const [swapped, setSwapped] = useState(false);
+  const [enlarged, setEnlarged] = useState(false);
+  const dialog = useRef(null);
   const available = preview?.state === "demo" && !imageFailed;
+  const mainLabel = swapped ? "辅助视角" : "主视角";
+  const insetLabel = swapped ? "主视角" : "辅助视角";
+  useEffect(() => {
+    const element = dialog.current;
+    if (enlarged && available) {
+      if (!element.open) element.showModal();
+    } else if (element.open) element.close();
+    return () => { if (element.open) element.close(); };
+  }, [enlarged, available]);
+  const swapViews = () => { onInteract(); setSwapped((value) => !value); };
+  const enlarge = () => { onInteract(); setEnlarged(true); };
   return <section className="ds-video-preview" aria-label={`${station?.name || "工位"}视频预览`}>
     <header><strong><VideoCameraOutlined />{station?.name || "工位画面"}</strong><span>{available ? "演示画面" : preview?.state === "private" ? "考试保护" : "暂无画面"}</span></header>
     <div className={`ds-video-stage ${available ? "has-picture" : ""}`}>
       <figure className="ds-video-main">
-        {available ? <img src={preview.poster} alt={`${station.name}主视角演示画面`} onError={() => setImageFailed(true)} />
+        {available ? <><img className={swapped ? "is-detail" : ""} src={preview.poster} alt={`${station.name}${mainLabel}演示画面`} onError={() => setImageFailed(true)} /><button type="button" className="ds-video-hitarea" aria-label={`放大${station.name}${mainLabel}画面`} aria-haspopup="dialog" onClick={enlarge} /></>
           : <div className="ds-video-empty"><VideoCameraOutlined /><strong>{imageFailed ? "画面暂不可用" : preview?.message || "尚未配置工位"}</strong><span>{imageFailed ? "演示素材加载失败" : preview?.detail || "等待实训工位配置"}</span></div>}
-        <figcaption>主视角{available && <span>操作区</span>}</figcaption>
+        <figcaption>{mainLabel}{available && <span>{swapped ? "示意" : "操作区"}</span>}</figcaption>
       </figure>
       {preview?.hasAuxiliary && <figure className="ds-video-auxiliary">
-        {available ? <img src={preview.poster} alt={`${station.name}辅助视角演示特写`} />
+        {available ? <><img className={swapped ? "" : "is-detail"} src={preview.poster} alt={`${station.name}${insetLabel}演示画面`} /><button type="button" className="ds-video-hitarea" aria-label={`切换${insetLabel}到大图`} onClick={swapViews} /></>
           : <div className="ds-video-auxiliary-empty"><VideoCameraOutlined /><span>{preview.auxiliaryMessage || "辅助画面不可用"}</span></div>}
-        <figcaption>辅助视角{available && <span>示意</span>}</figcaption>
+        <figcaption>{insetLabel}{available && <span>{swapped ? "操作区" : "示意"}</span>}</figcaption>
       </figure>}
     </div>
     <div className="ds-video-caption"><span title={station?.project}>{station?.project || "等待实训开始"}</span><i style={{ color: colors[tone(station?.status)] }}>{station?.status || "待命"}</i></div>
+    <dialog ref={dialog} className="ds-video-dialog" aria-label={`${station?.name || "工位"} · ${mainLabel}放大预览`} onClose={() => setEnlarged(false)} onCancel={(event) => { event.preventDefault(); setEnlarged(false); }} onClick={(event) => { if (event.target === event.currentTarget) setEnlarged(false); }}>
+      <header><div><h2>{station?.name} · {mainLabel}</h2><span>演示画面</span></div><button type="button" aria-label="关闭放大预览" onClick={() => setEnlarged(false)}><CloseOutlined />关闭</button></header>
+      {available && <div className="ds-video-expanded-frame"><img className={swapped ? "is-detail" : ""} src={preview.poster} alt={`${station.name}${mainLabel}放大演示画面`} onError={() => setImageFailed(true)} /></div>}
+      <footer>{station?.project}</footer>
+    </dialog>
   </section>;
 }
 
@@ -201,7 +229,7 @@ export default function DataScreen() {
     <div className="ds-ambient ds-ambient--left" /><div className="ds-ambient ds-ambient--right" />
     <div className="ds-stage" style={{ transform: `translate(-50%, -50%) scale(${scale})` }}>
       <header className="ds-header">
-        <div className="ds-brand"><span className="ds-brand-mark"><ApartmentOutlined /></span><div><strong>{snapshot.schoolName}</strong><span className={demo ? "ds-demo-badge" : ""}>{demo ? "演示数据" : teacherId ? "教师范围" : "校级业务数据"} · 规模累计</span></div></div>
+        <div className="ds-brand"><span className="ds-brand-mark"><span className="ds-brain-icon" role="img" aria-label="AI智能大脑" /></span><div><strong>{snapshot.schoolName}</strong><span className={demo ? "ds-demo-badge" : ""}>{demo ? "演示数据" : teacherId ? "教师范围" : "校级业务数据"} · 规模累计</span></div></div>
         <div className="ds-title"><h1>AI视觉实训操作流程智能评测系统</h1><p>实训运行与教学成果数据大屏</p></div>
         <div className="ds-clock"><strong>{clock.toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false })}</strong><span>{clock.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", weekday: "long" }).replaceAll("/", ".")}</span></div>
       </header>
@@ -220,7 +248,7 @@ export default function DataScreen() {
           <Panel title="实训工位运行全景" label="工位与视频预览" className="ds-panorama">
             <div className="ds-panorama-stats"><span><i />当前实训<strong>{snapshot.running}<small>个工位</small></strong></span><span>设备健康<strong>{snapshot.healthy}<small>/ {snapshot.workstations.length}</small></strong></span><span>AI可用<strong>{snapshot.aiReady}<small>个工位</small></strong></span></div>
             <div className="ds-scene-layout">
-              <WorkstationPreview key={`${demo}-${focused?.id}`} station={focused} />
+              <WorkstationPreview key={`${demo}-${focused?.id}`} station={focused} onInteract={() => setPaused(true)} />
               <WorkstationScene stations={stations} selectedId={focused?.id} onSelect={selectStation} />
               <div className="ds-station-list" aria-label="本组工位状态">{stations.map((w) => <button type="button" key={w.id} className={w.id === focused?.id ? "is-selected" : ""} aria-pressed={w.id === focused?.id} onClick={() => selectStation(w.id)}><strong title={w.name}>{w.name}</strong><span style={{ color: colors[tone(w.status)] }}><i />{w.status}</span></button>)}</div>
             </div>
@@ -238,10 +266,10 @@ export default function DataScreen() {
             <div className="ds-composition" role="img" aria-label="实际评价方式构成">{snapshot.modes.map((m) => m.count > 0 && <span key={m.key} style={{ flex: m.count, background: m.color }} title={`${m.name} ${m.count} 步`} />)}{!snapshot.modeTotal && <span className="ds-no-data-bar" />}</div>
             <div className="ds-mode-legend">{snapshot.modes.map((m) => <span key={m.key}><i style={{ background: m.color }} />{m.name}<b>{m.count}</b></span>)}</div>
           </Panel>
-          <Panel title="安全与异常闭环" label="已确认事件">
+          <Panel title="安全与异常闭环" label="已确认事件" className="ds-events-panel">
             {events.length ? <div className="ds-events">{events.map((e) => <article key={e.id}><i className={e.closed ? "closed" : ""} /><div><strong>{e.title}</strong><span>{time(e.time)} · {e.kind}</span></div><b className={e.closed ? "closed" : ""}>{e.status}</b></article>)}</div> : <div className="ds-clear"><SafetyCertificateOutlined /><strong>当前没有已记录事件</strong><span>安全候选不计入确认事件</span></div>}
           </Panel>
-          <Panel title="录像证据保障" label={`近${days}日`}>
+          <Panel title="录像证据保障" label={`近${days}日`} className="ds-evidence-panel">
             <div className="ds-evidence-heading"><strong>{snapshot.recordingRate ?? "—"}<small>{snapshot.recordingRate == null ? "" : "%"}</small></strong><div><b>录像完整率</b><span>{number(snapshot.recordingTotal)} 份录像记录</span></div></div>
             <div className="ds-evidence-strip" role="img" aria-label="录像完整性构成">{snapshot.recording.map((r) => r.count > 0 && <span key={r.name} style={{ flex: r.count, background: r.color }} />)}{!snapshot.recordingTotal && <span style={{ flex: 1, background: "#34475b" }} />}</div>
             <div className="ds-evidence-legend">{snapshot.recording.map((r) => <span key={r.name}><i style={{ background: r.color }} />{r.name}<b>{number(r.count)}</b></span>)}</div>
@@ -250,9 +278,9 @@ export default function DataScreen() {
       </div>
       <div className="ds-bottom-grid">
         <Panel title="操作薄弱点分析" label="已发布考试 · 扣分发生率" className="ds-heat-panel">
-          <div className="ds-heat-legend"><span>低</span><i /><span>高</span><b>— 无样本</b></div>
+          <div className="ds-heat-legend"><span>低</span><i style={{ background: heatGradient }} /><span>高</span><b>— 无样本</b></div>
           {heat.length ? <div className="ds-heat" style={{ "--ds-heat-cols": stepCount }}><span>课程 / 步骤</span>{Array.from({ length: stepCount }, (_, i) => <span key={i}>Step {String(i + 1).padStart(2, "0")}</span>)}
-            {heat.map((row) => <div className="ds-heat-row" key={row.id}><strong>{row.name}</strong>{Array.from({ length: stepCount }, (_, i) => { const cell = row.cells[i]; return <span key={i} title={cell ? `${cell.name} · ${cell.samples}个样本` : "不适用"} style={{ background: cell?.rate == null ? "#172d43" : `rgba(${cell.rate > 15 ? "239,187,102" : "61,228,205"},${0.1 + Math.min(cell.rate, 50) / 70})` }}>{cell?.rate == null ? "—" : `${cell.rate}%`}</span>; })}</div>)}
+            {heat.map((row) => <div className="ds-heat-row" key={row.id}><strong>{row.name}</strong>{Array.from({ length: stepCount }, (_, i) => { const cell = row.cells[i]; return <span key={i} title={cell ? `${cell.name} · ${cell.samples}个样本` : "不适用"} style={{ background: heatColor(cell?.rate), color: cell?.rate == null ? "#7291a5" : undefined }}>{cell?.rate == null ? "—" : `${cell.rate}%`}</span>; })}</div>)}
           </div> : empty}
         </Panel>
         <Panel title="标准与能力建设" label="校级能力沉淀" className="ds-construction-panel">
