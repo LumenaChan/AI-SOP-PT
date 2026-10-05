@@ -17,5 +17,20 @@
 
 # Local-only product references and documentation
 /【基于3个开源项目】高职实训_SOP智能识别技术方案_V1.0.md
+/AISOP-下载浏览器数据并替换console.rtf
+/Codex连接与会话压缩故障排查-2026-10-04.md
 /xingchen-prototype/其他方案参考/
 /xingchen-prototype/docs/
+
+
+# Local browser / product audit artifacts
+/xingchen-prototype/audit-*/
+
+# Local visual/test output directories
+/xingchen-prototype/screenshots/
+/xingchen-prototype/test-results/
+/xingchen-prototype/playwright-report/
+/xingchen-prototype/coverage/
+
+# Historical visual reference, not used by the app
+/xingchen-prototype/public/assets/reference-monitor.png
