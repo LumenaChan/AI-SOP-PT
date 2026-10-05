@@ -1036,7 +1036,9 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             让教育更智能
           </span>
           <span className="sidebar__footer-brand">
-            兴辰智能 · AI赋能职业教育
+            AI赋能职业教育
+            <br />
+            兴辰智能（北京）科技有限公司
           </span>
         </div>
       </aside>

@@ -288,7 +288,7 @@ export default function DataScreen() {
           <p>标准 <i>→</i> 操作 <i>→</i> 评价 <i>→</i> 证据</p>
         </Panel>
       </div>
-      <footer className={`ds-footer ${result.error ? "has-error" : ""}`}><span><i />{demo ? "演示数据" : `${teacherId ? "教师范围" : "校级范围"} · ${dataSource === "cpd" ? "CPD数据" : "本地业务数据"}`} · {result.error ? "更新暂缓 · 最后成功 " : "统计更新于 "}{time(result.refreshedAt)}</span><strong>每一次评价都有依据</strong><span><button type="button" className="ds-controls-toggle" aria-label={controls ? "隐藏展示设置" : "显示展示设置"} aria-expanded={controls} aria-controls="data-screen-controls" onClick={() => setControls((visible) => !visible)}>{paused ? "已暂停轮播" : "自动轮播"}</button> · 兴辰智能</span></footer>
+      <footer className={`ds-footer ${result.error ? "has-error" : ""}`}><span><i />{demo ? "演示数据" : `${teacherId ? "教师范围" : "校级范围"} · ${dataSource === "cpd" ? "CPD数据" : "本地业务数据"}`} · {result.error ? "更新暂缓 · 最后成功 " : "统计更新于 "}{time(result.refreshedAt)}</span><strong>每一次评价都有依据</strong><span><button type="button" className="ds-controls-toggle" aria-label={controls ? "隐藏展示设置" : "显示展示设置"} aria-expanded={controls} aria-controls="data-screen-controls" onClick={() => setControls((visible) => !visible)}>{paused ? "已暂停轮播" : "自动轮播"}</button> · 兴辰智能（北京）科技有限公司</span></footer>
     </div>
     {controls && <div id="data-screen-controls" className="ds-controls is-visible">
       <span><SettingOutlined /> 展示设置</span>
