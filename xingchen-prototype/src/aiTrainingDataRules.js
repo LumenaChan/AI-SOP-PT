@@ -1,3 +1,4 @@
+import { sourceDurationMs } from "./preannotationRules.js";
 export const TRAINING_SPLITS = {
   unassigned: "未分配",
   train: "训练集",
@@ -53,18 +54,6 @@ function fileIsValid(item, sourceById) {
     item?.fileStatus !== "corrupt" &&
     item?.invalidatedAt == null
   );
-}
-
-function sourceDurationMs(source) {
-  const parts = String(source?.duration || "")
-    .split(":")
-    .map(Number);
-  if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0))
-    return 0;
-  if (parts.length === 3)
-    return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
-  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
-  return parts[0] * 1000;
 }
 
 export function collectTrainingCandidates({
@@ -154,18 +143,34 @@ export function groupTrainingCandidates({
   );
   const grouped = new Map();
   for (const item of candidates || []) {
-    if (!grouped.has(item.sourceVideoId)) grouped.set(item.sourceVideoId, []);
-    grouped.get(item.sourceVideoId).push(item);
+    const key =
+      sourceById[item.sourceVideoId]?.sourceGroupId || item.sourceVideoId;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
   }
-  return [...grouped.entries()].map(([sourceVideoId, groupItems]) => {
-    const assignment = config?.sourceAssignments?.[sourceVideoId];
-    const assignedIds = new Set(assignment?.itemIds || []);
+  return [...grouped.entries()].map(([sourceGroupId, groupItems]) => {
+    const sourceVideoIds = [...new Set(groupItems.map((x) => x.sourceVideoId))];
+    const sourceVideoId = sourceVideoIds[0];
+    const assignments = sourceVideoIds
+      .map((id) => config?.sourceAssignments?.[id])
+      .filter(Boolean);
+    const splits = new Set(assignments.map((a) => a.split));
+    const assignment =
+      splits.size === 1 && assignments.length === sourceVideoIds.length
+        ? assignments[0]
+        : null;
+    const assignedIds = new Set(assignments.flatMap((a) => a.itemIds || []));
+    const sealed = sourceVideoIds.some(
+      (id) => sourceById[id]?.sampleUse === "sealed_test",
+    );
     const includesNewData = groupItems.some(
       (item) => !assignedIds.has(item.id),
     );
     const split =
       ASSIGNED_SPLITS.includes(assignment?.split) && !includesNewData
-        ? assignment.split
+        ? sealed && assignment.split !== "test"
+          ? "unassigned"
+          : assignment.split
         : "unassigned";
     const categoryIds = [
       ...new Set(
@@ -174,7 +179,16 @@ export function groupTrainingCandidates({
     ];
     return {
       sourceVideoId,
-      sourceGroupId: sourceById[sourceVideoId]?.sourceGroupId || sourceVideoId,
+      sourceGroupId,
+      sourceVideoIds,
+      sealed,
+      participantIds: [
+        ...new Set(
+          sourceVideoIds
+            .map((id) => sourceById[id]?.participantId)
+            .filter(Boolean),
+        ),
+      ],
       sourceVideo: sourceById[sourceVideoId],
       items: groupItems,
       itemIds: groupItems.map((item) => item.id),
@@ -275,6 +289,39 @@ export function autoAssignSourceGroups(
     assignments[group.sourceVideoId] = { split, itemIds: group.itemIds };
     counts[split] += group.itemCount;
   }
+  // Connected participant groups remain in one split even across separate recordings.
+  const parents = list.map((_, i) => i),
+    find = (i) => (parents[i] === i ? i : (parents[i] = find(parents[i])));
+  const owners = new Map();
+  list.forEach((g, i) =>
+    (g.participantIds || []).forEach((id) => {
+      if (owners.has(id)) parents[find(i)] = find(owners.get(id));
+      else owners.set(id, i);
+    }),
+  );
+  const clusterSplit = new Map();
+  list.forEach((g, i) => {
+    const root = find(i);
+    if (g.sealed) clusterSplit.set(root, "test");
+    else if (!clusterSplit.has(root))
+      clusterSplit.set(root, assignments[g.sourceVideoId]?.split || "train");
+  });
+  list.forEach((g, i) => {
+    if (assignments[g.sourceVideoId])
+      assignments[g.sourceVideoId].split = clusterSplit.get(find(i));
+  });
+  for (const group of list) {
+    const assignment = assignments[group.sourceVideoId];
+    if (!assignment) continue;
+    if (group.sealed) assignment.split = "test";
+    for (const id of group.sourceVideoIds || [group.sourceVideoId])
+      assignments[id] = {
+        split: assignment.split,
+        itemIds: (group.items || [])
+          .filter((x) => x.sourceVideoId === id)
+          .map((x) => x.id),
+      };
+  }
   return assignments;
 }
 
@@ -282,11 +329,23 @@ export function assignSourceGroup(config, group, split) {
   if (!group?.sourceVideoId) throw new Error("原始视频数据组不存在或已失效。");
   if (!ASSIGNED_SPLITS.includes(split))
     throw new Error("请选择训练集、验证集或测试集。");
+  if (group.sealed && split !== "test")
+    throw new Error("封存测试数据只能分配到测试集，不能用于训练或调优。");
   return {
     ...(config || {}),
     sourceAssignments: {
       ...(config?.sourceAssignments || {}),
-      [group.sourceVideoId]: { split, itemIds: [...group.itemIds] },
+      ...Object.fromEntries(
+        (group.sourceVideoIds || [group.sourceVideoId]).map((id) => [
+          id,
+          {
+            split,
+            itemIds: group.items
+              ?.filter((x) => x.sourceVideoId === id)
+              .map((x) => x.id) || [...group.itemIds],
+          },
+        ]),
+      ),
     },
     readinessStatus: "pending",
     preparedAt: "",
@@ -392,16 +451,41 @@ export function buildTrainingReadiness({
   const targetRows = distribution.rows.filter((row) =>
     targetIds.includes(row.categoryId),
   );
+  const participantSplits = new Map();
+  for (const group of groups || [])
+    for (const id of group.participantIds || []) {
+      if (!ASSIGNED_SPLITS.includes(group.split)) continue;
+      if (!participantSplits.has(id)) participantSplits.set(id, new Set());
+      participantSplits.get(id).add(group.split);
+    }
+  const sourceSplits = new Map();
+  for (const group of groups || [])
+    for (const sourceId of [
+      group.sourceGroupId,
+      ...(group.sourceVideoIds || [group.sourceVideoId]),
+    ].filter(Boolean)) {
+      if (!ASSIGNED_SPLITS.includes(group.split)) continue;
+      if (!sourceSplits.has(sourceId)) sourceSplits.set(sourceId, new Set());
+      sourceSplits.get(sourceId).add(group.split);
+    }
   const checks = {
+    noParticipantLeakage: [...participantSplits.values()].every(
+      (s) => s.size <= 1,
+    ),
+    sealedTestProtected: (groups || []).every(
+      (g) => !g.sealed || g.split === "test" || g.split === "unassigned",
+    ),
     hasData: (candidates || []).length > 0,
     hasTrainData: counts.train > 0,
     hasValidationData: counts.validation > 0,
     hasTestData: counts.test > 0,
     allAssigned: counts.unassigned === 0,
-    noSourceVideoLeakage: (groups || []).every(
-      (group) =>
-        ASSIGNED_SPLITS.includes(group.split) || group.split === "unassigned",
-    ),
+    noSourceVideoLeakage:
+      [...sourceSplits.values()].every((s) => s.size <= 1) &&
+      (groups || []).every(
+        (group) =>
+          ASSIGNED_SPLITS.includes(group.split) || group.split === "unassigned",
+      ),
     annotationsComplete: true,
     filesValid: true,
     hasTargetCategories: targetIds.length > 0,
@@ -422,6 +506,10 @@ export function buildTrainingReadiness({
   const currentIds = (candidates || []).map((item) => item.id);
   const dataChanged = !sameIds(config?.lastSavedCandidateIds, currentIds);
   const blockers = [];
+  if (!checks.noParticipantLeakage)
+    blockers.push("同一操作人跨集合出现，请按独立人员重新划分。");
+  if (!checks.sealedTestProtected)
+    blockers.push("封存测试数据不得进入训练或验证集。");
   if (!checks.hasData) blockers.push("当前没有已清洗且已标注的数据。");
   if (checks.hasData && !checks.allAssigned)
     blockers.push("仍有可用数据未分配到训练集、验证集或测试集。");
@@ -443,6 +531,8 @@ export function buildTrainingReadiness({
   if (dataChanged)
     blockers.push("当前训练数据已发生变化，请保存划分并重新检查。");
   const warnings = [];
+  if ((groups || []).some((g) => !(g.participantIds || []).length))
+    warnings.push("部分视频缺少操作人标识，尚不能核实人员独立性。");
   if (
     capability?.type === "object_detection" &&
     !distribution.noTargetItemCount
@@ -477,7 +567,10 @@ export function summarizeTrainingData(
     candidateCount: (candidates || []).length,
     assignedCount: counts.train + counts.validation + counts.test,
     unavailableCount,
-    sourceVideoCount: (groups || []).length,
+    sourceGroupCount: (groups || []).length,
+    sourceVideoCount: new Set(
+      (groups || []).flatMap((g) => g.sourceVideoIds || [g.sourceVideoId]),
+    ).size,
     ...counts,
   };
 }

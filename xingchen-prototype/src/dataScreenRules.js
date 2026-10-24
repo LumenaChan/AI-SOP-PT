@@ -1,3 +1,5 @@
+import { stepEvaluationMeaning } from "./visualEvaluationRules.js";
+import { withCameraAliases,cameraViews } from "./cameraRules.js";
 import { deriveSopAiConfigurationSummary } from "./aiEntry.js";
 
 export const SCREEN_COLORS = ["#3de4cd", "#4d9fff", "#efbb66", "#a7a9ff"];
@@ -12,7 +14,7 @@ function workstationPreview(workstation, devices, { demo, isExam, status }) {
     const idle = status === "待命";
     return { state: "demo", poster: idle ? "/assets/workstation-empty.png" : index % 2 ? "/assets/workstation-female.png" : "/assets/workstation-male.png", hasAuxiliary: !idle };
   }
-  const base = workstation.aiBaseConfig;
+  const base = withCameraAliases(workstation.aiBaseConfig||{});
   const cameras = workstation.implementation?.cameras || [];
   const primary = base?.primaryCameraId
     ? devices.find((d) => d.id === base.primaryCameraId)
@@ -50,7 +52,7 @@ const percent = (value, total) => total ? Math.round(value / total * 100) : null
 // Scheduled dates are never substituted for actual participation dates.
 export function buildDataScreenSnapshot(data = {}, { now = new Date(), days = 30, teacherId = null } = {}) {
   const allArrangements = [...new Map((data.arrangements || [])
-    .filter((a) => a.id && !a.archivedRecord && a.status !== "已取消" && (!teacherId || a.teacherId === teacherId))
+    .filter((a) => a.id && (!a.demoPackageId || data.dataScreenDemo) && !a.archivedRecord && a.status !== "已取消" && (!teacherId || a.teacherId === teacherId))
     .map((a) => [a.id, a])).values()];
   const sopsById = new Map((data.sops || []).map((s) => [s.id, s]));
   const studentsById = new Map((data.students || []).map((s) => [s.id, s]));
@@ -76,12 +78,12 @@ export function buildDataScreenSnapshot(data = {}, { now = new Date(), days = 30
   const uniqueStudents = new Set(sessions.map(({ session }) => session.studentId).filter(Boolean));
   const classIds = new Set([...uniqueStudents].map((id) => studentsById.get(id)?.classId).filter(Boolean));
   const relevantSopIds = teacherId ? new Set(allArrangements.map((a) => a.sopId)) : null;
-  const sopVersions = (data.sops || [])
-    .filter((s) => s.status === "已发布" && (!relevantSopIds || relevantSopIds.has(s.id)))
+  const currentStandards = (data.sops || [])
+     .filter((s) => (!s.demoPackageId || data.dataScreenDemo) && s.status === "已发布" && (!relevantSopIds || relevantSopIds.has(s.id)))
     .sort((a, b) => String(b.publishedAt || "").localeCompare(String(a.publishedAt || "")));
   const latestSops = new Map();
-  for (const sop of sopVersions) {
-    const key = sop.familyId || sop.id;
+  for (const sop of currentStandards) {
+    const key = sop.id;
     if (!latestSops.has(key)) latestSops.set(key, sop);
   }
   const publishedSops = [...latestSops.values()];
@@ -124,7 +126,7 @@ export function buildDataScreenSnapshot(data = {}, { now = new Date(), days = 30
   }
   const relatedWorkstations = teacherId ? new Set(allArrangements.flatMap((a) => a.workstationIds || [])) : null;
   const active = allArrangements.filter((a) => ["进行中", "已暂停"].includes(a.status));
-  const workstations = (data.workstations || []).filter((w) => !relatedWorkstations || relatedWorkstations.has(w.id)).map((w) => {
+  const workstations = (data.workstations || []).filter((w) => (!w.demoPackageId || data.dataScreenDemo) && (!relatedWorkstations || relatedWorkstations.has(w.id))).map((w) => {
     const arrangement = active.find((a) => (a.sessions || []).some((s) => s.workstationId === w.id && ["进行中", "已暂停", "故障", "可入场"].includes(s.status)));
     const session = arrangement?.sessions?.find((s) => s.workstationId === w.id && ["进行中", "已暂停", "故障", "可入场"].includes(s.status));
     const isExam = arrangement?.type === "exam";
@@ -132,6 +134,8 @@ export function buildDataScreenSnapshot(data = {}, { now = new Date(), days = 30
       : session?.status === "故障" ? "故障" : arrangement?.status === "已暂停" || session?.status === "已暂停" ? "已暂停" : session?.status === "进行中" ? "实训中" : "待命";
     const steps = isExam ? [] : (session?.steps || []).map((s) => ({ id: s.id, name: s.name,
       complete: ["已完成", "完成", "通过", "pass"].includes(s.state) || s.executionState === "completed" || ["passed", "complete"].includes(s.completionResult),
+      evaluationMeaning: stepEvaluationMeaning(s).label,
+      aiConfirmed: stepEvaluationMeaning(s).evidenceConfirmed && s.resultSource === "real",
       current: s.id === session.currentStepId,
       evidence: s.evidenceStatus === "已归档" || s.evidenceStatus === "完整",
     }));

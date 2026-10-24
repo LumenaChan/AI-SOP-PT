@@ -1,3 +1,11 @@
+import { standardReferenceMatches } from "./trainingStandardRules.js";
+import { gradeScoreValidity } from "./gradeScoreValidityRules.js";
+import {
+  scoreWithConfirmedDeductions,
+  preservedReviewStatus,
+  normalizeVisualRequirement,
+  visualRequirementIssues,
+} from "./visualEvaluationRules.js";
 export const JUDGEMENT_MODES = {
   visual_auto: {
     label: "自动评价",
@@ -76,9 +84,9 @@ export const EVALUATION_ITEM_ROLES = {
 };
 
 export const MACHINE_EVENT_CAPABILITY_MODES = {
-  existing_capability: "Existing Capability",
-  configuration_only: "Configuration Only",
-  training_required: "Training Required",
+  existing_capability: "复用已有能力",
+  configuration_only: "仅需配置",
+  training_required: "需要训练",
 };
 
 export const EVALUATION_MAPPING_STATUSES = {
@@ -90,9 +98,9 @@ export const EVALUATION_MAPPING_STATUSES = {
 };
 
 export const DATA_SPLITS = {
-  train: "Train",
-  validation: "Validation",
-  test: "Test",
+  train: "训练集",
+  validation: "验证集",
+  test: "测试集",
 };
 
 export const ACTOR_BINDING_STATUSES = {
@@ -119,6 +127,9 @@ export const COMPLETION_RESULTS = {
   not_evaluable: "不可评价",
 };
 
+// Score Disposition 的业务名称为“成绩处理状态”，教师界面使用中文。
+// 它描述异常成绩的处理进度或结论：待教师处置、需要补测、教师已处置、
+// 补测已完成等；pending / retest_required 尚未闭环，会阻止统一发布。
 export const SCORE_DISPOSITIONS = {
   pending: "待教师处置",
   teacher_resolved: "教师已处置",
@@ -206,11 +217,14 @@ export function createSopStepDraft({
     timeout: "01:00",
     score,
     completionCondition: "",
+    visualRequirementsRequired: true,
+    visualRequirements: [],
     teachingInstruction: "",
     keyPoints: "",
     commonMistakes: "",
-    standardMediaType: "示教图片",
-    standardMediaUrl: "/assets/student-monitor-hand-tracking.png",
+    standardMedia: [],
+    standardMediaType: "无",
+    standardMediaUrl: "",
     evidence: "",
     incompletePolicy: "",
     flowPolicy: createDefaultFlowPolicy(),
@@ -370,6 +384,9 @@ export function normalizeSopStep(step = {}, index = 0) {
   };
   return {
     ...step,
+    visualRequirements: (step.visualRequirements || []).map(
+      normalizeVisualRequirement,
+    ),
     expectedJudgementMode,
     judgementMode: expectedJudgementMode,
     judgementModeSource:
@@ -395,9 +412,12 @@ export function normalizeSopStep(step = {}, index = 0) {
       step.commonMistakes ||
       step.deductionRule ||
       "顺序错误、动作遗漏或工具使用不规范。",
-    standardMediaType: step.standardMediaType || "示教图片",
-    standardMediaUrl:
-      step.standardMediaUrl || "/assets/student-monitor-hand-tracking.png",
+    standardMediaType: Array.isArray(step.standardMedia)
+      ? "无"
+      : step.standardMediaType || "示教图片",
+    standardMediaUrl: Array.isArray(step.standardMedia)
+      ? ""
+      : step.standardMediaUrl || "/assets/student-monitor-hand-tracking.png",
     legacyScoringNote: step.legacyScoringNote || step.deductionRule || "",
     legacySafetyNote: step.legacySafetyNote || step.redline || "",
     legacyFlowNote:
@@ -482,7 +502,7 @@ export function validateSopDefinition(draft = {}) {
   const issues = [];
   const add = (stage, message, stepIndex = null) =>
     issues.push({ stage, message, stepIndex });
-  if (!draft.name?.trim()) add(0, "未填写 SOP 名称");
+  if (!draft.name?.trim()) add(0, "未填写实训标准名称");
   if (!draft.major?.trim()) add(0, "未选择所属专业");
   if (!draft.operation?.trim()) add(0, "未填写适用操作");
   if (!draft.basis?.trim()) add(0, "未填写标准依据");
@@ -501,13 +521,22 @@ export function validateSopDefinition(draft = {}) {
   for (const [index, raw] of steps.entries()) {
     const source = raw && typeof raw === "object" ? raw : {};
     const step = normalizeSopStep(source, index);
+    visualRequirementIssues(step, steps).forEach((message) =>
+      add(1, `${step.id} · ${message}`, index),
+    );
     if (!/^Step \d{2,}$/.test(String(source.id || "")))
-      add(1, `第 ${index + 1} 步的 Step ID 不合法`, index);
+      add(1, `第 ${index + 1} 步的步骤编号不合法`, index);
     if (ids.has(step.id)) add(1, `${step.id} 重复`, index);
     ids.add(step.id);
     if (!step.name?.trim()) add(1, `${step.id} 未填写步骤名称`, index);
     if (!step.completionCondition?.trim())
       add(1, `${step.id} 未填写完成条件`, index);
+    if (
+      step.visualRequirementsRequired &&
+      step.expectedJudgementMode !== "default_pass_manual_deduction" &&
+      !step.visualRequirements?.length
+    )
+      add(1, step.id + " 请至少填写一条可见操作要求", index);
     if (!step.teachingInstruction?.trim())
       add(1, `${step.id} 未填写标准操作说明`, index);
     if (!step.keyPoints?.trim()) add(1, `${step.id} 未填写操作要点`, index);
@@ -575,14 +604,14 @@ export function isSopAvailableForNewArrangement(sop) {
 
 export function deactivatePublishedSop(sop, at) {
   if (!isSopAvailableForNewArrangement(sop))
-    throw new Error("只有已发布的 SOP 可以停用。");
+    throw new Error("只有已发布的实训标准可以停用。");
   return { ...sop, status: "已停用", updatedAt: at };
 }
 
 export function createIndependentSopCopy(source, { id, name, at }) {
   if (!source || !["已发布", "已停用"].includes(source.status))
-    throw new Error("只能复制已发布或已停用的 SOP。");
-  if (!id || !name?.trim()) throw new Error("请填写新 SOP 名称。");
+    throw new Error("只能复制已发布或已停用的实训标准。");
+  if (!id || !name?.trim()) throw new Error("请填写新实训标准名称。");
   const copy = (value) => JSON.parse(JSON.stringify(value));
   return {
     id,
@@ -655,7 +684,11 @@ export function normalizeEvaluationMapping(mapping = {}, index = 0) {
     status: source.status || "draft",
     authoredFor: {
       sopId: source.authoredFor?.sopId || source.sopId || "",
-      sopVersion: source.authoredFor?.sopVersion || source.sopVersion || "",
+      sopVersion: source.authoredFor?.sopVersion || source.sopVersion || "", // Legacy technical reference.
+      standardDefinitionKey:
+        source.authoredFor?.standardDefinitionKey ||
+        source.standardDefinitionKey ||
+        "",
     },
     compatibleSopVersions: Array.isArray(source.compatibleSopVersions)
       ? source.compatibleSopVersions
@@ -677,9 +710,10 @@ export function isMappingApplicableToSop(mapping = {}, sop = {}) {
   const normalized = normalizeEvaluationMapping(mapping);
   if (
     normalized.authoredFor.sopId === sop.id &&
-    normalized.authoredFor.sopVersion === sop.version
+    standardReferenceMatches(normalized.authoredFor, sop)
   )
     return true;
+  if (sop.standardContentChangedAt) return false;
   return normalized.compatibleSopVersions.some(
     (reference) =>
       reference.sopVersion === sop.version &&
@@ -782,17 +816,16 @@ export function validateEvaluationMapping({ sop = {}, mapping = {} } = {}) {
     (sop.safetyRules || []).map((rule) => [rule.id, rule]),
   );
   const eventIds = new Set(normalized.machineEvents.map((event) => event.id));
-  if (!normalized.evaluationItems.length)
-    issues.push("至少需要一个 Evaluation Item");
+  if (!normalized.evaluationItems.length) issues.push("至少需要一个评价项");
 
   for (const item of normalized.evaluationItems) {
     if (!item.name.trim()) issues.push(`${item.id} 未填写评价项名称`);
-    if (!stepIds.has(item.stepId)) issues.push(`${item.id} 关联的 Step 不存在`);
-    if (!item.roles.length) issues.push(`${item.id} 至少选择一个 role`);
+    if (!stepIds.has(item.stepId)) issues.push(`${item.id} 关联的步骤不存在`);
+    if (!item.roles.length) issues.push(`${item.id} 至少选择一个评价用途`);
     if (item.roles.some((role) => !EVALUATION_ITEM_ROLES[role]))
-      issues.push(`${item.id} 包含无效 role`);
+      issues.push(`${item.id} 包含无效的评价用途`);
     if (item.machineEventIds.some((eventId) => !eventIds.has(eventId)))
-      issues.push(`${item.id} 引用了不存在的 Machine Event`);
+      issues.push(`${item.id} 引用了不存在的机器事实`);
     const step = (sop.steps || [])
       .map(normalizeSopStep)
       .find((entry) => entry.id === item.stepId);
@@ -802,13 +835,13 @@ export function validateEvaluationMapping({ sop = {}, mapping = {} } = {}) {
       step?.expectedJudgementMode !== "default_pass_manual_deduction" &&
       !item.machineEventIds.length
     )
-      issues.push(`${item.id} 至少需要关联一个 Machine Event`);
+      issues.push(`${item.id} 至少需要关联一个机器事实`);
     if (item.roles.includes("completion") && !item.sourceCompletion.trim())
       issues.push(`${item.id} 缺少来自 SOP 的完成条件`);
     if (item.roles.includes("scoring") && !item.sourceScoreRuleIds.length)
-      issues.push(`${item.id} 承担评分依据时必须引用 Score Rule`);
+      issues.push(`${item.id} 承担评分依据时必须引用评分规则`);
     if (item.roles.includes("safety") && !item.sourceSafetyRuleIds.length)
-      issues.push(`${item.id} 承担安全提醒时必须引用 Safety Rule`);
+      issues.push(`${item.id} 承担安全提醒时必须引用安全规则`);
     if (
       item.sourceScoreRuleIds.some(
         (ruleId) => scoreRules.get(ruleId)?.stepId !== item.stepId,
@@ -901,16 +934,16 @@ export function validateDatasetSplitIsolation(splits = {}) {
 export function getAiPackageCreationReadiness({ sop, mapping, dataset } = {}) {
   const issues = [];
   const requirements = deriveDataRequirements(mapping);
-  if (!sop || sop.status !== "已发布") issues.push("SOP 尚未发布");
+  if (!sop || sop.status !== "已发布") issues.push("实训标准尚未发布");
   if (!mapping || mapping.status !== "confirmed")
-    issues.push("Evaluation Mapping 尚未完成教师确认");
+    issues.push("评价映射尚未完成教师确认");
   if (requirements.requiresTraining) {
     if (!dataset || dataset.status !== "已锁定")
-      issues.push("Training Required 能力必须绑定已锁定 Dataset");
+      issues.push("需要训练能力必须绑定已锁定数据集");
     const isolation = validateDatasetSplitIsolation(dataset?.splits || {});
     if (dataset && !isolation.passed) issues.push(...isolation.issues);
     if (dataset && isolation.sourceVideoCount < 1)
-      issues.push("Dataset 尚未纳入通过审核的 Source Video");
+      issues.push("数据集尚未纳入通过审核的源视频");
   }
   return { passed: issues.length === 0, issues, requirements };
 }
@@ -1009,7 +1042,7 @@ export function assessSopAiImpact({ fromSop, toSop } = {}) {
   if (!fromSop || !toSop)
     return {
       changeType: "unknown",
-      summary: "缺少前后SOP版本，无法完成AI影响分析",
+      summary: "缺少前后标准快照，无法完成AI影响分析",
       layers: {
         mapping: "update_required",
         aiPackage: "validation_required",
@@ -1040,7 +1073,7 @@ export function assessSopAiImpact({ fromSop, toSop } = {}) {
   if (scoringChanged)
     return {
       changeType: "scoring",
-      summary: "评分分值或Score Rule发生变化，机器事实能力可继续复用",
+      summary: "评分分值或评分规则发生变化，机器事实能力可继续复用",
       layers: {
         mapping: "update_required",
         aiPackage: "compatible",
@@ -1173,12 +1206,10 @@ export function canProduceNegativeAutoEvaluation({
   sessionPaused = false,
 } = {}) {
   const reasons = [];
-  if (actorBinding?.status !== "confirmed")
-    reasons.push("Primary Actor 未确认");
-  if (observationWindow?.status !== "open")
-    reasons.push("Observation Window 未开启");
-  if (!evidenceValid) reasons.push("Camera / AI 证据链无效");
-  if (sessionPaused) reasons.push("Session 已暂停");
+  if (actorBinding?.status !== "confirmed") reasons.push("主操作人未确认");
+  if (observationWindow?.status !== "open") reasons.push("观察窗口未开启");
+  if (!evidenceValid) reasons.push("摄像头或AI证据链无效");
+  if (sessionPaused) reasons.push("实训记录已暂停");
   return { allowed: reasons.length === 0, reasons };
 }
 
@@ -1237,6 +1268,9 @@ export function createSessionStepsFromSop(sopSteps = []) {
     return normalizeRuntimeStep({
       ...step,
       state: "pending",
+      evidenceSemantics: "observations_v1",
+      aiEvidenceState: "pending",
+      completionSource: "",
       result: "未进行",
       duration: "--",
       maxScore,
@@ -1254,7 +1288,7 @@ export function createSessionStepsFromSop(sopSteps = []) {
   });
 }
 
-export function applyDefaultPassPolicy(step = {}) {
+export function applyDefaultPassPolicy(step = {}, context = {}) {
   const normalized = normalizeSopStep(step);
   const uncertainty =
     ["证据不足", "画面遮挡", "无法判定", "AI低置信度"].includes(
@@ -1275,20 +1309,46 @@ export function applyDefaultPassPolicy(step = {}) {
   const safetyBlocked =
     normalized.result === "安全阻断" || normalized.redlineConfirmed === true;
 
-  if (uncertainty && !manuallyReviewed && !safetyBlocked) {
+  const confirmedDemo =
+    step.evidenceSemantics === "observations_v1" &&
+    step.resultSource === "prototype_demo" &&
+    step.aiEvidenceState === "confirmed";
+  if (uncertainty && !manuallyReviewed && !safetyBlocked && !confirmedDemo) {
     const fullScore = Number(normalized.maxScore ?? normalized.score ?? 0);
+    const protectedScore = scoreWithConfirmedDeductions(
+      normalized,
+      context?.scoringApplications || [],
+    );
     return {
       ...normalized,
-      state: "pass",
-      result: "默认通过",
+      state:
+        normalized.evidenceSemantics === "observations_v1"
+          ? normalized.state
+          : "pass",
+      completionResult:
+        normalized.evidenceSemantics === "observations_v1"
+          ? "uncertain"
+          : normalized.completionResult,
+      aiEvidenceState: "unknown",
+      result: protectedScore.deduction
+        ? "未自动确认（保留有效规则扣分）"
+        : "默认通过",
       rawScore: fullScore,
-      effectiveScore: fullScore,
-      score: fullScore,
-      reviewStatus: "建议抽查",
+      effectiveScore: protectedScore.effectiveScore,
+      score: protectedScore.effectiveScore,
+      ...(normalized.evidenceSemantics === "observations_v1"
+        ? { scoreEvidenceApplicationIds: protectedScore.applicationIds }
+        : {}),
+      reviewStatus:
+        normalized.evidenceSemantics === "observations_v1"
+          ? preservedReviewStatus(normalized)
+          : "建议抽查",
       defaultPassReason:
-        normalized.evidenceStatus === "证据不足"
-          ? "视频证据不足，按既定规则默认通过"
-          : "AI 无法可靠判定，按既定规则默认通过",
+        normalized.evidenceSemantics === "observations_v1"
+          ? "自动完成证据不足，不因缺证追加扣分；保留已确认的独立评分记录"
+          : normalized.evidenceStatus === "证据不足"
+            ? "视频证据不足，按既定规则默认通过"
+            : "AI 无法可靠判定，按既定规则默认通过",
     };
   }
   return normalized;
@@ -1347,34 +1407,36 @@ export function automaticEvaluationGate({
   const implementation = normalizeWorkstationProfile(
     workstationProfile || workstation?.implementation || {},
   );
+  // Legacy compatibility approvals cannot authorize reuse after content changes.
+  if (sop?.standardContentChangedAt) compatibilityDecision = null;
   const reasons = [];
-  if (!sop || sop.status !== "已发布") reasons.push("SOP 尚未发布");
+  if (!sop || sop.status !== "已发布") reasons.push("实训标准尚未发布");
   if (requireConfirmedMapping && mapping?.status !== "confirmed")
     reasons.push("AI评价业务口径尚未完成教师确认");
   if (!model || model.status !== "已部署") reasons.push("没有兼容的已部署模型");
   if (
     model &&
     sop &&
-    model.sopVersion !== sop.version &&
+    !standardReferenceMatches(model, sop) &&
     !isCompatibilityLayerAccepted(compatibilityDecision, "aiPackage")
   )
-    reasons.push("模型与当前 SOP 版本不兼容");
+    reasons.push("模型与当前实训标准内容不兼容");
   if (implementation.cameraPosition !== "已确认") reasons.push("机位尚未确认");
   if (implementation.lighting !== "已确认") reasons.push("光照尚未确认");
   if (implementation.occlusion !== "已确认") reasons.push("遮挡条件尚未确认");
   if (!implementation.roiVersion) reasons.push("尚未配置 ROI 版本");
   if (!implementation.cameraConfigVersion)
     reasons.push("尚未确认摄像头配置版本");
-  if (!validation) reasons.push("当前 SOP 版本尚无现场验证记录");
+  if (!validation) reasons.push("当前实训标准尚无现场验证记录");
   if (validation && validation.status !== "通过")
     reasons.push("现场验证未通过");
   if (
     validation &&
     sop &&
-    validation.sopVersion !== sop.version &&
+    !standardReferenceMatches(validation, sop) &&
     !isCompatibilityLayerAccepted(compatibilityDecision, "validation")
   )
-    reasons.push("现场验证记录不属于当前 SOP 版本");
+    reasons.push("现场验证记录与当前实训标准内容不一致");
   if (validation && model && validation.modelVersion !== model.version)
     reasons.push("模型版本已变化，需要重新现场验证");
   if (
@@ -1396,9 +1458,9 @@ export function automaticEvaluationGate({
     validation.workstationProfileVersion !== implementation.version &&
     !isCompatibilityLayerAccepted(compatibilityDecision, "workstationProfile")
   )
-    reasons.push("Workstation Profile 已变化，需要重新现场验证");
+    reasons.push("工位配置已变化，需要重新现场验证");
   if (validation?.coverage && !validation.coverage.passed)
-    reasons.push("Validation Test Case 尚未覆盖全部 Evaluation Item");
+    reasons.push("现场验证用例尚未覆盖全部评价项");
 
   const enabled = reasons.length === 0;
   const automaticSteps = (sop?.steps || []).filter(
@@ -1510,7 +1572,7 @@ export function getSopAiEvaluationStatus({
       targetWorkstationCount: 0,
       validatedWorkstationCount: 0,
       mappingStatus,
-      reasons: ["草稿或未发布 SOP 不进入 AI 评价适配"],
+      reasons: ["草稿或未发布的实训标准不进入 AI 评价适配"],
     };
   }
 
@@ -1527,6 +1589,7 @@ export function getSopAiEvaluationStatus({
     .find(
       (item) =>
         item.toSopId === sop.id &&
+        !sop.standardContentChangedAt &&
         item.toVersion === sop.version &&
         ["compatible", "conditional"].includes(item.decision),
     );
@@ -1534,7 +1597,7 @@ export function getSopAiEvaluationStatus({
     models.filter(
       (item) =>
         item.sopId === sop.id &&
-        item.sopVersion === sop.version &&
+        standardReferenceMatches(item, sop) &&
         item.status === "已部署",
     ),
   );
@@ -1566,8 +1629,8 @@ export function getSopAiEvaluationStatus({
     latestDataset && latestDataset.version !== productionDataset?.version
       ? latestDataset
       : null;
-  const compatibleModels = models.filter(
-    (item) => item.sopId === sop.id && item.sopVersion === sop.version,
+  const compatibleModels = models.filter((item) =>
+    standardReferenceMatches(item, sop),
   );
   const hasStarted =
     sopDatasets.length > 0 ||
@@ -1590,7 +1653,7 @@ export function getSopAiEvaluationStatus({
       .filter(
         (record) =>
           record.workstationId === workstation.id &&
-          ((record.sopId === sop.id && record.sopVersion === sop.version) ||
+          (standardReferenceMatches(record, sop) ||
             (isCompatibilityLayerAccepted(
               compatibilityDecision,
               "validation",
@@ -1630,13 +1693,13 @@ export function getSopAiEvaluationStatus({
     !productionDataset &&
     !latestLockedDataset
   )
-    reasons.push("尚无已锁定 Dataset");
+    reasons.push("尚无已锁定数据集");
   if (
     deployedModel &&
     deployedModel.requiresTraining !== false &&
     !productionDataset
   )
-    reasons.push("已部署模型绑定的 Dataset 不存在");
+    reasons.push("已部署模型绑定的数据集不存在");
   if (!deployedModel) reasons.push("尚无兼容的已部署模型");
   if (!targetWorkstations.length) reasons.push("尚未设置或识别目标工位");
   if (!mappingStatus.confirmed) reasons.push("AI评价业务口径尚未完成教师确认");
@@ -1751,74 +1814,66 @@ export function sessionPrimaryIssue(session) {
 
 export function arrangementDestination(item) {
   if (item.status === "草稿") return "edit";
+  if (item.status === "已取消") return "prep";
   if (["待开始", "准备中"].includes(item.status)) return "prep";
   if (["进行中", "已暂停"].includes(item.status)) return "live";
   return "results";
 }
 
-export function getPublishBlockers(sessions = []) {
-  return sessions.filter((session) => {
-    if (session.resultStatus === "未参加") return false;
-    const steps = session.steps || [];
-    const hasMandatoryReview = steps.some(requiresMandatoryReview);
-    const hasPendingDisposition = steps.some((step) =>
-      ["pending", "retest_required"].includes(
-        step.scoreDisposition?.status || "normal",
-      ),
-    );
-    const hasPendingSafety = (session.runtime?.safetyCandidates || []).some(
-      (candidate) => candidate.status === "pending",
-    );
-    const hasCompleteScore =
-      steps.length === 0 ||
-      steps.every((step) => {
-        const value = step.effectiveScore ?? step.score;
-        return value !== null && value !== "" && Number.isFinite(Number(value));
-      });
-    const resultReady = ["正式成绩", "已发布"].includes(session.resultStatus);
-    return (
-      hasMandatoryReview ||
-      hasPendingDisposition ||
-      hasPendingSafety ||
-      !hasCompleteScore ||
-      (steps.length === 0 && !resultReady)
-    );
-  });
+export function getPublishBlockers(sessions = [], sop = {}) {
+  return sessions.filter(
+    (session) => !getExamPublishGate([session], sop).passed,
+  );
 }
 
-export function getExamPublishGate(sessions = []) {
+/**
+ * 考试成绩发布前的最后检查，避免向学生发布尚未正式核定的成绩。
+ * 阻止发布的情况：必须复核的步骤未处理、异常成绩待处置或需补测、
+ * 安全事件待确认、总分／步骤分／满分依据无效，或结果尚未正式核定。
+ * 未参加学生单列保留“未参加”，不按零分发布，也不阻塞其他正式成绩。
+ * 按既定规则默认通过且无需复核的步骤，不仅因AI无法判断而阻止发布；
+ * requiresMandatoryReview 负责区分强制复核与默认通过，显式待处置仍须闭环。
+ * 本函数返回会话级检查结果；发布命令还须检查考试处于待发布、有会话记录，
+ * 且该安排没有未完成的补证／补测任务。发布成功后学生可查看当前成绩；负责教师更正后同步展示最新分数。
+ */
+export function getExamPublishGate(sessions = [], sop = {}) {
   const details = [];
   for (const session of sessions) {
     if (session.resultStatus === "未参加") continue;
-    const pendingReviews = (session.steps || []).filter(
-      requiresMandatoryReview,
-    );
-    const pendingDispositions = (session.steps || []).filter((step) =>
+    const steps = session.steps || [];
+    const pendingReviews = steps.filter(requiresMandatoryReview);
+    const pendingDispositions = steps.filter((step) =>
       ["pending", "retest_required"].includes(
         step.scoreDisposition?.status || "normal",
       ),
     );
     const pendingSafety = (session.runtime?.safetyCandidates || []).filter(
-      (candidate) => candidate.status === "pending",
+      (candidate) =>
+        ["pending", "awaiting_confirmation"].includes(candidate.status),
     );
-    const emptyScores = (session.steps || []).filter((step) => {
-      const value = step.effectiveScore ?? step.score;
-      return value === null || value === "" || !Number.isFinite(Number(value));
-    });
+    const validity = gradeScoreValidity(
+      session,
+      session.evaluationSnapshot?.sopSnapshot ||
+        session.snapshot?.sopSnapshot ||
+        sop,
+    );
+    const resultReady = ["正式成绩", "已发布"].includes(session.resultStatus);
     if (
       pendingReviews.length ||
       pendingDispositions.length ||
       pendingSafety.length ||
-      emptyScores.length ||
-      (!(session.steps || []).length &&
-        !["正式成绩", "已发布"].includes(session.resultStatus))
+      !validity.valid ||
+      !resultReady
     )
       details.push({
         sessionId: session.id,
         pendingReviewCount: pendingReviews.length,
         pendingDispositionCount: pendingDispositions.length,
         pendingSafetyCount: pendingSafety.length,
-        emptyScoreCount: emptyScores.length,
+        emptyScoreCount: validity.invalidSteps.length,
+        resultNotReady: !resultReady,
+        invalidTotal: validity.invalidTotal,
+        invalidMaximum: validity.invalidMaximum,
         resultStatus: session.resultStatus,
       });
   }

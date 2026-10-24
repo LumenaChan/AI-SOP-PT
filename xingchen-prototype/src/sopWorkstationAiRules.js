@@ -1,5 +1,8 @@
+import { cameraViews, bindingCameras } from "./cameraRules.js";
 import { isCapabilityAvailableForConfiguration } from "./aiModelPublishingRules.js";
 import {
+  isCameraDevice,
+  isEdgeDevice,
   deriveWorkstationAiReadiness,
   normalizeWorkstationAiBaseConfig,
 } from "./workstationAiRules.js";
@@ -28,6 +31,30 @@ export const VALIDATION_SCENARIOS = [
   { key: "camera_error", label: "摄像头异常", kind: "technical" },
   { key: "safety", label: "安全场景", kind: "safety" },
 ];
+
+export const EXTENDED_VALIDATION_SCENARIOS = [
+  { key: "legal_variation", label: "合法做法变化", kind: "positive" },
+  { key: "pseudo_completion", label: "相似动作与伪完成", kind: "negative" },
+  { key: "interrupted_action", label: "中断、重复与纠正", kind: "negative" },
+  { key: "sustained_state", label: "持续状态失效或未知", kind: "uncertain" },
+  { key: "background", label: "背景与无效动作", kind: "negative" },
+  { key: "identity_handoff", label: "跨镜头交接确认", kind: "positive" },
+  {
+    key: "identity_ambiguous",
+    label: "同款衣着、教师入镜与交接不明",
+    kind: "uncertain",
+  },
+  {
+    key: "partial_camera",
+    label: "关键/可选相机缺失与机位变化",
+    kind: "technical",
+  },
+];
+export function validationScenariosFor(config) {
+  return config?.validationScenarioSet === "extended"
+    ? [...VALIDATION_SCENARIOS, ...EXTENDED_VALIDATION_SCENARIOS]
+    : VALIDATION_SCENARIOS;
+}
 
 const OPERATIONAL_WORKSTATION_STATUSES = new Set(["可入场", "使用中"]);
 
@@ -151,7 +178,9 @@ function isValidRectangle(mapping) {
 
 function allowedCameraIds(workstation) {
   const base = normalizeWorkstationAiBaseConfig(workstation);
-  return [base.primaryCameraId, base.fallbackCameraId].filter(Boolean);
+  return cameraViews(base)
+    .filter((c) => c.enabled)
+    .map((c) => c.deviceId);
 }
 
 export function checkSopWorkstationAiConfig({
@@ -205,13 +234,20 @@ export function checkSopWorkstationAiConfig({
     const binding = normalized.judgementCameraBindings.find(
       (entry) => entry.judgementItemId === item.id,
     );
-    const camera = devices.find((device) => device.id === binding?.cameraId);
-    return !(
-      binding &&
-      cameraIds.includes(binding.cameraId) &&
-      camera?.workstationId === workstation?.id &&
-      camera.status === "在线" &&
-      camera.streamStatus === "可用"
+    const ids = bindingCameras(binding);
+    const usable = (id) =>
+      cameraIds.includes(id) &&
+      devices.some(
+        (d) =>
+          d.id === id &&
+          d.workstationId === workstation?.id &&
+          isCameraDevice(d) &&
+          d.status === "在线" &&
+          d.streamStatus === "可用",
+      );
+    return (
+      !ids.length ||
+      (binding?.strategy === "any" ? !ids.some(usable) : !ids.every(usable))
     );
   });
   add(
@@ -224,14 +260,27 @@ export function checkSopWorkstationAiConfig({
   );
 
   const missingAreas = areas.filter((area) => {
-    const mapping = normalized.logicalAreaMappings.find(
-      (entry) => entry.logicalAreaId === area.id,
+    const related = items.filter((item) =>
+      (item.conditions || []).some((c) => c.logicalAreaId === area.id),
     );
-    return !(
-      mapping &&
-      cameraIds.includes(mapping.cameraId) &&
-      isValidRectangle(mapping)
-    );
+    return related.some((item) => {
+      const binding = normalized.judgementCameraBindings.find(
+        (b) => b.judgementItemId === item.id,
+      );
+      const ids = bindingCameras(binding);
+      const mapped = (id) =>
+        normalized.logicalAreaMappings.some(
+          (m) =>
+            m.logicalAreaId === area.id &&
+            m.cameraId === id &&
+            cameraIds.includes(id) &&
+            isValidRectangle(m),
+        );
+      return (
+        !ids.length ||
+        (binding?.strategy === "any" ? !ids.some(mapped) : !ids.every(mapped))
+      );
+    });
   });
   add(
     "logical_areas",
@@ -263,11 +312,55 @@ export function checkSopWorkstationAiConfig({
     "ai_config",
     "AI能力配置完整",
     Boolean(aiConfigReady),
-    "当前SOP的AI能力配置尚未完成",
+    "当前实训标准的AI能力配置尚未完成",
   );
 
+  const unavailableItemIds = new Set(missingBindings.map((i) => i.id));
+  for (const item of items) {
+    const binding = normalized.judgementCameraBindings.find(
+        (b) => b.judgementItemId === item.id,
+      ),
+      ids = bindingCameras(binding);
+    for (const areaId of (item.conditions || [])
+      .map((c) => c.logicalAreaId)
+      .filter(Boolean)) {
+      const mapped = (id) =>
+        normalized.logicalAreaMappings.some(
+          (m) =>
+            m.logicalAreaId === areaId &&
+            m.cameraId === id &&
+            isValidRectangle(m),
+        );
+      if (
+        binding?.strategy === "any"
+          ? !ids.some(mapped)
+          : !ids.length || !ids.every(mapped)
+      )
+        unavailableItemIds.add(item.id);
+    }
+  }
+  const availableJudgementItemIds = items
+    .filter((i) => !unavailableItemIds.has(i.id))
+    .map((i) => i.id);
+  const edge = devices.find(
+    (d) =>
+      d.id === base.edgeDeviceId &&
+      isEdgeDevice(d) &&
+      d.status === "在线" &&
+      d.workstationId === workstation?.id,
+  );
+  const partialRunnable =
+    Array.isArray(workstation?.aiBaseConfig?.cameras) &&
+    availableJudgementItemIds.length > 0 &&
+    Boolean(edge) &&
+    isWorkstationSelectable(workstation) &&
+    invalidCapabilities.length === 0 &&
+    Boolean(aiConfigReady);
   return {
     ready: issues.length === 0,
+    partialRunnable,
+    availableJudgementItemIds,
+    unavailableJudgementItemIds: [...unavailableItemIds],
     checks,
     issues: [...new Set(issues)],
     readiness,
@@ -296,9 +389,23 @@ export function setJudgementCameraBinding({
   config,
   judgementItemId,
   cameraId,
+  cameraIds,
+  strategy = "single",
   workstation,
   now,
 }) {
+  const selectedIds = [
+    ...new Set(cameraIds?.length ? cameraIds : [cameraId].filter(Boolean)),
+  ];
+  cameraId = selectedIds[0];
+  if (
+    !selectedIds.length ||
+    !["single", "any", "all"].includes(strategy) ||
+    (strategy === "single" && selectedIds.length !== 1)
+  )
+    throw new Error("请选择有效视角策略与摄像头。");
+  if (selectedIds.some((id) => !allowedCameraIds(workstation).includes(id)))
+    throw new Error("摄像头必须属于当前工位。");
   const current = normalizeSopWorkstationAiConfig(config);
   if (!judgementItemId) throw new Error("AI判断项不存在。");
   if (!allowedCameraIds(workstation).includes(cameraId))
@@ -306,7 +413,12 @@ export function setJudgementCameraBinding({
   const existing = current.judgementCameraBindings.find(
     (item) => item.judgementItemId === judgementItemId,
   );
-  if (existing?.cameraId === cameraId) return current;
+  if (
+    existing?.cameraId === cameraId &&
+    JSON.stringify(bindingCameras(existing)) === JSON.stringify(selectedIds) &&
+    (existing.strategy || "single") === strategy
+  )
+    return current;
   const base = normalizeWorkstationAiBaseConfig(workstation);
   return {
     ...invalidateValidation(current, now, "AI判断项摄像头发生变化"),
@@ -317,6 +429,9 @@ export function setJudgementCameraBinding({
       {
         judgementItemId,
         cameraId,
+        cameraIds: selectedIds,
+        strategy,
+        sameActorRequired: true,
         source: cameraId === base.primaryCameraId ? "primary" : "fallback",
       },
     ],
@@ -346,7 +461,8 @@ export function setLogicalAreaMapping({
     throw new Error("请在画面范围内绘制有效的矩形区域。");
   const current = normalizeSopWorkstationAiConfig(config);
   const existing = current.logicalAreaMappings.find(
-    (item) => item.logicalAreaId === logicalAreaId,
+    (item) =>
+      item.logicalAreaId === logicalAreaId && item.cameraId === cameraId,
   );
   if (
     existing &&
@@ -359,7 +475,8 @@ export function setLogicalAreaMapping({
     ...invalidateValidation(current, now, "实际区域配置发生变化"),
     logicalAreaMappings: [
       ...current.logicalAreaMappings.filter(
-        (item) => item.logicalAreaId !== logicalAreaId,
+        (item) =>
+          !(item.logicalAreaId === logicalAreaId && item.cameraId === cameraId),
       ),
       mapping,
     ],
@@ -374,7 +491,7 @@ export function createDefaultValidationCases(aiConfig = {}, makeId) {
     .map((item) => item.id);
   const firstId = allIds.slice(0, 1);
   const instructions = {
-    standard: "按SOP完整执行标准正确流程。",
+    standard: "按实训标准完整执行正确流程。",
     omission: "漏做一个关键动作，确认系统能识别缺失且不会误判其他步骤。",
     wrong_order: "调整关键动作顺序，确认系统能区分顺序。",
     wrong_object: "使用错误对象或工具完成动作。",
@@ -393,7 +510,7 @@ export function createDefaultValidationCases(aiConfig = {}, makeId) {
     camera_error: "识别技术异常，停止形成新的负向自动判断。",
     safety: "形成安全风险候选，支持人工确认或解除。",
   };
-  return VALIDATION_SCENARIOS.map((scenario, index) => ({
+  return validationScenariosFor(aiConfig).map((scenario, index) => ({
     id: makeId ? makeId(scenario.key, index) : `case-${scenario.key}`,
     name: scenario.label,
     scenarioType: scenario.key,
@@ -406,8 +523,12 @@ export function createDefaultValidationCases(aiConfig = {}, makeId) {
             ["uncertain", "camera_error"].includes(scenario.key)
           ? allIds
           : firstId,
-    instruction: instructions[scenario.key],
-    expectedResult: expected[scenario.key],
+    instruction:
+      instructions[scenario.key] ||
+      `对每个相关判断项执行“${scenario.label}”，记录具体条件、视角和人物归属。`,
+    expectedResult:
+      expected[scenario.key] ||
+      "合法变化不误报；无效动作不误确认；证据不足返回未知；技术故障不处罚学生。",
     actualResult: "",
     result: "pending",
     note: "",
@@ -437,16 +558,50 @@ export function buildValidationCoverage(aiConfig, cases = []) {
   };
 }
 
-export function evaluateValidationCompletion({ aiConfig, cases = [], checks }) {
+export function evaluateValidationCompletion({
+  aiConfig,
+  cases = [],
+  checks,
+  validationPurpose = "prototype_demo",
+  independentReport,
+  capabilities = [],
+}) {
   const coverage = buildValidationCoverage(aiConfig, cases);
   const executed = cases.filter((item) => item.result !== "pending");
   const scenarioKeys = new Set(executed.map((item) => item.scenarioType));
-  const missingScenarios = VALIDATION_SCENARIOS.filter(
+  const missingScenarios = validationScenariosFor(aiConfig).filter(
     (item) => !scenarioKeys.has(item.key),
   );
   const failedCases = cases.filter((item) => item.result === "failed");
   const issues = [];
   if (!checks?.ready) issues.push("工位配置检查尚未通过");
+  if (validationPurpose === "real") {
+    if (
+      !independentReport?.id ||
+      independentReport.resultSource !== "real" ||
+      independentReport.passed !== true ||
+      !independentReport.datasetRef
+    )
+      issues.push("缺少可追溯的真实独立评测报告");
+    if (
+      cases.some(
+        (c) =>
+          c.resultSource !== "real" ||
+          !c.evidenceRef?.trim() ||
+          !c.executor?.trim(),
+      )
+    )
+      issues.push("真实现场案例需记录真实执行来源、证据与执行人");
+    if (
+      !capabilities.length ||
+      capabilities.some(
+        (c) =>
+          c.currentPublishedModel?.resultSource !== "real" ||
+          c.currentPublishedModel?.integrationStatus !== "connected_verified",
+      )
+    )
+      issues.push("引用能力尚无经过真实评测的已发布模型");
+  }
   if (missingScenarios.length)
     issues.push(
       `尚未执行：${missingScenarios.map((item) => item.label).join("、")}`,
@@ -472,6 +627,21 @@ export function deriveSopWorkstationRuntimeStatus({
   readiness,
 }) {
   const current = normalizeSopWorkstationAiConfig(config);
+  if (
+    current.validationPurpose === "real" &&
+    (!current.independentReport?.id ||
+      current.independentReport?.resultSource !== "real" ||
+      !current.independentReport?.passed ||
+      !current.validationCases.length ||
+      current.validationCases.some(
+        (c) => c.resultSource !== "real" || !c.evidenceRef || !c.executor,
+      ))
+  )
+    return {
+      code: "real_evidence_missing",
+      label: "待真实验证",
+      runnable: false,
+    };
   if (current.enableStatus !== "enabled")
     return {
       code: current.enableStatus === "disabled" ? "disabled" : "not_enabled",
@@ -483,6 +653,18 @@ export function deriveSopWorkstationRuntimeStatus({
       code: "pending_revalidation",
       label: "待重新验证",
       runnable: false,
+    };
+  if (
+    !checks?.ready &&
+    checks?.partialRunnable &&
+    current.validationStatus === "passed"
+  )
+    return {
+      code: "partial_runnable",
+      label: "部分判断项可运行",
+      runnable: true,
+      availableJudgementItemIds: checks.availableJudgementItemIds,
+      unavailableJudgementItemIds: checks.unavailableJudgementItemIds,
     };
   if (readiness?.code !== "available")
     return { code: "workstation_abnormal", label: "工位异常", runnable: false };

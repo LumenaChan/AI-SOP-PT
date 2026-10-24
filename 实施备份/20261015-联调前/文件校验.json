@@ -1,0 +1,11 @@
+{
+  "src/preannotationRules.js": "0b963ded34cdac19eb9d977ac4417dcfaea8eb1cb589fab5860087a63f0420d7",
+  "src/enhancementDataRules.js": "ca721bf380f500f8b34f309533a1f7919bfe175912021bfc7dd01e586c1493e2",
+  "src/visualEvaluationRules.js": "119dc930250754e8633cd16649717641fab7cf541c64e03f749891f1eb54597c",
+  "src/domainRules.js": "a9613493d6711a8f3ce6f2a1e4dd3989defc6c1b8eb170b9e71c9948fed9ac6a",
+  "src/aiRuntimeRules.js": "267597612e73470c09b2ea5d1d15a9a89b3939292afcfdf971bd5c0602f69f06",
+  "src/aiRuntimeStore.js": "50a75e0af43bb24045cd8ffe85557bb4208cb9cd57699788994d13bd10238ba7",
+  "src/prototypeData.jsx": "48c726b048224a20e47c7748793f2208f4aa024a4ac7c6bbea194e52b6be69fa",
+  "src/data/currentPrototypeData.json": "f4298388ea452e7bd3dcdc9bfaaaabe79cda41fcc3c6a937c904d85d57f75631",
+  "tests/new-ai-runtime-store-e2e.test.mjs": "827a4bf79262ee3070a12b55ddbd85156b47c1ce788b646395c8f8e15f6948fe"
+}

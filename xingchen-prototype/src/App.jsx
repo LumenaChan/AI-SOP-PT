@@ -1,3 +1,125 @@
+import { displayBusinessText, displayStepLabel } from "./businessTextRules.js";
+import {
+  historicalStandardBasis,
+  standardReferenceMatches,
+} from "./trainingStandardRules.js";
+import {
+  ArrangementAttendanceEntry,
+  AttendanceReturnLink,
+} from "./ArrangementAttendance.jsx";
+import { MonitorListCameras } from "./MonitorListCameras.jsx";
+import { monitorStationFilter } from "./monitorFilterRules.js";
+import { arrangementStatusOptions } from "./arrangementStatusRules.js";
+import {
+  StationCheckForm,
+  ModalSubmitReadiness,
+  OpeningInspectionRecord,
+} from "./OpeningInspection.jsx";
+import {
+  compactWorkstationLabel,
+  workstationBusinessCode,
+  workstationCaption,
+  workstationOptionLabel,
+  hiddenDeviceSerial,
+  deviceSerialLabel,
+  deviceDisplayName,
+} from "./resourceDisplayRules.js";
+import { PrototypeResourceIdentifiers } from "./PrototypeResourceIdentifiers.jsx";
+import { standardMediaWorkingBackup } from "./standardMediaBackup.js";
+import {
+  StandardMediaEditor,
+  StandardMediaList,
+  StandardMediaSection,
+} from "./StandardMedia.jsx";
+import { sessionStandardMediaStep } from "./standardMediaRules.js";
+import { TeachingStatisticsPage } from "./TeachingStatisticsPage.jsx";
+import { DashboardCardPager } from "./DashboardCardPager.jsx";
+import { NotificationPopover } from "./NotificationPopover.jsx";
+import { ArrangementStudentPicker } from "./ArrangementStudentPicker.jsx";
+import { changeArrangementParticipants } from "./arrangementParticipantRules.js";
+import {
+  allocationSetupReason,
+  allocationWorkstationAvailable,
+  randomizeArrangementAllocation,
+  swapAllocationStudent,
+} from "./arrangementAllocationRules.js";
+import {
+  useStatisticsNavigate as useNavigate,
+  StatisticsReturnLink,
+} from "./StatisticsNavigation.jsx";
+import { DashboardPerformanceSection } from "./DashboardPerformancePanels.jsx";
+import {
+  SupportTaskPage,
+  StudentSupportTaskList,
+  SupportTaskSourcePanel,
+} from "./SupportTaskPanels.jsx";
+import {
+  teacherDashboardTasks,
+  adminCurrentArrangements,
+} from "./teacherDashboardTasks.js";
+import {
+  EvidenceTaskSessionPanel,
+  StudentEvidenceTaskList,
+  EvidenceTaskPage,
+  taskOperationId,
+} from "./EvidenceTaskPanels.jsx";
+import {
+  openEvidenceTasks,
+  evidenceTasksForSession,
+} from "./evidenceTaskRules.js";
+import { gradeStateToken, displayGradeText } from "./gradeRevisionRules.js";
+import {
+  HelpLifecycle,
+  StepProgression,
+  StepFlowRecord,
+} from "./SessionClosurePanels.jsx";
+import { openHelpRequests, HELP_LABELS } from "./sessionClosureRules.js";
+import { studentRecentResults, studentResult } from "./studentResultRules.js";
+import { StudentCameraPreview } from "./StudentCameraPreview.jsx";
+import { teacherPrototypeSchedule } from "./dashboardRules.js";
+import {
+  arrangementAssignments,
+  reconcileAssignments,
+  allocationIssues,
+  preparationActions,
+  hasLockedPreparationSnapshot,
+  reportSession,
+  sessionReportPath,
+} from "./arrangementPreparationRules.js";
+import { modelSourceLabel } from "./modelProvenanceRules.js";
+import {
+  SampleMetadataPanel,
+  PreannotationTasks,
+  SuggestionPanel,
+  CameraCollectionEditor,
+  ViewBindingEditor,
+  ValidationPurposePanel,
+  ExistingModelPanel,
+  ObservationSimulator,
+  ObservationTimeline,
+  EvidenceCameraSummary,
+  SourceMetadataFields,
+  ModelRecoveryPanel,
+  SessionCameraViewer,
+} from "./EnhancementPanels.jsx";
+import {
+  workstationCameras,
+  cameraViews,
+  withCameraAliases,
+} from "./cameraRules.js";
+import {
+  RequirementsEditor,
+  RequirementsView,
+  EvaluationBadge,
+  CoverageSummary,
+  StepEvaluationExplanation,
+  stepJudgementProcessId,
+} from "./VisualEvaluation.jsx";
+import {
+  stepEvaluationMeaning,
+  evaluationCoverage,
+  COMPLETION_BASES,
+} from "./visualEvaluationRules.js";
 import {
   createRef,
   Fragment,
@@ -14,7 +136,6 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate,
   useParams,
 } from "react-router-dom";
 import {
@@ -42,7 +163,6 @@ import {
   HistoryOutlined,
   HomeOutlined,
   LaptopOutlined,
-  LeftOutlined,
   LockOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -52,7 +172,6 @@ import {
   PlusOutlined,
   ProductOutlined,
   ReloadOutlined,
-  RightOutlined,
   SafetyCertificateOutlined,
   ScissorOutlined,
   SearchOutlined,
@@ -69,9 +188,14 @@ import {
   PrototypeDataProvider,
   usePrototypeData,
 } from "./prototypeData.jsx";
-import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+import { dateTimeInputValue } from "./dateTimeRules.js";
 import DataScreen from "./DataScreen.jsx";
-import { createLoginCaptcha, matchesLoginCaptcha, readRememberedLogin, saveRememberedLogin } from "./loginRules.js";
+import {
+  createLoginCaptcha,
+  matchesLoginCaptcha,
+  readRememberedLogin,
+  saveRememberedLogin,
+} from "./loginRules.js";
 import {
   buildStudentIdentityVerification,
   clearStudentIdentitySession,
@@ -95,6 +219,7 @@ import {
 import {
   teacherIdentityView,
   teacherSessionEvents,
+  teacherEventSortTime,
   teacherStudentActivities,
 } from "./studentTeacherLinkRules.js";
 import {
@@ -259,9 +384,10 @@ import {
 
 const teacherNav = [
   ["教师工作台", "/teacher/dashboard", <HomeOutlined />],
-  ["SOP 标准库", "/teacher/sop", <BookOutlined />],
+  ["实训标准库", "/teacher/sop", <BookOutlined />],
   ["练习管理", "/teacher/practices", <EditOutlined />],
   ["考试管理", "/teacher/exams", <FileDoneOutlined />],
+  ["教学统计", "/teacher/statistics", <BarChartOutlined />],
 ];
 const adminNav = [
   ["运行概览", "/admin/overview", <BarChartOutlined />],
@@ -633,7 +759,7 @@ function Status({ children, tone }) {
       ) : (
         <ClockCircleOutlined />
       )}
-      {children}
+      {typeof children === "string" ? displayBusinessText(children) : children}
     </span>
   );
 }
@@ -664,36 +790,12 @@ function Button({
 function PanelTitle({ title, action }) {
   return (
     <header className="panel-title">
-      <h2>{title}</h2>
+      <h2>{displayBusinessText(title)}</h2>
       {action}
     </header>
   );
 }
 
-function DashboardCardPager({ page, totalPages, onChange }) {
-  return (
-    <span className="dashboard-card-pager">
-      <button
-        type="button"
-        aria-label="上一页"
-        title="上一页"
-        disabled={page === 0}
-        onClick={() => onChange(page - 1)}
-      >
-        <LeftOutlined />
-      </button>
-      <button
-        type="button"
-        aria-label="下一页"
-        title="下一页"
-        disabled={page >= totalPages - 1}
-        onClick={() => onChange(page + 1)}
-      >
-        <RightOutlined />
-      </button>
-    </span>
-  );
-}
 function FieldLabel({ children, required = false }) {
   return (
     <span className="field__label">
@@ -702,7 +804,7 @@ function FieldLabel({ children, required = false }) {
           *
         </b>
       )}
-      {children}
+      {typeof children === "string" ? displayBusinessText(children) : children}
     </span>
   );
 }
@@ -717,7 +819,7 @@ function Metric({ label, value, hint, icon, tone, onClick }) {
       <span className="metric__icon">{icon}</span>
       <div>
         <small>{label}</small>
-        <strong>{value}</strong>
+        <strong>{displayBusinessText(value)}</strong>
         <p>{hint}</p>
       </div>
     </Component>
@@ -733,8 +835,8 @@ function PageHeader({ title, subtitle, actions, back }) {
             ← 返回
           </button>
         )}
-        <h1>{title}</h1>
-        {subtitle && <p>{subtitle}</p>}
+        <h1>{displayBusinessText(title)}</h1>
+        {subtitle && <p>{displayBusinessText(subtitle)}</p>}
       </div>
       <div className="page-header__actions">{actions}</div>
     </header>
@@ -757,11 +859,13 @@ function MissingState({ title, backTo }) {
 
 function Modal({ data, close, done }) {
   const [busy, setBusy] = useState(false);
+  const [contentReady, setContentReady] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef(null);
 
   useEffect(() => {
     setBusy(false);
+    setContentReady(false);
     setError("");
     if (!data) return undefined;
     const previous = document.activeElement;
@@ -776,6 +880,7 @@ function Modal({ data, close, done }) {
 
   if (!data) return null;
   const submit = async () => {
+    if (data.requireContentReady && !contentReady) return;
     if (data.dismissOnly || (!data.onConfirm && !data.success)) {
       close();
       return;
@@ -842,17 +947,19 @@ function Modal({ data, close, done }) {
         <header>
           <div>
             <span className="eyebrow">{data.eyebrow || "操作确认"}</span>
-            <h2 id="modal-title">{data.title}</h2>
+            <h2 id="modal-title">{displayBusinessText(data.title)}</h2>
           </div>
           <button className="icon-button" onClick={close} aria-label="关闭弹窗">
             ×
           </button>
         </header>
         <div className="modal__body">
-          {data.content || <p>确认执行当前操作？操作记录将写入审计日志。</p>}
+          <ModalSubmitReadiness.Provider value={setContentReady}>
+            {data.content || <p>确认执行当前操作？操作记录将写入审计日志。</p>}
+          </ModalSubmitReadiness.Provider>
           {error && (
             <p className="form-error" id="modal-error" role="alert">
-              <ExclamationCircleFilled /> {error}
+              <ExclamationCircleFilled /> {displayBusinessText(error)}
             </p>
           )}
         </div>
@@ -862,7 +969,11 @@ function Modal({ data, close, done }) {
               取消
             </Button>
           )}
-          <Button type="primary" onClick={submit} disabled={busy}>
+          <Button
+            type="primary"
+            onClick={submit}
+            disabled={busy || (data.requireContentReady && !contentReady)}
+          >
             {busy
               ? "处理中…"
               : data.confirmText || (data.onConfirm ? "确认" : "知道了")}
@@ -884,6 +995,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
     [aiLibraryOpen, setAiLibraryOpen] = useState(true),
     [roleMenuOpen, setRoleMenuOpen] = useState(false),
     [notificationOpen, setNotificationOpen] = useState(false),
+    [backupBusy, setBackupBusy] = useState(false),
     [clock, setClock] = useState(() => new Date());
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
@@ -932,9 +1044,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
     window.setTimeout(() => setToast(""), 2200);
   };
   return (
-    <div
-      className={`app ${collapsed ? "app--collapsed" : ""}`}
-    >
+    <div className={`app ${collapsed ? "app--collapsed" : ""}`}>
       <aside className="sidebar">
         <button
           className="brand"
@@ -978,7 +1088,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                 }}
               >
                 {icon}
-                <span>{label}</span>
+                <span className="sidebar__label">{label}</span>
               </button>
               {path === AI_LIBRARY_PATH && showAiLibraryChildren && (
                 <div
@@ -1020,7 +1130,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                           );
                         }}
                       >
-                        <span>{section.title}</span>
+                        <span className="sidebar__label">{section.title}</span>
                       </button>
                     );
                   })}
@@ -1043,6 +1153,15 @@ function Shell({ children, modal, setModal, toast, setToast }) {
         </div>
       </aside>
       <section className="app-main">
+        {store.dataSyncError && (
+          <div
+            className="evaluation-notice evaluation-notice--warning"
+            role="alert"
+          >
+            {store.dataSyncError}{" "}
+            可在右上角身份菜单的“原型数据与备份”中导出当前数据和升级前备份。
+          </div>
+        )}
         <header className="topbar">
           <div>
             <button
@@ -1071,6 +1190,10 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                 className="notification"
                 aria-label={`通知，${unreadCount} 条未读`}
                 aria-expanded={notificationOpen}
+                aria-haspopup="dialog"
+                aria-controls={
+                  notificationOpen ? "header-notification-popover" : undefined
+                }
                 onClick={() => {
                   setNotificationOpen(!notificationOpen);
                   setRoleMenuOpen(false);
@@ -1080,36 +1203,16 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                 {unreadCount > 0 && <b>{unreadCount}</b>}
               </button>
               {notificationOpen && (
-                <section className="notification-popover" aria-label="通知列表">
-                  <header>
-                    <strong>通知</strong>
-                    <button onClick={() => store.markAllNotificationsRead()}>
-                      全部标为已读
-                    </button>
-                  </header>
-                  <div>
-                    {displayedNotifications.map((item) => (
-                      <button
-                        key={item.id}
-                        className={item.read ? "read" : ""}
-                        onClick={() => {
-                          store.markNotificationRead(item.id);
-                          setNotificationOpen(false);
-                          nav(item.path);
-                        }}
-                      >
-                        <span
-                          className={`notification-dot notification-dot--${item.tone}`}
-                        />
-                        <span>
-                          <strong>{item.title}</strong>
-                          <small>{item.detail}</small>
-                        </span>
-                        <time>{item.time}</time>
-                      </button>
-                    ))}
-                  </div>
-                </section>
+                <NotificationPopover
+                  items={displayedNotifications}
+                  onMarkAllRead={() => store.markAllNotificationsRead()}
+                  onSelect={(item) => {
+                    store.markNotificationRead(item.id);
+                    setNotificationOpen(false);
+                    nav(item.path);
+                  }}
+                  onClose={() => setNotificationOpen(false)}
+                />
               )}
             </div>
             <div className="role-menu-wrap">
@@ -1118,7 +1221,10 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                 aria-label={`打开身份菜单，当前为${admin ? "系统管理员" : "王老师"}`}
                 aria-haspopup="menu"
                 aria-expanded={roleMenuOpen}
-                onClick={() => setRoleMenuOpen(!roleMenuOpen)}
+                onClick={() => {
+                  setRoleMenuOpen(!roleMenuOpen);
+                  setNotificationOpen(false);
+                }}
               >
                 <span className="avatar">
                   <UserOutlined aria-hidden="true" />
@@ -1136,67 +1242,118 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   <span className="eyebrow">当前工作身份</span>
                   <strong>{admin ? "系统管理员" : "王老师 · 教师"}</strong>
                   <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>
-                  <div className="role-data-source">
-                    <div className="role-data-source__heading">
-                      <span>原型数据来源</span>
+                  <details className="role-data-source">
+                    <summary className="role-data-source__heading">
+                      <span>原型数据与备份</span>
                       <small>
-                        {store.dataSource === "cpd"
-                          ? "当前使用 CPD 演示数据"
-                          : "当前使用此浏览器的数据"}
+                        {store.dataSource === "cpd" ? "CPD 数据" : "浏览器数据"}
                       </small>
-                    </div>
-                    <div
-                      className="role-data-source__options"
-                      role="radiogroup"
-                      aria-label="选择原型数据来源"
-                    >
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={store.dataSource === "cpd"}
-                        className={store.dataSource === "cpd" ? "active" : ""}
-                        onClick={() => {
-                          const changed = store.switchDataSource("cpd");
-                          setRoleMenuOpen(false);
-                          if (changed) {
-                            setToast("已切换为 CPD 演示数据");
-                            window.setTimeout(() => setToast(""), 2200);
-                          }
-                        }}
+                    </summary>
+                    <div className="role-data-source__body">
+                      <div
+                        className="role-data-source__options"
+                        role="radiogroup"
+                        aria-label="选择原型数据来源"
                       >
-                        <DatabaseOutlined aria-hidden="true" />
-                        <span>
-                          <strong>CPD 数据</strong>
-                          <small>项目默认演示数据</small>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={store.dataSource === "browser"}
-                        className={
-                          store.dataSource === "browser" ? "active" : ""
-                        }
-                        onClick={() => {
-                          const changed = store.switchDataSource("browser");
-                          setRoleMenuOpen(false);
-                          if (changed) {
-                            setToast("已切换为浏览器数据");
-                            window.setTimeout(() => setToast(""), 2200);
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={store.dataSource === "cpd"}
+                          className={store.dataSource === "cpd" ? "active" : ""}
+                          onClick={() => {
+                            const changed = store.switchDataSource("cpd");
+                            setRoleMenuOpen(false);
+                            if (changed) {
+                              setToast("已切换为 CPD 演示数据");
+                              window.setTimeout(() => setToast(""), 2200);
+                            }
+                          }}
+                        >
+                          <DatabaseOutlined aria-hidden="true" />
+                          <span>
+                            <strong>CPD 数据</strong>
+                            <small>项目默认演示数据</small>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={store.dataSource === "browser"}
+                          className={
+                            store.dataSource === "browser" ? "active" : ""
                           }
-                        }}
-                      >
-                        <DesktopOutlined aria-hidden="true" />
-                        <span>
-                          <strong>浏览器数据</strong>
-                          <small>此浏览器原有数据</small>
-                        </span>
-                      </button>
+                          onClick={() => {
+                            const changed = store.switchDataSource("browser");
+                            setRoleMenuOpen(false);
+                            if (changed) {
+                              setToast("已切换为浏览器数据");
+                              window.setTimeout(() => setToast(""), 2200);
+                            }
+                          }}
+                        >
+                          <DesktopOutlined aria-hidden="true" />
+                          <span>
+                            <strong>浏览器数据</strong>
+                            <small>此浏览器原有数据</small>
+                          </span>
+                        </button>
+                      </div>
+                      <details className="role-data-source__backup">
+                        <summary>数据备份（按需导出）</summary>
+                        <p className="role-data-source__backup-note">
+                          当前工作数据包含上传的示教资料，有附件时导出ZIP包；升级前备份保留原始数据。下载不会切换或覆盖当前数据。
+                        </p>
+                        <div className="role-data-source__exports">
+                          <Button
+                            disabled={backupBusy}
+                            onClick={async () => {
+                              setBackupBusy(true);
+                              try {
+                                const result = await standardMediaWorkingBackup(
+                                  store.exportWorkingData(),
+                                );
+                                downloadBlobFile(result.name, result.blob);
+                                setToast(
+                                  result.missing
+                                    ? `备份已导出，${result.missing}个资料文件无法读取，详见资料清单。`
+                                    : result.included
+                                      ? `工作数据及${result.included}个示教资料文件已导出。`
+                                      : "工作数据已导出。",
+                                );
+                              } catch (error) {
+                                setToast(
+                                  error.message ||
+                                    "工作数据导出失败，请保留当前页面后重试。",
+                                );
+                              } finally {
+                                setBackupBusy(false);
+                              }
+                            }}
+                          >
+                            {backupBusy ? "正在导出…" : "导出当前工作数据"}
+                          </Button>
+                          <Button
+                            onClick={async () => {
+                              try {
+                                downloadTextFile(
+                                  "兴辰升级前备份.json",
+                                  await store.exportWorkingBackups(),
+                                  "application/json",
+                                );
+                              } catch {
+                                setToast("备份导出失败，请保留当前页面后重试");
+                              }
+                            }}
+                          >
+                            导出升级前备份
+                          </Button>
+                        </div>
+                      </details>
+                      <p className="role-data-source__note">
+                        两套数据独立保存。切换会关闭当前编辑，未保存内容不会带入另一来源。
+                      </p>
                     </div>
-                    <p className="role-data-source__note">
-                      两套数据独立保存，切换不会删除另一套数据。
-                    </p>
-                  </div>
+                  </details>
                   <Button
                     disabled={!admin}
                     onClick={() => {
@@ -1237,12 +1394,16 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             </div>
           </div>
         </header>
-        <main className="content">{children}</main>
+        <main className="content">
+          <AttendanceReturnLink />
+          <StatisticsReturnLink />
+          {children}
+        </main>
       </section>
       {toast && (
         <div className="toast" role="status" aria-live="polite">
           <CheckCircleFilled />
-          {toast}
+          {displayBusinessText(toast)}
         </div>
       )}
       <Modal data={modal} close={() => setModal(null)} done={finish} />
@@ -1446,7 +1607,7 @@ function LoginPage() {
           </label>
           {error && (
             <p className="form-error" id="login-error" role="alert">
-              <ExclamationCircleFilled /> {error}
+              <ExclamationCircleFilled /> {displayBusinessText(error)}
             </p>
           )}
           <Button htmlType="submit" type="primary">
@@ -1681,7 +1842,9 @@ function StudentLoginPage() {
       <section className="student-login-intro">
         <span className="eyebrow">身份确认</span>
         <h1>学生刷脸登录</h1>
-        <p>请正对摄像头，保持面部无遮挡。识别通过后可进入当前实训任务。</p>
+        <p>
+          请正对摄像头，保持面部无遮挡。识别通过后可进入当前实训任务或查看本人最近结果。
+        </p>
         <div className="student-camera" data-status={cameraStatus}>
           <video ref={videoRef} autoPlay muted playsInline />
           {cameraStatus !== "ready" && (
@@ -1775,7 +1938,7 @@ function StudentLoginPage() {
 
         {recognitionStatus === "success" ? (
           <Button type="primary" onClick={() => nav("/student/current")}>
-            进入当前任务
+            查看任务与结果
           </Button>
         ) : (
           <Button
@@ -1828,6 +1991,7 @@ function StudentCurrentPage() {
   const resolved = resolveStudentIdentity(store.data.students);
   if (!resolved) return <Navigate to="/student/login" replace />;
   const sessions = store.getStudentCurrentSessions(resolved.student.id);
+  const recentResults = studentRecentResults(store.data, resolved.student.id);
   const studentClass = store.data.classes.find(
     (item) => item.id === resolved.student.classId,
   );
@@ -1836,7 +2000,7 @@ function StudentCurrentPage() {
     .filter(Boolean);
   const formatSchedule = (value) =>
     value
-      ? ensureDateTimeSeconds(String(value)).replace("T", " ")
+      ? displayBusinessText(String(value)).replace("T", " ")
       : "以教师现场安排为准";
   return (
     <section className="student-current-page">
@@ -1926,7 +2090,7 @@ function StudentCurrentPage() {
                   </div>
                 )}
                 <div>
-                  <dt>SOP</dt>
+                  <dt>实训标准</dt>
                   <dd>{sop?.name || "当前标准暂不可用"}</dd>
                 </div>
                 <div>
@@ -1939,7 +2103,7 @@ function StudentCurrentPage() {
                 disabled={!workstation}
                 onClick={() =>
                   nav(
-                    `/student/session/${arrangement.id}/${session.workstationId}`,
+                    `/student/session/${arrangement.id}/${session.workstationId}?sessionId=${session.id}`,
                   )
                 }
               >
@@ -1955,15 +2119,135 @@ function StudentCurrentPage() {
           </span>
           <h2>当前暂无可进入的练习或考试</h2>
           <p>请等待教师安排并开放工位。</p>
-          <Button onClick={() => setRefreshedAt(String(Date.now()))}>
+          <Button onClick={() => setRefreshedAt(new Date().toISOString())}>
             <ReloadOutlined /> 刷新当前任务
           </Button>
         </section>
       )}
+      <StudentEvidenceTaskList studentId={resolved.student.id} />
+      <StudentSupportTaskList studentId={resolved.student.id} />
+      <section className="student-recent-results">
+        <h2>最近完成</h2>
+        {!recentResults.length && <p>暂无已完成记录。</p>}
+        <div className="student-task-grid">
+          {recentResults.map((result) => (
+            <article className="student-task-card" key={result.sessionId}>
+              <h2>{result.title}</h2>
+              <p>{result.status}</p>
+              <p>{displayBusinessText(result.endedAt || "结束时间未记录")}</p>
+              {result.visible && (
+                <p>
+                  {result.score == null
+                    ? "成绩待核对"
+                    : `有效得分 ${result.score} 分`}{" "}
+                </p>
+              )}
+              <Button
+                type="primary"
+                onClick={() =>
+                  nav(
+                    `/student/results/${result.arrangementId}/${result.sessionId}`,
+                  )
+                }
+              >
+                {result.visible ? "查看本人结果" : "查看提交状态"}
+              </Button>
+            </article>
+          ))}
+        </div>
+      </section>
       {refreshedAt && (
         <small className="student-current-refreshed">
-          已刷新 · {refreshedAt}
+          已刷新 · {displayBusinessText(refreshedAt)}
         </small>
+      )}
+    </section>
+  );
+}
+
+function StudentResultPage() {
+  const nav = useNavigate();
+  const { id, sessionId } = useParams();
+  const store = usePrototypeData();
+  const identity = resolveStudentIdentity(store.data.students);
+  if (!identity) return <Navigate to="/student/login" replace />;
+  const result = studentResult(store.data, identity.student.id, id, sessionId);
+  return (
+    <section className="student-current-page student-result-page">
+      <Button onClick={() => nav("/student/current")}>返回任务与结果</Button>
+      {!result ? (
+        <>
+          <h1>结果暂不可查看</h1>
+          <p>记录不存在、尚未完成或不属于当前登录学生。</p>
+        </>
+      ) : (
+        <>
+          <h1>{result.title}</h1>
+          <p>{result.status}</p>
+          <p>{displayBusinessText(result.endedAt || "结束时间未记录")}</p>
+          {!result.visible ? (
+            <p>
+              {result.status === "未参加"
+                ? "本次未参加，没有正式成绩。"
+                : "本次提交已保存，请等待教师统一发布成绩。"}
+            </p>
+          ) : (
+            <>
+              <h2>
+                {result.score == null
+                  ? "成绩待核对"
+                  : `有效得分 ${result.score} 分`}
+              </h2>
+              <p>流程、证据与成绩分别记录</p>
+              <div className="student-result-steps">
+                {result.steps.map((step) => (
+                  <article key={step.id}>
+                    <h3>
+                      {step.id} · {step.name}
+                    </h3>
+                    <p>
+                      {step.score}/{step.maxScore} 分 · {step.result}
+                    </p>
+                    <p>
+                      {step.flow}
+                      {displayBusinessText(
+                        step.flowActor
+                          ? ` · ${step.flowActor} · ${step.flowAt}`
+                          : "",
+                      )}
+                    </p>
+                    <p>{step.evidence}</p>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+          <StudentEvidenceTaskList
+            studentId={identity.student.id}
+            arrangementId={id}
+            sessionId={sessionId}
+          />
+          <StudentSupportTaskList
+            studentId={identity.student.id}
+            arrangementId={id}
+            sessionId={sessionId}
+          />
+          {result.helpHistory.length > 0 && (
+            <section className="student-result-steps">
+              <h2>教师帮助记录</h2>
+              {result.helpHistory.map((r) => (
+                <article key={r.id}>
+                  <h3>
+                    {HELP_LABELS[r.status]} · {r.reasonLabel}
+                  </h3>
+                  <p>{displayBusinessText(r.createdAt)}</p>
+                  {r.receipt && <p>教师回执：{r.receipt}</p>}
+                  {r.closeReason && <p>{r.closeReason}</p>}
+                </article>
+              ))}
+            </section>
+          )}
+        </>
       )}
     </section>
   );
@@ -1975,90 +2259,14 @@ function Dashboard() {
   const { data } = store;
   const [schedulePage, setSchedulePage] = useState(0);
   const [todoPage, setTodoPage] = useState(0);
-  const [errorPage, setErrorPage] = useState(0);
   const activeArrangements = data.arrangements.filter(
-    (item) => !item.archivedRecord,
+    (item) =>
+      item.teacherId === "t1" &&
+      !item.archivedRecord &&
+      item.status !== "已取消",
   );
-  const todayKey = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  const todayArrangements = activeArrangements
-    .filter(
-      (item) => String(item.scheduleStart || "").slice(0, 10) === todayKey,
-    )
-    .sort((left, right) =>
-      String(left.scheduleStart || "").localeCompare(
-        String(right.scheduleStart || ""),
-      ),
-    );
-  const demoTodayArrangements = [
-    {
-      id: "dashboard-demo-practice",
-      type: "practice",
-      name: "新能源汽车高压安全操作练习",
-      scheduleStart: `${todayKey}T09:00:00`,
-      status: "进行中",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 28,
-      demoOnly: true,
-    },
-    {
-      id: "dashboard-demo-practice-morning",
-      type: "practice",
-      name: "绝缘防护用品规范穿戴练习",
-      scheduleStart: `${todayKey}T10:30:00`,
-      status: "待开始",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 26,
-      demoOnly: true,
-    },
-    {
-      id: "dashboard-demo-practice-noon",
-      type: "practice",
-      name: "高压作业区域安全布置练习",
-      scheduleStart: `${todayKey}T13:30:00`,
-      status: "待开始",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 25,
-      demoOnly: true,
-    },
-    {
-      id: "dashboard-demo-exam",
-      type: "exam",
-      name: "新能源汽车高压安全操作阶段考试",
-      scheduleStart: `${todayKey}T14:30:00`,
-      status: "待开始",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 28,
-      demoOnly: true,
-    },
-    {
-      id: "dashboard-demo-practice-afternoon",
-      type: "practice",
-      name: "高压电池包断电强化练习",
-      scheduleStart: `${todayKey}T16:00:00`,
-      status: "待开始",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 24,
-      demoOnly: true,
-    },
-    {
-      id: "dashboard-demo-exam-afternoon",
-      type: "exam",
-      name: "高压作业安全规范随堂测试",
-      scheduleStart: `${todayKey}T17:30:00`,
-      status: "待开始",
-      sopName: "新能源汽车高压安全操作",
-      studentCount: 26,
-      demoOnly: true,
-    },
-  ];
-  const displayedTodayArrangements = todayArrangements.length
-    ? todayArrangements
-    : demoTodayArrangements;
+  const displayedTodayArrangements =
+    teacherPrototypeSchedule(activeArrangements);
   const schedulePageSize = 3;
   const schedulePageCount = Math.max(
     1,
@@ -2072,198 +2280,22 @@ function Dashboard() {
   const runningArrangements = activeArrangements.filter((item) =>
     ["进行中", "已暂停"].includes(item.status),
   );
-  const sessionContexts = activeArrangements.flatMap((arrangement) =>
-    (arrangement.sessions || []).map((session) => ({ arrangement, session })),
+  const displayedTeacherTodos = teacherDashboardTasks(data, "t1");
+  const pendingCount = displayedTeacherTodos.length;
+  const pendingPublishTasks = displayedTeacherTodos.filter(
+    (item) => item.type === "publish",
   );
-  const reviewTasks = activeArrangements.flatMap((arrangement) =>
-    (arrangement.sessions || [])
-      .filter(
-        (session) =>
-          session.resultStatus === "待复核" ||
-          session.steps?.some((step) =>
-            ["待复核", "待补充证据"].includes(step.reviewStatus),
-          ),
-      )
-      .map((session) => ({ arrangement, session })),
-  );
-  const safetyTasks = sessionContexts.flatMap(({ arrangement, session }) => {
-    const candidates = (session.runtime?.safetyCandidates || [])
-      .filter((candidate) => candidate.status === "pending")
-      .map((candidate) => ({
-        arrangement,
-        session,
-        id: candidate.id,
-        detail: candidate.stepId
-          ? `${candidate.stepId} 安全候选待确认`
-          : "安全候选待确认",
-      }));
-    const events = teacherSessionEvents(session)
-      .filter((event) => event.category === "safety" && event.requiresAttention)
-      .map((event) => ({
-        arrangement,
-        session,
-        id: event.id,
-        detail: event.title,
-      }));
-    return [...candidates, ...events];
-  });
-  const helpTasks = sessionContexts.flatMap(({ arrangement, session }) =>
-    teacherSessionEvents(session)
-      .filter((event) =>
-        ["practice_help", "exam_incident"].includes(event.category),
-      )
-      .map((event) => ({ arrangement, session, event })),
-  );
-  const pendingPublishExams = activeArrangements.filter(
-    (item) => item.type === "exam" && item.status === "待发布",
+  const pendingPublishExams = pendingPublishTasks.map((task) =>
+    data.arrangements.find((a) => a.id === task.sourceIds.arrangementId),
   );
   const pendingPublishScoreCount = pendingPublishExams.reduce(
-    (count, item) =>
-      count +
-      (item.sessions || []).filter(
-        (session) => session.resultStatus === "正式成绩",
-      ).length,
+    (total, a) =>
+      total +
+      (a.sessions || []).filter((s) => s.resultStatus === "正式成绩").length,
     0,
   );
-  const pendingCount =
-    safetyTasks.length + helpTasks.length + reviewTasks.length;
-  const scoredSessions = activeArrangements.flatMap((item) =>
-    (item.sessions || []).filter(
-      (session) =>
-        Number.isFinite(Number(session.score)) &&
-        ["正式成绩", "已发布"].includes(session.resultStatus),
-    ),
-  );
-  const averageScore = scoredSessions.length
-    ? (
-        scoredSessions.reduce(
-          (total, session) => total + Number(session.score),
-          0,
-        ) / scoredSessions.length
-      ).toFixed(1)
-    : "—";
-  const publishedSessions = scoredSessions.filter(
-    (session) => session.resultStatus === "已发布",
-  ).length;
-  const publishedRate = scoredSessions.length
-    ? `${Math.round((publishedSessions / scoredSessions.length) * 100)}%`
-    : "—";
-  const supportCount = scoredSessions.filter(
-    (session) => Number(session.score) < 80,
-  ).length;
-  const errorCounts = scoredSessions
-    .flatMap((session) => session.steps || [])
-    .filter(
-      (step) =>
-        Number(step.effectiveScore ?? step.score ?? 0) < Number(step.maxScore),
-    )
-    .reduce((counts, step) => {
-      counts[step.name] = (counts[step.name] || 0) + 1;
-      return counts;
-    }, {});
-  const errorStats = Object.entries(errorCounts)
-    .sort((a, b) => b[1] - a[1]);
-  const openArrangement = (item) => {
-    const destination = arrangementDestination(item);
-    const base = item.type === "exam" ? "exams" : "practices";
-    nav(`/teacher/${base}/${item.id}/${destination}`);
-  };
-  const openSession = (arrangement, session) => {
-    const base = arrangement.type === "exam" ? "exams" : "practices";
-    nav(`/teacher/${base}/${arrangement.id}/stations/${session.workstationId}`);
-  };
-  const teacherTodos = [
-    ...safetyTasks.map((task) => ({
-      id: `safety-${task.id}`,
-      icon: <SafetyCertificateOutlined />,
-      title: "安全事件待处理",
-      detail: task.detail,
-      action: "立即处理",
-      onClick: () => openSession(task.arrangement, task.session),
-    })),
-    ...helpTasks.map(({ arrangement, session, event }) => {
-      const student = data.students.find(
-        (item) => item.id === session.studentId,
-      );
-      const workstation = data.workstations.find(
-        (item) => item.id === session.workstationId,
-      );
-      return {
-        id: `help-${event.id}`,
-        icon: <BellOutlined />,
-        title: event.category === "exam_incident" ? "考试异常求助" : "练习求助",
-        detail: `${workstation?.name || "工位"} · ${student?.name || "学生"} · ${event.reasonLabel || event.title}`,
-        action: "查看工位",
-        onClick: () => openSession(arrangement, session),
-      };
-    }),
-    ...reviewTasks.map(({ arrangement, session }) => {
-      const student = data.students.find(
-        (item) => item.id === session.studentId,
-      );
-      const needsEvidence = session.steps?.some(
-        (step) => step.reviewStatus === "待补充证据",
-      );
-      const base = arrangement.type === "exam" ? "exams" : "practices";
-      return {
-        id: `review-${session.id}`,
-        icon: <AlertOutlined />,
-        title: needsEvidence ? "步骤待补充证据" : "评价待复核",
-        detail: `${student?.name || "学生"} · ${arrangement.name}`,
-        action: "处理",
-        onClick: () =>
-          nav(
-            `/teacher/${base}/${arrangement.id}/students/${session.studentId}`,
-          ),
-      };
-    }),
-    ...pendingPublishExams.map((item) => ({
-      id: `publish-${item.id}`,
-      icon: <FileDoneOutlined />,
-      title: "考试待发布",
-      detail: `${item.name} · ${(item.sessions || []).filter((session) => session.resultStatus === "正式成绩").length} 份成绩`,
-      action: "查看",
-      onClick: () => nav(`/teacher/exams/${item.id}/results`),
-    })),
-  ];
-  const demoTeacherTodos = [
-    {
-      id: "dashboard-demo-evidence",
-      icon: <AlertOutlined />,
-      title: "步骤证据待补充",
-      detail: "李思雨 · 高压电池包断电强化练习",
-      action: "处理",
-      onClick: () => nav("/teacher/practices"),
-    },
-    {
-      id: "dashboard-demo-help",
-      icon: <BellOutlined />,
-      title: "练习求助",
-      detail: "3号工位 · 陈宇 · 操作步骤需要指导",
-      action: "查看",
-      onClick: () => nav("/teacher/practices"),
-    },
-    {
-      id: "dashboard-demo-safety",
-      icon: <SafetyCertificateOutlined />,
-      title: "安全事件待处理",
-      detail: "5号工位 · 绝缘手套佩戴状态待确认",
-      action: "处理",
-      onClick: () => nav("/teacher/practices"),
-    },
-    {
-      id: "dashboard-demo-publish",
-      icon: <FileDoneOutlined />,
-      title: "考试待发布",
-      detail: "高压电池包检修阶段考试 · 2 份成绩",
-      action: "查看",
-      onClick: () => nav("/teacher/exams"),
-    },
-  ];
-  const displayedTeacherTodos = [...teacherTodos];
-  demoTeacherTodos.forEach((item) => {
-    if (displayedTeacherTodos.length < 6) displayedTeacherTodos.push(item);
-  });
+  const taskCounts = (type) =>
+    displayedTeacherTodos.filter((item) => item.type === type).length;
   const todoPageSize = 3;
   const todoPageCount = Math.max(
     1,
@@ -2274,38 +2306,26 @@ function Dashboard() {
     safeTodoPage * todoPageSize,
     (safeTodoPage + 1) * todoPageSize,
   );
-  const demoErrorStats = [
-    ["绝缘手套气密性检查", 4],
-    ["高压互锁连接确认", 3],
-    ["维修开关复位遗漏", 2],
-    ["验电器使用前自检", 2],
-    ["高压线束端口防护", 1],
-    ["作业区域警示设置", 1],
-  ];
-  const displayedErrorStats = [...errorStats];
-  demoErrorStats.forEach((item) => {
-    if (
-      displayedErrorStats.length < 6 &&
-      !displayedErrorStats.some(([name]) => name === item[0])
-    ) {
-      displayedErrorStats.push(item);
-    }
-  });
-  const errorPageSize = 3;
-  const errorPageCount = Math.max(
-    1,
-    Math.ceil(displayedErrorStats.length / errorPageSize),
-  );
-  const safeErrorPage = Math.min(errorPage, errorPageCount - 1);
-  const visibleErrorStats = displayedErrorStats.slice(
-    safeErrorPage * errorPageSize,
-    (safeErrorPage + 1) * errorPageSize,
-  );
+  const openArrangement = (item) =>
+    nav(
+      `/teacher/${item.type === "exam" ? "exams" : "practices"}/${item.id}/${arrangementDestination(item)}`,
+    );
+  const taskIcon = (type) =>
+    type === "safety" ? (
+      <SafetyCertificateOutlined />
+    ) : type === "help" ? (
+      <BellOutlined />
+    ) : type === "step" ? (
+      <CheckCircleOutlined />
+    ) : ["evidence", "publish"].includes(type) ? (
+      <FileDoneOutlined />
+    ) : (
+      <AlertOutlined />
+    );
   return (
     <>
       <PageHeader
         title="教师工作台"
-        subtitle="上午好，王老师。这里汇总了今天的安排与需要处理的事项。"
         actions={
           <>
             <Button
@@ -2316,7 +2336,9 @@ function Dashboard() {
               创建练习
             </Button>
             <Button onClick={() => nav("/teacher/exams/new")}>创建考试</Button>
-            <Button onClick={() => nav("/teacher/sop/new")}>新建SOP</Button>
+            <Button onClick={() => nav("/teacher/sop/new")}>
+              新建实训标准
+            </Button>
           </>
         }
       />
@@ -2338,7 +2360,7 @@ function Dashboard() {
         <Metric
           label="待处理"
           value={pendingCount}
-          hint={`安全 ${safetyTasks.length} · 求助 ${helpTasks.length} · 复核 ${reviewTasks.length}`}
+          hint={`业务待办 ${pendingCount - taskCounts("safety") - taskCounts("technical")} · 安全/技术状态 ${taskCounts("safety") + taskCounts("technical")}`}
           icon={<AlertOutlined />}
           tone="amber"
         />
@@ -2373,29 +2395,21 @@ function Dashboard() {
                 <>
                   <span className="schedule-time">
                     {item.scheduleStart
-                      ? ensureDateTimeSeconds(item.scheduleStart).slice(11, 19)
+                      ? displayBusinessText(item.scheduleStart).slice(11, 19)
                       : "待定"}
                   </span>
                   <span>
                     <strong>{item.name}</strong>
                     <small>
                       {item.type === "exam" ? "考试" : "练习"} ·{" "}
-                      {item.sopName || sop?.name || "SOP 已失效"} ·{" "}
+                      {item.sopName || sop?.name || "实训标准已失效"} ·{" "}
                       {item.studentCount ?? (item.studentIds || []).length} 人
                     </small>
                   </span>
                   <Status>{item.status}</Status>
-                  {!item.demoOnly && <b>进入 →</b>}
+                  <span className="schedule-list__action">进入 →</span>
                 </>
               );
-
-              if (item.demoOnly) {
-                return (
-                  <article key={item.id} className="schedule-list__demo">
-                    {scheduleContent}
-                  </article>
-                );
-              }
 
               return (
                 <button key={item.id} onClick={() => openArrangement(item)}>
@@ -2403,6 +2417,9 @@ function Dashboard() {
                 </button>
               );
             })}
+            {!visibleTodayArrangements.length && (
+              <p className="hint">今日暂无安排，可创建练习或考试。</p>
+            )}
           </div>
         </section>
         <section className="panel teacher-todo-card">
@@ -2418,13 +2435,13 @@ function Dashboard() {
           />
           <div className="todo-list">
             {visibleTeacherTodos.map((item) => (
-              <button key={item.id} onClick={item.onClick}>
-                {item.icon}
+              <button key={item.id} onClick={() => nav(item.path)}>
+                {taskIcon(item.type)}
                 <span>
-                  <strong>{item.title}</strong>
-                  <small>{item.detail}</small>
+                  <strong>{displayBusinessText(item.title)}</strong>
+                  <small>{displayBusinessText(item.detail)}</small>
                 </span>
-                <b>{item.action}</b>
+                <b>{item.actionLabel}</b>
               </button>
             ))}
             {!displayedTeacherTodos.length && (
@@ -2433,49 +2450,7 @@ function Dashboard() {
           </div>
         </section>
       </div>
-      <div className="dashboard-grid">
-        <section className="panel">
-          <PanelTitle title="近期学生表现" />
-          <div className="performance">
-            <div>
-              <strong>{averageScore}</strong>
-              <small>平均得分</small>
-            </div>
-            <div>
-              <strong>{publishedRate}</strong>
-              <small>正式成绩发布率</small>
-            </div>
-            <div>
-              <strong>{supportCount}</strong>
-              <small>重点辅导学生</small>
-            </div>
-          </div>
-        </section>
-        <section className="panel teacher-error-card">
-          <PanelTitle
-            title="高频错误"
-            action={
-              <DashboardCardPager
-                page={safeErrorPage}
-                totalPages={errorPageCount}
-                onChange={setErrorPage}
-              />
-            }
-          />
-          <div className="rank-list">
-            {visibleErrorStats.map(([name, count], index) => (
-              <span key={name}>
-                <b>{safeErrorPage * errorPageSize + index + 1}</b>
-                {name}
-                <em>{count} 条记录</em>
-              </span>
-            ))}
-            {!displayedErrorStats.length && (
-              <p className="hint">当前没有有效扣分记录。</p>
-            )}
-          </div>
-        </section>
-      </div>
+      <DashboardPerformanceSection />
     </>
   );
 }
@@ -2485,7 +2460,20 @@ function MonitorPage({ exam = false, setModal }) {
   const { id } = useParams();
   const store = usePrototypeData();
   const [view, setView] = useState("grid");
+  const [stationFilter, setStationFilter] = useState({
+    arrangementId: id,
+    key: "all",
+  });
+  useEffect(() => {
+    setStationFilter({ arrangementId: id, key: "all" });
+  }, [id]);
   const arrangement = store.data.arrangements.find((item) => item.id === id);
+  const workstationLabel = (workstationId) => {
+    const item = store.data.workstations.find(
+      (station) => station.id === workstationId,
+    );
+    return compactWorkstationLabel(item);
+  };
   const sop = store.data.sops.find((item) => item.id === arrangement?.sopId);
   const base = exam ? "exams" : "practices";
   const endRef = useRef(null);
@@ -2494,6 +2482,15 @@ function MonitorPage({ exam = false, setModal }) {
       <MissingState title="安排不存在或已失效" backTo={`/teacher/${base}`} />
     );
   const sessions = arrangement.sessions || [];
+  const monitorFilter = monitorStationFilter(
+    arrangement,
+    stationFilter.arrangementId === id ? stationFilter.key : "all",
+  );
+  const selectStationFilter = (key) =>
+    setStationFilter({
+      arrangementId: id,
+      key: key === monitorFilter.selected.key ? "all" : key,
+    });
   const completedSteps = sessions.reduce(
     (total, session) =>
       total +
@@ -2510,13 +2507,12 @@ function MonitorPage({ exam = false, setModal }) {
       teacherSessionEvents(session).map((event) => ({
         ...event,
         workstationId: session.workstationId,
+        sessionId: session.id,
         studentId: session.studentId,
       })),
     )
     .sort((a, b) =>
-      String(b.createdAt || b.displayTime).localeCompare(
-        String(a.createdAt || a.displayTime),
-      ),
+      teacherEventSortTime(b).localeCompare(teacherEventSortTime(a)),
     );
   const pause = () => {
     const shouldPause = arrangement.status === "进行中";
@@ -2542,9 +2538,7 @@ function MonitorPage({ exam = false, setModal }) {
   const finish = () =>
     setModal({
       title: `结束本次${exam ? "考试" : "练习"}`,
-      className: exam
-        ? "teacher-exam-end-modal"
-        : "teacher-practice-end-modal",
+      className: exam ? "teacher-exam-end-modal" : "teacher-practice-end-modal",
       size: "large",
       content: <EndArrangementForm ref={endRef} arrangement={arrangement} />,
       confirmText: "确认结束并生成结果",
@@ -2557,11 +2551,9 @@ function MonitorPage({ exam = false, setModal }) {
           () => nav(`/teacher/${base}/${updated.id}/results`),
           0,
         );
-        return `${arrangement.name} 已结束，工位进入待复位`;
+        return `${arrangement.name} 已结束，正常工位占用已自动释放`;
       },
     });
-  const count = (...statuses) =>
-    sessions.filter((item) => statuses.includes(item.status)).length;
   const aiEnabledCount = sessions.filter(
     (item) =>
       item.evaluationProfile?.aiRuntimeEnabled ??
@@ -2577,13 +2569,15 @@ function MonitorPage({ exam = false, setModal }) {
         subtitle={
           <span>
             <Status>{arrangement.status}</Status>　开始时间{" "}
-            {arrangement.startedAt || "尚未开始"} · 本次SOP快照{" "}
+            {displayBusinessText(arrangement.startedAt || "尚未开始")} ·
+            本次标准快照{" "}
             {arrangement.snapshot?.sopSnapshot?.name || sop?.name || "未锁定"}
             {" · "}AI评价可用工位 {aiEnabledCount}/{sessions.length}
           </span>
         }
         actions={
           <>
+            <ArrangementAttendanceEntry arrangement={arrangement} />
             {canControlArrangement &&
               arrangement.openWorkstationIds.length <
                 arrangement.workstationIds.length && (
@@ -2638,32 +2632,35 @@ function MonitorPage({ exam = false, setModal }) {
         </div>
       )}
       <div className="monitor-summary">
-        <div className="monitor-summary__statuses">
-          {[
-            [sessions.length, "开放工位", "muted"],
-            [count("进行中"), "进行中", "success"],
-            [count("待开始", "可入场"), "待开始", "muted"],
-            [count("已暂停"), "已暂停", "warning"],
-            [count("待复位"), "待复位", "orange"],
-            [count("故障"), "故障", "danger"],
-          ].map(([value, label, tone]) => (
-            <div className={`summary summary--${tone}`} key={label}>
+        <div
+          className="monitor-summary__statuses"
+          role="group"
+          aria-label="按工位状态筛选"
+        >
+          {monitorFilter.filters.map(({ key, count, label, tone }) => (
+            <button
+              type="button"
+              className={`summary summary--${tone}${monitorFilter.selected.key === key ? " is-active" : ""}`}
+              key={key}
+              aria-pressed={monitorFilter.selected.key === key}
+              aria-controls="monitor-station-grid"
+              aria-label={`${label} ${count} 个工位`}
+              onClick={() => selectStationFilter(key)}
+            >
               <DesktopOutlined />
-              <strong>{value}</strong>
+              <strong>{count}</strong>
               <small>{label}</small>
-            </div>
+            </button>
           ))}
         </div>
         <div className="overall-progress">
           <span>
-            整体步骤进度 <strong>{progress}%</strong>
+            整体实训进度 <strong>{progress}%</strong>
           </span>
           <div>
             <i style={{ width: `${progress}%` }} />
           </div>
-          <small>
-            {completedSteps} / {allSteps || 0} 个步骤已通过
-          </small>
+          <small>{`${completedSteps}/${allSteps || 0} 已通过`}</small>
         </div>
       </div>
       <div
@@ -2672,12 +2669,12 @@ function MonitorPage({ exam = false, setModal }) {
         <section className="station-area">
           <div className="section-toolbar">
             <h2>工位会话状态</h2>
-            <div className="segmented segmented--small">
+            <div className="segmented segmented--small monitor-view-switch">
               <button
                 className={view === "grid" ? "active" : ""}
                 onClick={() => setView("grid")}
               >
-                <AppstoreOutlined /> 图像模式
+                <AppstoreOutlined /> 卡片模式
               </button>
               <button
                 className={view === "list" ? "active" : ""}
@@ -2687,13 +2684,15 @@ function MonitorPage({ exam = false, setModal }) {
               </button>
             </div>
           </div>
-          <div className="station-grid">
-            {arrangement.workstationIds.map((workstationId, index) => {
+          <div
+            className="station-grid"
+            id="monitor-station-grid"
+            aria-label={`${monitorFilter.selected.label}列表`}
+          >
+            {monitorFilter.rows.map(({ workstationId, session }) => {
+              const index = arrangement.workstationIds.indexOf(workstationId);
               const workstation = store.data.workstations.find(
                 (item) => item.id === workstationId,
-              );
-              const session = sessions.find(
-                (item) => item.workstationId === workstationId,
               );
               const student = store.data.students.find(
                 (item) => item.id === session?.studentId,
@@ -2731,54 +2730,99 @@ function MonitorPage({ exam = false, setModal }) {
                   }
                   key={workstationId}
                   disabled={!session}
+                  aria-label={`${workstationLabel(workstationId)} · ${student?.name || "未分配学生"}${status === "故障" ? " · 故障，自动评价已受控暂停，查看阻断原因" : ""}`}
                 >
                   <header>
-                    <strong>{workstation?.name || workstationId}</strong>
-                    <Status tone={tone}>{status}</Status>
+                    <strong title={workstationOptionLabel(workstation)}>
+                      {workstationLabel(workstationId)}
+                    </strong>
+                    {status === "故障" ? (
+                      <span
+                        className={`station-card__fault-summary${view === "list" ? "" : " station-card__fault-summary--compact"}`}
+                        title="自动评价已受控暂停，点击查看阻断原因"
+                      >
+                        <ExclamationCircleFilled />
+                        <span>
+                          {view === "list" ? "故障 · 评价暂停" : "故障"}
+                        </span>
+                        <span className="station-card__fault-link">
+                          {view === "list" ? "查看阻断 →" : "→"}
+                        </span>
+                      </span>
+                    ) : (
+                      <Status tone={tone}>{status}</Status>
+                    )}
                   </header>
-                  <div className="station-card__visual">
-                    <img
-                      src={
-                        index % 2
-                          ? "/assets/workstation-female.png"
-                          : "/assets/workstation-male.png"
-                      }
-                      alt={`${workstation?.name || workstationId}会话画面`}
+                  {view === "list" ? (
+                    <MonitorListCameras
+                      workstation={workstation}
+                      session={session}
+                      devices={store.data.devices}
+                      status={status}
+                      index={index}
                     />
-                    {status === "进行中" && (
-                      <span className="live">
-                        <i /> LIVE
-                      </span>
-                    )}
-                    {status === "故障" && (
-                      <span className="blocked-pill">BLOCKED</span>
-                    )}
-                  </div>
-                  <div className="station-card__body">
-                    <div>
-                      <strong>{student?.name || "未分配学生"}</strong>
-                      <span>{student ? `学号 ${student.no}` : "等待开放"}</span>
-                      <b>{session ? `${session.score}分` : "--"}</b>
+                  ) : (
+                    <div className="station-card__visual">
+                      <img
+                        src={
+                          index % 2
+                            ? "/assets/workstation-female.png"
+                            : "/assets/workstation-male.png"
+                        }
+                        alt={`${workstationLabel(workstationId)}会话画面`}
+                      />
+                      {status === "进行中" && (
+                        <span className="live">
+                          <i /> 运行中
+                        </span>
+                      )}
+                      {status === "故障" && (
+                        <span className="blocked-pill">已阻断</span>
+                      )}
                     </div>
-                    <p>
-                      <span>
-                        现场当前：
-                        {currentStep?.name ||
-                          (status === "待开始" ? "等待学生入场" : "无动作判定")}
+                  )}
+                  <div className="station-card__body">
+                    <div className="station-card__student">
+                      <strong title={student?.name || "未分配学生"}>
+                        {student?.name || "未分配学生"}
+                      </strong>
+                      <b>
+                        {session &&
+                        session.score != null &&
+                        session.score !== ""
+                          ? `${session.score}分`
+                          : "—"}
+                      </b>
+                      <span
+                        className="station-card__student-number"
+                        title={student?.no}
+                      >
+                        {student
+                          ? `学号 ${student.no || "未记录"}`
+                          : "等待开放"}
                       </span>
-                      <span>
+                      <span className="station-card__elapsed" title="有效用时">
                         <ClockCircleOutlined />
                         {session?.elapsed || "--"}
+                      </span>
+                    </div>
+                    <p>
+                      <span title={currentStep?.name}>
+                        现场：
+                        {currentStep?.name ||
+                          (status === "待开始" ? "等待学生入场" : "无动作判定")}
                       </span>
                     </p>
                     {session && (
                       <div
                         className={`station-identity station-identity--${identity.tone}`}
+                        title={[identity.label, identity.detail]
+                          .filter(Boolean)
+                          .join(" · ")}
                       >
                         <UserOutlined />
                         <span>
                           <strong>{identity.label}</strong>
-                          <small>{identity.detail}</small>
                         </span>
                       </div>
                     )}
@@ -2786,15 +2830,25 @@ function MonitorPage({ exam = false, setModal }) {
                       <i style={{ width: `${sessionProgress}%` }} />
                     </div>
                   </div>
-                  {status === "故障" && (
-                    <div className="station-card__alert">
-                      <AlertOutlined /> 自动评价已受控暂停
-                      <span>查看阻断 →</span>
-                    </div>
-                  )}
                 </button>
               );
             })}
+            {!monitorFilter.rows.length && (
+              <div className="monitor-station-empty" role="status">
+                <p>
+                  暂无
+                  {monitorFilter.selected.key === "all"
+                    ? "开放"
+                    : monitorFilter.selected.label}
+                  工位
+                </p>
+                {monitorFilter.selected.key !== "all" && (
+                  <Button onClick={() => selectStationFilter("all")}>
+                    查看全部工位
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </section>
         <aside className="event-panel">
@@ -2809,7 +2863,7 @@ function MonitorPage({ exam = false, setModal }) {
                 key={event.id || `${event.displayTime}-${index}`}
                 onClick={() =>
                   nav(
-                    `/teacher/${base}/${arrangement.id}/stations/${event.workstationId}`,
+                    `/teacher/${base}/${arrangement.id}/stations/${event.workstationId}?sessionId=${event.sessionId}${event.requestId ? `#help-${event.requestId}` : ""}`,
                   )
                 }
               >
@@ -2821,18 +2875,20 @@ function MonitorPage({ exam = false, setModal }) {
                   >
                     {event.categoryLabel}
                   </em>
-                  <strong>
-                    {
+                  <strong
+                    title={
                       store.data.workstations.find(
                         (item) => item.id === event.workstationId,
                       )?.name
-                    }{" "}
-                    · {event.title}
+                    }
+                  >
+                    {workstationLabel(event.workstationId)} ·{" "}
+                    {displayBusinessText(event.title)}
                   </strong>
                   <small>
                     {event.stepName ? `${event.stepName} · ` : ""}
                     {event.reasonLabel ? `原因：${event.reasonLabel} · ` : ""}
-                    {event.detail}
+                    {displayBusinessText(event.detail)}
                   </small>
                 </span>
               </button>
@@ -2920,12 +2976,8 @@ const ExamIncidentHelpForm = forwardRef(function ExamIncidentHelpForm(_, ref) {
   );
 });
 
-function StudentHintContent({ step }) {
+export function StudentHintContent({ step, mediaStep = step }) {
   const [showMedia, setShowMedia] = useState(false);
-  const mediaUrl = step?.standardMediaUrl || "";
-  const video =
-    String(step?.standardMediaType || "").includes("视频") ||
-    /\.(mp4|webm|ogg)(\?|$)/i.test(mediaUrl);
   return (
     <div className="student-hint-content">
       <span className="eyebrow">{step?.id || "当前步骤"}</span>
@@ -2951,13 +3003,7 @@ function StudentHintContent({ step }) {
       </Button>
       {showMedia && (
         <div className="student-hint-media">
-          {!mediaUrl ? (
-            <p>当前步骤暂无标准示教资源。</p>
-          ) : video ? (
-            <video controls preload="metadata" src={mediaUrl} />
-          ) : (
-            <img src={mediaUrl} alt={`${step?.name || "当前步骤"}标准示教`} />
-          )}
+          <StandardMediaList step={mediaStep} />
         </div>
       )}
     </div>
@@ -2966,6 +3012,7 @@ function StudentHintContent({ step }) {
 
 function StudentSessionPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const { id, stationId } = useParams();
   const store = usePrototypeData();
   const resolved = resolveStudentIdentity(store.data.students);
@@ -2974,6 +3021,7 @@ function StudentSessionPage() {
     resolved?.student?.id,
     id,
     stationId,
+    new URLSearchParams(location.search).get("sessionId") || "",
   );
   const verification = buildStudentIdentityVerification(
     resolved?.identitySession,
@@ -2983,8 +3031,18 @@ function StudentSessionPage() {
     const hasValidVerification =
       access.session?.identityVerification?.status === "passed" &&
       access.session?.identityVerification?.studentId === resolved?.student?.id;
-    if (access.allowed && verification && !hasValidVerification) {
-      store.attachStudentIdentityVerification(id, stationId, verification);
+    if (
+      access.allowed &&
+      verification &&
+      !hasValidVerification &&
+      ["待开始", "可入场", "进行中", "已暂停"].includes(access.session?.status)
+    ) {
+      store.attachStudentIdentityVerification(
+        id,
+        stationId,
+        verification,
+        access.session.id,
+      );
     }
   }, [
     access.allowed,
@@ -3009,7 +3067,11 @@ function StudentSessionPage() {
         </Button>
       </section>
     );
-  return <WorkstationPage studentMode />;
+  if (["已完成", "待复位", "已复位"].includes(access.session.status))
+    return (
+      <Navigate to={`/student/results/${id}/${access.session.id}`} replace />
+    );
+  return <WorkstationPage studentMode resolvedSessionId={access.session.id} />;
 }
 
 function LegacyWorkstationRedirect() {
@@ -3024,8 +3086,11 @@ function LegacyWorkstationRedirect() {
   );
 }
 
-function WorkstationPage({ studentMode = false }) {
+function WorkstationPage({ studentMode = false, resolvedSessionId = "" }) {
   const nav = useNavigate();
+  const location = useLocation();
+  const selectedSessionId =
+    resolvedSessionId || new URLSearchParams(location.search).get("sessionId");
   const { id, stationId } = useParams();
   const store = usePrototypeData();
   const [modal, setModal] = useState(null);
@@ -3037,7 +3102,9 @@ function WorkstationPage({ studentMode = false }) {
   const autoSubmitRef = useRef("");
   const arrangement = store.data.arrangements.find((item) => item.id === id);
   const session = arrangement?.sessions.find(
-    (item) => item.workstationId === stationId,
+    (item) =>
+      item.workstationId === stationId &&
+      (!selectedSessionId || item.id === selectedSessionId),
   );
   const workstation = store.data.workstations.find(
     (item) => item.id === stationId,
@@ -3068,6 +3135,7 @@ function WorkstationPage({ studentMode = false }) {
     autoSubmitRef.current = session.id;
     try {
       store.finishWorkstationSession(arrangement.id, stationId, {
+        sessionId: session.id,
         reason: "time_expired",
       });
     } catch (error) {
@@ -3093,9 +3161,10 @@ function WorkstationPage({ studentMode = false }) {
   const blocked = session.status === "故障";
   const completed =
     ["已完成", "待复位"].includes(session.status) ||
-    ["已结束", "待发布", "已发布"].includes(arrangement.status);
+    (session.status !== "故障" &&
+      ["已结束", "待发布", "已发布"].includes(arrangement.status));
   const currentIndex = Math.max(
-    0,
+    session.currentStepId ? 0 : Math.max(0, session.steps.length - 1),
     session.steps.findIndex((step) => step.id === session.currentStepId),
   );
   const currentStep = session.steps[currentIndex] || session.steps[0];
@@ -3197,14 +3266,18 @@ function WorkstationPage({ studentMode = false }) {
         <div className="workstation-confirm-copy">
           <p>
             将以 <strong>{student.name}</strong> 的身份在{workstation.name}
-            开始，使用本次会话已锁定的SOP标准。
+            开始，使用本次会话已锁定的实训标准。
           </p>
           <p>开始后刷新页面会自动恢复当前进度，不会重复创建记录。</p>
         </div>
       ),
       confirmText: `确认开始${exam ? "考试" : "训练"}`,
       onConfirm: () => {
-        store.startWorkstationSession(arrangement.id, workstation.id);
+        store.startWorkstationSession(
+          arrangement.id,
+          workstation.id,
+          session.id,
+        );
         return `${student.name} 的${exam ? "考试" : "训练"}已开始`;
       },
     });
@@ -3215,11 +3288,10 @@ function WorkstationPage({ studentMode = false }) {
       content: <StudentHelpForm ref={helpRef} />,
       confirmText: "发送请求",
       onConfirm: () => {
-        store.requestTeacherHelp(
-          arrangement.id,
-          workstation.id,
-          helpRef.current?.getValue(),
-        );
+        store.requestTeacherHelp(arrangement.id, workstation.id, {
+          ...helpRef.current?.getValue(),
+          sessionId: session.id,
+        });
         return "已通知教师，请留在当前工位等待";
       },
     });
@@ -3230,11 +3302,10 @@ function WorkstationPage({ studentMode = false }) {
       content: <ExamIncidentHelpForm ref={examIncidentRef} />,
       confirmText: "通知教师",
       onConfirm: () => {
-        store.requestExamIncidentHelp(
-          arrangement.id,
-          workstation.id,
-          examIncidentRef.current?.getValue(),
-        );
+        store.requestExamIncidentHelp(arrangement.id, workstation.id, {
+          ...examIncidentRef.current?.getValue(),
+          sessionId: session.id,
+        });
         return "已通知教师，请停止受影响的操作并等待处理";
       },
     });
@@ -3243,6 +3314,7 @@ function WorkstationPage({ studentMode = false }) {
       arrangement.id,
       workstation.id,
       currentStep?.id,
+      session.id,
     );
     setModal({
       eyebrow: "当前步骤提示",
@@ -3251,7 +3323,17 @@ function WorkstationPage({ studentMode = false }) {
       dismissOnly: true,
       hideCancel: true,
       confirmText: "知道了",
-      content: <StudentHintContent step={standardStep} />,
+      content: (
+        <StudentHintContent
+          step={standardStep}
+          mediaStep={sessionStandardMediaStep({
+            session,
+            arrangement,
+            sop,
+            stepId: standardStep?.id,
+          })}
+        />
+      ),
     });
   };
   const finish = () =>
@@ -3268,12 +3350,26 @@ function WorkstationPage({ studentMode = false }) {
           ) : (
             <p>所有步骤均已记录，结束后将生成本次个人结果。</p>
           )}
+          <ul>
+            {session.steps.map((step) => (
+              <li key={step.id}>
+                {step.name} ·{" "}
+                {step.flowCompletion || step.state === "pass"
+                  ? "流程已完成"
+                  : session.stepConfirmation?.status === "pending" &&
+                      session.stepConfirmation.stepId === step.id
+                    ? "待教师确认流程"
+                    : "流程未完成"}
+              </li>
+            ))}
+          </ul>
           {exam && <p>考试成绩将在教师统一发布后显示。</p>}
         </div>
       ),
       confirmText: exam ? "确认交卷" : "确认结束",
       onConfirm: () => {
         store.finishWorkstationSession(arrangement.id, workstation.id, {
+          sessionId: session.id,
           reason: exam ? "manual_submit" : "student_finished",
         });
         return exam ? "已交卷，等待教师发布成绩" : "训练已结束，个人报告已生成";
@@ -3388,7 +3484,7 @@ function WorkstationPage({ studentMode = false }) {
                     {item.ready ? <CheckCircleFilled /> : <AlertOutlined />}
                     <div>
                       <strong>{item.label}</strong>
-                      <small>{item.detail}</small>
+                      <small>{displayBusinessText(item.detail)}</small>
                     </div>
                     <Status tone={item.ready ? "success" : "danger"}>
                       {item.ready ? "就绪" : "不可用"}
@@ -3527,7 +3623,9 @@ function WorkstationPage({ studentMode = false }) {
               <div>
                 <strong>系统评价暂不可用</strong>
                 <p>
-                  {session.events[0]?.detail || "请按现场要求等待教师处理。"}
+                  {displayBusinessText(
+                    session.events[0]?.detail || "请按现场要求等待教师处理。",
+                  )}
                 </p>
               </div>
             </section>
@@ -3559,6 +3657,7 @@ function WorkstationPage({ studentMode = false }) {
                     arrangement.id,
                     workstation.id,
                     false,
+                    session.id,
                   );
                   setToast("会话已从原步骤恢复");
                   window.setTimeout(() => setToast(""), 2400);
@@ -3572,35 +3671,13 @@ function WorkstationPage({ studentMode = false }) {
           )}
 
           <div className="workstation-session__grid">
-            <section className="student-live-card">
-              <header>
-                <div>
-                  <span className="live-dot" />
-                  <strong>当前工位实时画面</strong>
-                </div>
-                <small>主摄像头：{cameraState.camera?.name || "未配置"}</small>
-              </header>
-              {cameraState.available ? (
-                <div className="student-live-view">
-                  <img
-                    src={`/assets/workstation-${student.gender === "女" ? "female" : "male"}.png`}
-                    alt={`${workstation.name}主摄像头实时画面`}
-                  />
-                  <span>
-                    <i /> 实时画面
-                  </span>
-                  <small>
-                    {workstation.name} · {workstation.location}
-                  </small>
-                </div>
-              ) : (
-                <div className="student-live-unavailable">
-                  <VideoCameraOutlined />
-                  <strong>当前视频暂不可用</strong>
-                  <p>{cameraState.reason}</p>
-                </div>
-              )}
-            </section>
+            <StudentCameraPreview
+              key={session.id}
+              data={store.data}
+              session={session}
+              workstation={workstation}
+              student={student}
+            />
 
             {exam ? (
               <div className="exam-session-side">
@@ -3617,7 +3694,7 @@ function WorkstationPage({ studentMode = false }) {
                   <h2>考试状态</h2>
                   <div className="workstation-runtime-list">
                     <span>
-                      <small>当前状态</small>
+                      <small>当前状态 / 模型来源</small>
                       <strong>{session.status}</strong>
                     </span>
                     <span>
@@ -3639,20 +3716,12 @@ function WorkstationPage({ studentMode = false }) {
                       </strong>
                     </span>
                   </div>
-                  {session.examIncidentHelpRequestedAt && (
-                    <p className="help-sent-note">
-                      <CheckCircleFilled /> 异常已通知教师
-                    </p>
-                  )}
-                  <Button
-                    onClick={requestExamIncidentHelp}
-                    disabled={Boolean(session.examIncidentHelpRequestedAt)}
-                  >
-                    <BellOutlined />{" "}
-                    {session.examIncidentHelpRequestedAt
-                      ? "等待教师处理"
-                      : "考试异常求助"}
-                  </Button>
+                  <HelpLifecycle
+                    arrangement={arrangement}
+                    session={session}
+                    studentMode
+                    onRequest={requestExamIncidentHelp}
+                  />
                   <Button
                     type="danger"
                     onClick={finish}
@@ -3669,6 +3738,12 @@ function WorkstationPage({ studentMode = false }) {
               <section className="student-current-step-card">
                 <span className="eyebrow">当前步骤 · {standardStep?.id}</span>
                 <h2>{standardStep?.name || "当前步骤"}</h2>
+                <RequirementsView step={standardStep} />
+                <EvaluationBadge
+                  step={session.steps.find(
+                    (s) => s.id === session.currentStepId,
+                  )}
+                />
                 <div className="student-step-instruction">
                   <strong>操作说明</strong>
                   <p>
@@ -3680,6 +3755,17 @@ function WorkstationPage({ studentMode = false }) {
                   <strong>操作要点</strong>
                   <p>{standardStep?.keyPoints || "请按教师现场要求完成。"}</p>
                 </div>
+                {policy.showStandardMedia && (
+                  <StandardMediaSection
+                    key={`media-${session.id}-${standardStep?.id}`}
+                    step={sessionStandardMediaStep({
+                      session,
+                      arrangement,
+                      sop,
+                      stepId: standardStep?.id,
+                    })}
+                  />
+                )}
                 {standardStep?.redline && (
                   <div className="student-step-instruction is-safety">
                     <strong>
@@ -3725,24 +3811,18 @@ function WorkstationPage({ studentMode = false }) {
                   <strong>{session.score} 分</strong>
                 </span>
               </div>
-              {session.helpRequestedAt && (
-                <p className="help-sent-note">
-                  <CheckCircleFilled /> 已通知教师，请留在当前工位等待教师处理
-                </p>
-              )}
+              <HelpLifecycle
+                arrangement={arrangement}
+                session={session}
+                studentMode
+                onRequest={requestHelp}
+              />
               <div className="student-practice-buttons">
                 {policy.allowHint && (
                   <Button onClick={showHint} disabled={!currentStep}>
                     <BookOutlined /> 我不会
                   </Button>
                 )}
-                <Button
-                  onClick={requestHelp}
-                  disabled={Boolean(session.helpRequestedAt)}
-                >
-                  <BellOutlined />{" "}
-                  {session.helpRequestedAt ? "已通知教师" : "请求教师帮助"}
-                </Button>
                 <Button
                   type="danger"
                   onClick={finish}
@@ -3757,6 +3837,11 @@ function WorkstationPage({ studentMode = false }) {
             </section>
           )}
 
+          <StepProgression
+            arrangement={arrangement}
+            session={session}
+            studentMode
+          />
           <section className="workstation-step-progress">
             <header>
               <h2>步骤进度</h2>
@@ -3795,7 +3880,7 @@ function WorkstationPage({ studentMode = false }) {
 
       {toast && (
         <div className="toast" role="status" aria-live="polite">
-          <CheckCircleFilled /> {toast}
+          <CheckCircleFilled /> {displayBusinessText(toast)}
         </div>
       )}
       <Modal data={modal} close={() => setModal(null)} done={modalDone} />
@@ -3935,18 +4020,24 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
     <section className="panel runtime-simulator">
       <PanelTitle
         title="运行状态模拟（原型）"
-        action={<span>Session AI配置快照</span>}
+        action={<span>实训记录 AI配置快照</span>}
       />
       <p className="hint">
         用于演示真实业务状态变化。AI观察事实必须经判断条件形成AI判断项结果后才影响步骤；安全候选与技术异常均不直接自动处罚。
       </p>
+      <ObservationSimulator
+        key={session.id}
+        arrangement={arrangement}
+        session={session}
+        store={store}
+      />
       <div className="runtime-status-grid">
         <article>
           <small>主操作人</small>
           <strong>
             {ACTOR_BINDING_STATUSES[actor.status] || actor.status || "未建立"}
           </strong>
-          <span>{actor.trackId || "无有效Track"}</span>
+          <span>{actor.trackId || "无有效跟踪记录"}</span>
         </article>
         <article>
           <small>评价计时</small>
@@ -4214,11 +4305,17 @@ function RuntimeSimulatorPanel({ arrangement, session, sop, store, setModal }) {
 
 function StudentMonitorPage({ exam = false, setModal }) {
   const nav = useNavigate();
+  const location = useLocation();
+  const selectedSessionId = new URLSearchParams(location.search).get(
+    "sessionId",
+  );
   const { id, stationId } = useParams();
   const store = usePrototypeData();
   const arrangement = store.data.arrangements.find((item) => item.id === id);
   const session = arrangement?.sessions.find(
-    (item) => item.workstationId === stationId,
+    (item) =>
+      item.workstationId === stationId &&
+      (!selectedSessionId || item.id === selectedSessionId),
   );
   const workstation = store.data.workstations.find(
     (item) => item.id === stationId,
@@ -4235,7 +4332,6 @@ function StudentMonitorPage({ exam = false, setModal }) {
     ),
   );
   const [selectedStep, setSelectedStep] = useState(initialIndex);
-  const [camera, setCamera] = useState("main");
   if (!arrangement || !session || !workstation)
     return (
       <MissingState
@@ -4243,13 +4339,6 @@ function StudentMonitorPage({ exam = false, setModal }) {
         backTo={`/teacher/${base}/${id}/live`}
       />
     );
-  const hasFallbackCamera = Boolean(
-    session.evaluationSnapshot?.workstationAiBaseConfigSnapshot
-      ?.fallbackCameraId,
-  );
-  const aiRuntimeEnabled =
-    session.evaluationProfile?.aiRuntimeEnabled ??
-    session.evaluationProfile?.automaticEvaluationEnabled;
   const detailStep = session.steps?.[selectedStep] || session.steps?.[0] || {};
   const currentStep = (session.steps || []).find(
     (step) => step.id === session.currentStepId,
@@ -4264,10 +4353,11 @@ function StudentMonitorPage({ exam = false, setModal }) {
   const progress = Math.round(
     (completed / Math.max(1, (session.steps || []).length)) * 100,
   );
+  const coverage = evaluationCoverage(session.steps);
   const identity = teacherIdentityView(session);
   const normalizedEvents = teacherSessionEvents(session);
   const studentActivities = teacherStudentActivities(session);
-  const reportPath = `/teacher/${base}/${arrangement.id}/students/${student?.id}`;
+  const reportPath = sessionReportPath(arrangement, session);
   const togglePause = () =>
     setModal({
       title: paused ? "恢复当前学生会话" : "暂停当前学生会话",
@@ -4284,6 +4374,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
           arrangement.id,
           workstation.id,
           !paused,
+          session.id,
         );
         return `${student.name} 的会话已更新为${status}`;
       },
@@ -4341,93 +4432,79 @@ function StudentMonitorPage({ exam = false, setModal }) {
           </>
         }
       />
+      <OpeningInspectionRecord
+        session={session}
+        teachers={store.data.teachers}
+      />
       <div className="student-monitor-layout">
         <section className="student-monitor-main">
-          <div className="live-video-panel">
-            <header className="live-video-toolbar">
-              <div>
-                <span className={`live-pill ${running ? "" : "is-offline"}`}>
-                  <i />
-                  {running ? "LIVE" : session.status}
-                </span>
-                <strong>{camera === "main" ? "主视角" : "辅助视角"}</strong>
-                <small>
-                  本次SOP快照 ·{" "}
-                  {aiRuntimeEnabled
-                    ? `AI参与 ${session.evaluationProfile.aiParticipatingStepCount} 个步骤`
-                    : "默认通过模式"}
-                </small>
-              </div>
+          <SessionCameraViewer
+            key={session.id}
+            session={session}
+            workstation={workstation}
+            devices={store.data.devices}
+            renderPreview={(camera) => (
               <div
-                className="segmented segmented--small"
-                role="tablist"
-                aria-label="视频视角"
+                className={`live-video-frame ${!running ? "is-paused" : ""}`}
               >
-                <button
-                  role="tab"
-                  aria-selected={camera === "main"}
-                  className={camera === "main" ? "active" : ""}
-                  onClick={() => setCamera("main")}
-                >
-                  <VideoCameraOutlined /> 主视角
-                </button>
-                {hasFallbackCamera && (
-                  <button
-                    role="tab"
-                    aria-selected={camera === "assist"}
-                    className={camera === "assist" ? "active" : ""}
-                    onClick={() => setCamera("assist")}
-                  >
-                    <CameraOutlined /> 辅助视角
-                  </button>
+                {camera?.available &&
+                (!camera.areaIds?.length ||
+                  camera.areaIds.every((area) => area === "工作台")) ? (
+                  <>
+                    <img
+                      src={
+                        camera.role === "primary"
+                          ? "/assets/student-monitor-hand-tracking.png"
+                          : "/assets/workstation-female.png"
+                      }
+                      alt={`${workstation.name} · ${camera.label}占位演示图，非真实摄像头画面`}
+                    />
+                    <div className="video-top-overlay">
+                      <span>
+                        <EyeOutlined /> 占位演示画面
+                      </span>
+                      <span>非真实摄像头画面或识别结果</span>
+                    </div>
+                    {running && (
+                      <div className="video-bottom-overlay">
+                        <span>当前步骤记录（不随下方查看切换）</span>
+                        <strong>{currentStep?.name || "等待操作"}</strong>
+                        <time>
+                          <ClockCircleOutlined /> {session.elapsed}
+                        </time>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="session-camera-viewer__placeholder">
+                    <VideoCameraOutlined />
+                    <strong>{camera?.label || "未配置视角"}</strong>
+                    <p>
+                      {camera?.available
+                        ? "视频服务未接入，当前为视角配置演示"
+                        : "该视角不可用，相关要求返回未知"}
+                    </p>
+                    <span>
+                      覆盖区域：{camera?.areaIds?.join("、") || "未记录"}
+                    </span>
+                  </div>
+                )}
+                {stateMessage && (
+                  <div className="video-paused-state">
+                    {blocked ? <AlertOutlined /> : <PauseCircleFilled />}
+                    <strong>{stateMessage[0]}</strong>
+                    <span>{stateMessage[1]}</span>
+                  </div>
                 )}
               </div>
-            </header>
-            <div className={`live-video-frame ${!running ? "is-paused" : ""}`}>
-              <img
-                src={
-                  camera === "main"
-                    ? "/assets/student-monitor-hand-tracking.png"
-                    : "/assets/workstation-female.png"
-                }
-                alt={`${workstation.name}${camera === "main" ? "主" : "辅助"}视角演示画面`}
-              />
-              {running && (
-                <>
-                  <div className="video-top-overlay">
-                    <span>
-                      <EyeOutlined /> 人体 1
-                    </span>
-                    <span>
-                      <CheckCircleFilled /> 手部关键点已锁定
-                    </span>
-                    <span>动作候选稳定</span>
-                    <span>状态机：前置条件满足</span>
-                  </div>
-                  <div className="video-bottom-overlay">
-                    <span>现场当前动作（不随下方查看切换）</span>
-                    <strong>{currentStep?.name || "等待候选动作"}</strong>
-                    <time>
-                      <ClockCircleOutlined /> {session.elapsed}
-                    </time>
-                  </div>
-                </>
-              )}
-              {stateMessage && (
-                <div className="video-paused-state">
-                  {blocked ? <AlertOutlined /> : <PauseCircleFilled />}
-                  <strong>{stateMessage[0]}</strong>
-                  <span>{stateMessage[1]}</span>
-                </div>
-              )}
-            </div>
-          </div>
+            )}
+          />
           <section className="panel action-progress-panel">
             <PanelTitle
-              title="SOP 动作完成情况"
+              title="操作步骤完成情况"
               action={
                 <span className="progress-count">
-                  {completed} / {session.steps.length} 已通过 · 现场当前{" "}
+                  {completed} / {session.steps.length} 已通过 · 现场{" "}
                   {currentStep?.id || "无"}
                 </span>
               }
@@ -4456,9 +4533,55 @@ function StudentMonitorPage({ exam = false, setModal }) {
                       <ClockCircleOutlined />
                     )}
                     {step.result}
+                    <EvaluationBadge step={step} />
                   </span>
                 </button>
               ))}
+            </div>
+          </section>
+          <StepEvaluationExplanation
+            key={detailStep.id}
+            step={detailStep}
+            teachingStep={sessionStandardMediaStep({
+              session,
+              arrangement,
+              sop,
+              stepId: detailStep.id,
+            })}
+          >
+            <EvidenceCameraSummary step={detailStep} session={session} />
+          </StepEvaluationExplanation>
+          <section className="panel">
+            <StepProgression arrangement={arrangement} session={session} />
+            <HelpLifecycle arrangement={arrangement} session={session} />
+          </section>
+          <section className="panel monitor-event-card">
+            <PanelTitle title="当前会话事件" />
+            {normalizedEvents.length ? (
+              normalizedEvents.map((event) => (
+                <div
+                  className={`monitor-alert-row monitor-alert-row--${event.teacherTone}`}
+                  key={event.id}
+                >
+                  <AlertOutlined />
+                  <div>
+                    <small className="monitor-event-category">
+                      {event.categoryLabel}
+                    </small>
+                    <strong>{displayBusinessText(event.title)}</strong>
+                    <p>
+                      {event.displayTime} · {displayBusinessText(event.detail)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="hint">当前会话暂无异常事件</p>
+            )}
+            <div className="monitor-side-actions">
+              <Button type="primary" onClick={() => nav(reportPath)}>
+                查看完整证据
+              </Button>
             </div>
           </section>
         </section>
@@ -4482,7 +4605,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
               )}
               <span>
                 <strong>{identity.label}</strong>
-                <small>{identity.detail}</small>
+                {identity.detail && <small>{identity.detail}</small>}
               </span>
             </div>
           </section>
@@ -4523,6 +4646,15 @@ function StudentMonitorPage({ exam = false, setModal }) {
               <small>录像状态</small>
               <strong>{session.recording?.status || "不可用"}</strong>
             </div>
+            <details key={session.id} className="monitor-evidence-overview">
+              <summary>
+                检测依据概览
+                <span>
+                  证据支持 {coverage.confirmed}/{coverage.total} 步
+                </span>
+              </summary>
+              <CoverageSummary steps={session.steps} />
+            </details>
           </section>
           <section className="panel student-activity-card">
             <PanelTitle
@@ -4547,7 +4679,7 @@ function StudentMonitorPage({ exam = false, setModal }) {
                       <small>
                         {event.categoryLabel} · {event.displayTime}
                       </small>
-                      <strong>{event.title}</strong>
+                      <strong>{displayBusinessText(event.title)}</strong>
                       <p>
                         {event.stepName ? `${event.stepName} · ` : ""}
                         {event.reasonLabel
@@ -4605,12 +4737,12 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 <small>标准要求</small>
                 <p>
                   {sop?.steps.find((step) => step.id === detailStep.id)
-                    ?.completionCondition || "规则版本已锁定"}
+                    ?.completionCondition || "本次标准快照已锁定"}
                 </p>
               </article>
               <article>
                 <small>实时观察</small>
-                <p>{detailStep.observation}</p>
+                <p>{displayBusinessText(detailStep.observation)}</p>
               </article>
               <article>
                 <small>证据状态</small>
@@ -4623,70 +4755,33 @@ function StudentMonitorPage({ exam = false, setModal }) {
                 </p>
               </article>
             </div>
-            {running && detailStep.id === session.currentStepId && (
-              <>
-                <div className="confidence-block">
-                  <span>
-                    自动评价状态 <strong>正常采集中</strong>
-                  </span>
-                  <div>
-                    <i style={{ width: "100%" }} />
-                  </div>
-                  <small>本步已进入判定流程 · 不展示实施阈值</small>
-                </div>
-                <div className="decision-chain">
-                  <div>
-                    <small>摄像头观察</small>
-                    <strong>{currentStep?.id} · 候选稳定</strong>
-                    <span>仅形成观察事实</span>
-                  </div>
-                  <b>→</b>
-                  <div>
-                    <small>SOP业务标准</small>
-                    <strong>{currentStep?.name}</strong>
-                    <span>教师冻结标准</span>
-                  </div>
-                  <b>→</b>
-                  <div>
-                    <small>确定性状态机</small>
-                    <strong>允许进入</strong>
-                    <span>前置步骤已通过</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </section>
-          <section className="panel monitor-event-card">
-            <PanelTitle title="当前会话事件" />
-            {normalizedEvents.length ? (
-              normalizedEvents.map((event) => (
-                <div
-                  className={`monitor-alert-row monitor-alert-row--${event.teacherTone}`}
-                  key={event.id}
-                >
-                  <AlertOutlined />
-                  <div>
-                    <small className="monitor-event-category">
-                      {event.categoryLabel}
-                    </small>
-                    <strong>{event.title}</strong>
-                    <p>
-                      {event.displayTime} · {event.detail}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="hint">当前会话暂无异常事件</p>
-            )}
-            <div className="monitor-side-actions">
-              <Button type="primary" onClick={() => nav(reportPath)}>
-                查看完整证据
-              </Button>
+            <div className="step-runtime-status">
+              <small>检测依据</small>
+              <EvaluationBadge step={detailStep} />
             </div>
+            <button
+              type="button"
+              className="step-detail-link"
+              aria-controls={stepJudgementProcessId(detailStep)}
+              onClick={() => {
+                const process = document.getElementById(
+                  stepJudgementProcessId(detailStep),
+                );
+                if (process) {
+                  process.open = true;
+                  process.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                  });
+                }
+              }}
+            >
+              查看详细判定依据 →
+            </button>
           </section>
         </aside>
       </div>
+      {/* 此部分为原型演示阶段使用，已废弃
       <RuntimeSimulatorPanel
         arrangement={arrangement}
         session={session}
@@ -4694,13 +4789,20 @@ function StudentMonitorPage({ exam = false, setModal }) {
         store={store}
         setModal={setModal}
       />
+      */}
     </>
   );
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
 
-function TablePagination({ total, page, pageSize, onPageChange, onPageSizeChange }) {
+function TablePagination({
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <footer className="table-pagination" aria-label="列表分页">
@@ -4779,13 +4881,15 @@ function DataTable({
   onRow,
   onView,
   onMore,
+  renderActions,
   rowKey,
+  selectedRowKey,
   viewLabel = "查看",
   emptyText = "暂无符合条件的记录",
   statusColumns = [2, 3, 4],
   pagination = "auto",
 }) {
-  const hasActions = Boolean(onRow || onView || onMore);
+  const hasActions = Boolean(onRow || onView || onMore || renderActions);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const paginationIdentity = rows
@@ -4797,7 +4901,15 @@ function DataTable({
   const paginationEnabled =
     pagination === true || (pagination === "auto" && rows.length > 10);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  useEffect(() => setPage(1), [paginationIdentity]);
+  useEffect(() => {
+    const index =
+      selectedRowKey && rowKey
+        ? rows.findIndex(
+            (r, i) => String(rowKey(r, i)) === String(selectedRowKey),
+          )
+        : -1;
+    setPage(index >= 0 ? Math.floor(index / pageSize) + 1 : 1);
+  }, [paginationIdentity, selectedRowKey, pageSize]);
   useEffect(
     () => setPage((current) => Math.min(current, pageCount)),
     [pageCount],
@@ -4824,8 +4936,14 @@ function DataTable({
           <tbody>
             {visibleRows.map(({ row: currentRow, originalIndex }) => (
               <tr
-                key={
-                  rowKey ? rowKey(currentRow, originalIndex) : originalIndex
+                key={rowKey ? rowKey(currentRow, originalIndex) : originalIndex}
+                className={
+                  selectedRowKey &&
+                  rowKey &&
+                  String(rowKey(currentRow, originalIndex)) ===
+                    String(selectedRowKey)
+                    ? "statistics-selected-result"
+                    : undefined
                 }
               >
                 {currentRow.map((cell, columnIndex) => (
@@ -4836,7 +4954,7 @@ function DataTable({
                     ) ? (
                       <Status>{cell}</Status>
                     ) : (
-                      ensureDateTimeSeconds(cell)
+                      displayBusinessText(cell)
                     )}
                   </td>
                 ))}
@@ -4864,6 +4982,7 @@ function DataTable({
                         <MoreOutlined aria-hidden="true" />
                       </button>
                     )}
+                    {renderActions?.(currentRow, originalIndex)}
                   </td>
                 )}
               </tr>
@@ -4989,8 +5108,8 @@ const UploadSampleForm = forwardRef(function UploadSampleForm({ sop }, ref) {
   return (
     <div className="form-stack">
       <p className="hint">
-        <LockOutlined /> 只能选择教师已定义的 Step ID 或
-        Other，上传不会新增或改写 SOP 步骤。
+        <LockOutlined />{" "}
+        只能选择教师已定义的步骤或“其他动作”，上传不会新增或改写实训标准步骤。
       </p>
       <label className="field">
         选择视频文件
@@ -5029,7 +5148,7 @@ const UploadSampleForm = forwardRef(function UploadSampleForm({ sop }, ref) {
                 {step.id} · {step.name}
               </option>
             ))}
-            <option value="Other">Other · 非 SOP / 遮挡 / 停顿</option>
+            <option value="Other">其他动作 · 非标准动作／遮挡／停顿</option>
           </select>
         </label>
       </div>
@@ -5057,8 +5176,7 @@ const SourceVideoForm = forwardRef(function SourceVideoForm(_, ref) {
   return (
     <div className="form-stack">
       <p className="hint">
-        Source Video 是数据生产的源文件。系统按源视频分配 Train / Validation /
-        Test，避免同一视频拆帧后跨集合泄漏。
+        源视频是数据生产的源文件。系统按源视频分配训练集／验证集／测试集，避免同一视频拆帧后跨集合泄漏。
       </p>
       <label className="field">
         选择源视频
@@ -5143,7 +5261,7 @@ const TimeRangeAnnotationForm = forwardRef(function TimeRangeAnnotationForm(
     <div className="form-stack">
       <div className="definition-list">
         <span>
-          <small>Source Video</small>
+          <small>源视频</small>
           <strong>{sourceVideo.fileName}</strong>
         </span>
         <span>
@@ -5168,7 +5286,7 @@ const TimeRangeAnnotationForm = forwardRef(function TimeRangeAnnotationForm(
         </label>
       </div>
       <label className="field">
-        Evaluation Item
+        评价项
         <select
           value={form.evaluationItemId}
           onChange={(event) => selectItem(event.target.value)}
@@ -5182,7 +5300,7 @@ const TimeRangeAnnotationForm = forwardRef(function TimeRangeAnnotationForm(
       </label>
       <div className="form-row">
         <label className="field">
-          Machine Event
+          机器事实
           <select
             value={form.machineEventId}
             onChange={(event) => update("machineEventId", event.target.value)}
@@ -5230,7 +5348,7 @@ const AnnotationForm = forwardRef(function AnnotationForm({ range }, ref) {
           </strong>
         </span>
         <span>
-          <small>Machine Event</small>
+          <small>机器事实</small>
           <strong>{range.label}</strong>
         </span>
       </div>
@@ -5293,7 +5411,7 @@ const AnnotationReviewForm = forwardRef(function AnnotationReviewForm(
             }))
           }
         >
-          <option value="pass">通过，可纳入 Dataset</option>
+          <option value="pass">通过，可纳入数据集</option>
           <option value="reject">退回修改</option>
         </select>
       </label>
@@ -5311,7 +5429,7 @@ const AnnotationReviewForm = forwardRef(function AnnotationReviewForm(
 });
 
 const ReviewSampleForm = forwardRef(function ReviewSampleForm(
-  { sample, sop, acceptLabel = "纳入下一版 Dataset" },
+  { sample, sop, acceptLabel = "纳入下一版数据集" },
   ref,
 ) {
   const [form, setForm] = useState({
@@ -5339,7 +5457,7 @@ const ReviewSampleForm = forwardRef(function ReviewSampleForm(
         </span>
         <span>
           <small>纠正原因</small>
-          <strong>{sample.reason}</strong>
+          <strong>{displayBusinessText(sample.reason)}</strong>
         </span>
       </div>
       <div className="form-row">
@@ -5364,7 +5482,7 @@ const ReviewSampleForm = forwardRef(function ReviewSampleForm(
                 {step.id} · {step.name}
               </option>
             ))}
-            <option value="Other">Other</option>
+            <option value="Other">其他动作</option>
           </select>
         </label>
       </div>
@@ -5410,15 +5528,15 @@ function SopList() {
   return (
     <>
       <PageHeader
-        title="SOP 标准库"
-        subtitle="管理实训教学与评价标准；AI评价能力在SOP发布后独立配置。"
+        title="实训标准库"
+        subtitle="以标准操作流程（SOP）为基础，管理教学要求与评价规则。"
         actions={
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => nav("/teacher/sop/new")}
           >
-            创建 SOP
+            创建实训标准
           </Button>
         }
       />
@@ -5445,14 +5563,14 @@ function SopList() {
           <div className="search">
             <SearchOutlined />
             <input
-              aria-label="搜索 SOP"
-              placeholder="搜索 SOP 名称、专业、课程或创建教师"
+              aria-label="搜索实训标准"
+              placeholder="搜索标准名称、专业、课程或创建教师"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
           <select
-            aria-label="SOP状态"
+            aria-label="标准状态"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
           >
@@ -5489,10 +5607,10 @@ function SopList() {
         <DataTable
           pagination
           columns={[
-            "SOP名称",
+            "标准名称",
             "所属专业 / 课程",
             "创建教师",
-            "SOP状态",
+            "标准状态",
             "步骤",
             "AI评价",
             "更新时间",
@@ -5517,41 +5635,7 @@ function SopList() {
 }
 
 function StandardMediaPreview({ step }) {
-  if (!step?.standardMediaUrl && !step?.standardMediaName) return null;
-  const mediaName =
-    step.standardMediaName ||
-    step.standardMediaUrl?.split("/").pop() ||
-    "已配置示教资料";
-  const isVideo =
-    step.standardMediaType === "示教视频" ||
-    /\.(mp4|mov|webm|m4v)$/i.test(mediaName);
-  const hideBrokenPreview = (event) => {
-    event.currentTarget.style.display = "none";
-  };
-  return (
-    <div className="media-reference">
-      {step.standardMediaUrl &&
-        (isVideo ? (
-          <video
-            controls
-            muted
-            preload="metadata"
-            src={step.standardMediaUrl}
-            onError={hideBrokenPreview}
-          />
-        ) : (
-          <img
-            src={step.standardMediaUrl}
-            alt={`${step.name || "当前步骤"}示教资料`}
-            onError={hideBrokenPreview}
-          />
-        ))}
-      <span className="media-reference__meta">
-        <small>{step.standardMediaType || "示教资料"}</small>
-        <strong>{mediaName}</strong>
-      </span>
-    </div>
-  );
+  return <StandardMediaList step={step} showEmpty={false} />;
 }
 
 function ReadonlyBusinessRules({ sop, step }) {
@@ -5694,10 +5778,12 @@ function SopDetail({ setModal }) {
   ).length;
   const copyRef = useRef(null);
   if (!sop)
-    return <MissingState title="SOP 不存在或已失效" backTo="/teacher/sop" />;
+    return (
+      <MissingState title="实训标准不存在或已失效" backTo="/teacher/sop" />
+    );
   const copy = () =>
     setModal({
-      title: "复制为独立 SOP",
+      title: "复制为独立实训标准",
       content: (
         <CopySopForm ref={copyRef} initialName={`${sop.name}（副本）`} />
       ),
@@ -5710,11 +5796,11 @@ function SopDetail({ setModal }) {
     });
   const deactivate = () =>
     setModal({
-      title: "停用 SOP",
+      title: "停用实训标准",
       className: "teacher-sop-deactivate-modal",
       content: (
         <p>
-          停用后该 SOP 不再用于新建练习、考试和新的 AI
+          停用后该实训标准不再用于新建练习、考试和新的 AI
           配置；已有历史记录不受影响。
         </p>
       ),
@@ -5732,9 +5818,9 @@ function SopDetail({ setModal }) {
         subtitle={`${sop.status} · 责任教师：${sop.owner} · ${sop.publishedAt || sop.updatedAt}`}
         actions={
           <>
-            {sop.status === "草稿" && (
+            {["草稿", "已发布", "已停用"].includes(sop.status) && (
               <Button onClick={() => nav(`/teacher/sop/edit/${sop.id}`)}>
-                编辑草稿
+                {sop.status === "草稿" ? "编辑草稿" : "编辑标准"}
               </Button>
             )}
             {["已发布", "已停用"].includes(sop.status) && (
@@ -5771,11 +5857,10 @@ function SopDetail({ setModal }) {
           <strong>
             {sop.status === "草稿"
               ? "草稿可继续编辑"
-              : `${sop.status} · 内容已冻结`}
+              : `${sop.status} · 当前内容可编辑`}
           </strong>
           <p>
-            步骤、评分和安全规则由教师定义。如需调整已发布标准，请使用“复制创建”生成新的
-            SOP 草稿。
+            修改会覆盖当前实训标准；已有安排和会话继续使用当时保存的标准快照。步骤或评分要求变化后，相关AI配置需要核对并重新验证。
           </p>
         </div>
         <Status tone="success">
@@ -5786,7 +5871,7 @@ function SopDetail({ setModal }) {
         <Metric
           label="操作步骤"
           value={`${(sop.steps || []).length} 步`}
-          hint="固定 Step ID"
+          hint="固定步骤编号"
           icon={<BookOutlined />}
         />
         <Metric
@@ -5815,7 +5900,7 @@ function SopDetail({ setModal }) {
         <Metric
           label="AI评价"
           value={aiSummary.status}
-          hint="与SOP发布相互独立"
+          hint="与实训标准发布相互独立"
           icon={<VideoCameraOutlined />}
           tone={aiSummary.status === "已启用" ? "success" : "warning"}
         />
@@ -5823,7 +5908,7 @@ function SopDetail({ setModal }) {
       <div
         className="tabs sop-detail-tabs sop-standard-detail-tabs"
         role="tablist"
-        aria-label="SOP详情"
+        aria-label="实训标准详情"
       >
         {[
           ["overview", "标准概览"],
@@ -5962,6 +6047,7 @@ function SopDetail({ setModal }) {
                 <strong>{activeStep.evidence || "无需视频证据"}</strong>
               </span>
             </div>
+            <RequirementsView step={activeStep} />
             <StandardMediaPreview step={activeStep} />
             <ReadonlyBusinessRules sop={sop} step={activeStep} />
           </section>
@@ -6036,7 +6122,7 @@ function SopDetail({ setModal }) {
           </div>
           <DataTable
             pagination
-            columns={["步骤", "SOP设定", "当前实际能力", "状态说明"]}
+            columns={["步骤", "教师标准设定", "当前实际能力", "状态说明"]}
             statusColumns={[]}
             rows={sop.steps.map((step) => {
               const expectedMode =
@@ -6063,7 +6149,7 @@ function SopDetail({ setModal }) {
                 ? `${items.length} 个AI判断项 · 引用 ${capabilityCount} 个AI能力`
                 : stepConfig?.actualEvaluationMode ===
                     "default_pass_manual_deduction"
-                  ? stepConfig.downgradeReason || "由教师依据SOP标准评价"
+                  ? stepConfig.downgradeReason || "由教师依据实训标准评价"
                   : "尚未形成可用的AI判断配置";
               return [`${step.id} · ${step.name}`, expected, actual, reason];
             })}
@@ -6091,7 +6177,13 @@ function SopEditor({ setModal }) {
     [signature, setSignature] = useState(""),
     [signed, setSigned] = useState(false),
     [saveError, setSaveError] = useState("");
-  const stages = ["基本信息", "操作步骤", "评价规则", "检查并发布"];
+  const editingCurrent = Boolean(source && source.status !== "草稿");
+  const stages = [
+    "基本信息",
+    "操作步骤",
+    "评价规则",
+    editingCurrent ? "检查并保存" : "检查并发布",
+  ];
   const active = draft.steps[selectedRuleStep] || draft.steps[0];
   const issues = validateSopDraft(draft);
   const totalScore = draft.steps.reduce(
@@ -6139,24 +6231,28 @@ function SopEditor({ setModal }) {
     }));
     setDirty(true);
   };
-  const updateStepMedia = (file) => {
-    if (!file) return;
-    const mediaType = file.type.startsWith("video/") ? "示教视频" : "示教图片";
-    const previewUrl = URL.createObjectURL(file);
+  const mediaBusyRef = useRef(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const updateStepMedia = (stepId, items) => {
     setDraft((current) => ({
       ...current,
-      steps: current.steps.map((step, index) =>
-        index === selectedRuleStep
+      steps: current.steps.map((step) =>
+        step.id === stepId
           ? {
               ...step,
-              standardMediaType: mediaType,
-              standardMediaName: file.name,
-              standardMediaUrl: previewUrl,
+              standardMedia: items,
+              standardMediaType: "无",
+              standardMediaName: "",
+              standardMediaUrl: "",
             }
           : step,
       ),
     }));
     setDirty(true);
+  };
+  const setMediaUploading = (busy) => {
+    mediaBusyRef.current = busy;
+    setMediaBusy(busy);
   };
   const updateJudgementMode = (value) => {
     const defaultLimits = {
@@ -6256,21 +6352,27 @@ function SopEditor({ setModal }) {
       },
     });
   const persistDraft = () => {
+    if (mediaBusyRef.current) throw new Error("资料正在添加，请完成后再保存。");
     const saved = id
       ? store.updateSopDraft(id, draft)
       : store.createSopDraft(draft);
+    setDraft(JSON.parse(JSON.stringify(saved)));
     setDirty(false);
     setSaveError("");
     return saved;
   };
   const save = () =>
     setModal({
-      title: "保存 SOP 草稿",
+      title: editingCurrent ? "保存实训标准修改" : "保存实训标准草稿",
       className: "teacher-sop-save-modal",
       content: (
-        <p>只保存当前 SOP 草稿，不影响已发布标准和正在进行的教学安排。</p>
+        <p>
+          {editingCurrent
+            ? "将覆盖当前标准内容，历史快照和已有会话保持原样；步骤或评分规则变化后，相关AI配置需重新核对并验证。"
+            : "保存当前实训标准草稿。"}
+        </p>
       ),
-      confirmText: "保存草稿",
+      confirmText: editingCurrent ? "确认保存修改" : "保存草稿",
       onConfirm: () => {
         const saved = persistDraft();
         if (!id)
@@ -6282,11 +6384,19 @@ function SopEditor({ setModal }) {
               }),
             0,
           );
-        return `${saved.name} 草稿已保存`;
+        return `${saved.name} ${editingCurrent ? "修改已保存" : "草稿已保存"}`;
       },
     });
   const goToStage = (target) => {
+    if (mediaBusyRef.current) {
+      setSaveError("资料正在添加，请完成后再切换步骤。");
+      return;
+    }
     if (target <= stage) {
+      setStage(target);
+      return;
+    }
+    if (editingCurrent) {
       setStage(target);
       return;
     }
@@ -6308,14 +6418,13 @@ function SopEditor({ setModal }) {
   };
   const publish = () =>
     setModal({
-      title: "签名并发布 SOP",
+      title: "签名并发布实训标准",
       content: (
         <p>
-          发布只冻结当前 SOP 业务标准，AI评价能力将在发布后独立配置。
-          发布后步骤、评分和安全红线不可原地修改；AI评价尚未就绪时系统将按教师规则安全降级。
+          发布后可用于新建教学安排，后续修改覆盖当前内容；已有安排保留当时快照。AI评价能力独立配置，未就绪时按教师规则降级。
         </p>
       ),
-      confirmText: "确认冻结发布",
+      confirmText: "确认发布",
       onConfirm: () => {
         if (!id) throw new Error("请先保存草稿，再执行签名发布。");
         if (issues.length)
@@ -6324,7 +6433,7 @@ function SopEditor({ setModal }) {
           throw new Error("请填写教师姓名并勾选签名确认。");
         const published = store.publishSop(id, draft, signature);
         window.setTimeout(() => nav(`/teacher/sop/${published.id}`), 0);
-        return `${published.name} 已发布并冻结`;
+        return `${published.name} 已发布`;
       },
     });
   const moveStep = (offset) => {
@@ -6384,7 +6493,7 @@ function SopEditor({ setModal }) {
   };
   const deleteDraft = () =>
     setModal({
-      title: "删除 SOP 草稿",
+      title: "删除实训标准草稿",
       className: "teacher-sop-delete-modal",
       content: (
         <p>
@@ -6396,10 +6505,10 @@ function SopEditor({ setModal }) {
       onConfirm: () => {
         store.deleteSopDraft(id);
         window.setTimeout(() => nav("/teacher/sop"), 0);
-        return "SOP 草稿已删除";
+        return "实训标准草稿已删除";
       },
     });
-  if (id && (!source || source.status !== "草稿" || source.frozen))
+  if (id && (!source || !["草稿", "已发布", "已停用"].includes(source.status)))
     return (
       <Navigate to={source ? `/teacher/sop/${id}` : "/teacher/sop"} replace />
     );
@@ -6407,17 +6516,34 @@ function SopEditor({ setModal }) {
     <>
       <PageHeader
         back
-        title={`${id ? "编辑" : "创建"} SOP：${draft.name || "未命名标准"}`}
-        subtitle={`${dirty ? "有未保存更改" : id ? `最近保存 ${draft.updatedAt}` : "尚未保存"} · Step ID 在当前 SOP 内稳定`}
+        title={`${id ? "编辑" : "创建"}实训标准：${draft.name || "未命名标准"}`}
+        subtitle={`${dirty ? "有未保存更改" : id ? `最近保存 ${draft.updatedAt}` : "尚未保存"} · 步骤编号在当前标准内稳定`}
         actions={
           <>
-            {id && <Button onClick={deleteDraft}>删除草稿</Button>}
-            <Button onClick={save}>保存草稿</Button>
+            {id && !editingCurrent && (
+              <Button disabled={mediaBusy} onClick={deleteDraft}>
+                删除草稿
+              </Button>
+            )}
+            <Button disabled={mediaBusy} onClick={save}>
+              {editingCurrent ? "保存修改" : "保存草稿"}
+            </Button>
             <Button
               type="primary"
-              onClick={() => (stage < 3 ? goToStage(stage + 1) : publish())}
+              disabled={mediaBusy}
+              onClick={() =>
+                stage < 3
+                  ? goToStage(stage + 1)
+                  : editingCurrent
+                    ? save()
+                    : publish()
+              }
             >
-              {stage < 3 ? "下一步" : "签名并发布"}
+              {stage < 3
+                ? "下一步"
+                : editingCurrent
+                  ? "确认保存修改"
+                  : "签名并发布"}
             </Button>
           </>
         }
@@ -6444,7 +6570,7 @@ function SopEditor({ setModal }) {
           <section className="panel">
             <PanelTitle title="基本信息" />
             <label className="field">
-              SOP名称
+              标准名称
               <input
                 maxLength={50}
                 value={draft.name}
@@ -6539,7 +6665,7 @@ function SopEditor({ setModal }) {
               <strong>{draft.status || "草稿"}</strong>
             </span>
             <p>
-              SOP是教学与评价的正式业务标准。步骤、评分和安全规则由专业教师定义，AI不会自动生成或改写本标准。
+              实训标准包含标准操作流程（SOP）、教学要求与评价规则，由专业教师定义，AI不会自动生成或改写。
             </p>
           </aside>
         </div>
@@ -6550,7 +6676,11 @@ function SopEditor({ setModal }) {
             <PanelTitle
               title="操作步骤"
               action={
-                <Button icon={<PlusOutlined />} onClick={addStep}>
+                <Button
+                  icon={<PlusOutlined />}
+                  disabled={mediaBusy}
+                  onClick={addStep}
+                >
                   新增
                 </Button>
               }
@@ -6559,6 +6689,7 @@ function SopEditor({ setModal }) {
               <button
                 className={index === selectedRuleStep ? "active" : ""}
                 key={step.id}
+                disabled={mediaBusy}
                 onClick={() => setSelectedRuleStep(index)}
               >
                 <b>{String(index + 1).padStart(2, "0")}</b>
@@ -6576,7 +6707,7 @@ function SopEditor({ setModal }) {
             <div className="sop-authority-callout">
               <LockOutlined />
               <div>
-                <strong>Step ID 一经创建不随排序改变</strong>
+                <strong>步骤编号一经创建不随排序改变</strong>
                 <p>调整顺序不会改变系统标识；删除步骤后也不会复用该编号。</p>
               </div>
             </div>
@@ -6589,7 +6720,7 @@ function SopEditor({ setModal }) {
                 <AlertOutlined />
                 <span>
                   当前草稿来自旧版可选/分支结构。请确认后将全部步骤转为一期线性必做流程；原
-                  Step ID 不会改变。
+                  步骤编号不会改变。
                 </span>
                 <Button
                   onClick={() =>
@@ -6622,6 +6753,11 @@ function SopEditor({ setModal }) {
                   }
                 />
               </label>
+              <RequirementsEditor
+                step={active}
+                steps={draft.steps}
+                onChange={(value) => updateStep("visualRequirements", value)}
+              />
               <div className="teaching-content-card">
                 <div>
                   <strong>学生端标准教学内容</strong>
@@ -6658,21 +6794,12 @@ function SopEditor({ setModal }) {
                     />
                   </label>
                 </div>
-                <label className="field media-upload-field">
-                  标准示教资料
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={(event) =>
-                      updateStepMedia(event.target.files?.[0])
-                    }
-                  />
-                  <small>
-                    {active.standardMediaName ||
-                      `${active.standardMediaType || "示教资料"}已配置`}
-                  </small>
-                </label>
-                <StandardMediaPreview step={active} />
+                <StandardMediaEditor
+                  key={active.id}
+                  step={active}
+                  onChange={(items) => updateStepMedia(active.id, items)}
+                  onBusyChange={setMediaUploading}
+                />
               </div>
               <div className="definition-list linear-step-facts">
                 <span>
@@ -6695,20 +6822,22 @@ function SopEditor({ setModal }) {
               </label>
               <div className="definition-actions">
                 <Button
-                  disabled={selectedRuleStep === 0}
+                  disabled={mediaBusy || selectedRuleStep === 0}
                   onClick={() => moveStep(-1)}
                 >
                   上移步骤
                 </Button>
                 <Button
-                  disabled={selectedRuleStep === draft.steps.length - 1}
+                  disabled={
+                    mediaBusy || selectedRuleStep === draft.steps.length - 1
+                  }
                   onClick={() => moveStep(1)}
                 >
                   下移步骤
                 </Button>
                 <Button
                   type="danger"
-                  disabled={draft.steps.length === 1}
+                  disabled={mediaBusy || draft.steps.length === 1}
                   onClick={removeStep}
                 >
                   删除步骤
@@ -6798,6 +6927,25 @@ function SopEditor({ setModal }) {
                     )}
                   </div>
                 </div>
+                <label className="field">
+                  练习人工流程推进
+                  <select
+                    value={active.manualProgressionPolicy || "student_submit"}
+                    onChange={(e) =>
+                      updateStep("manualProgressionPolicy", e.target.value)
+                    }
+                  >
+                    <option value="student_submit">
+                      学生提交本步完成后推进
+                    </option>
+                    <option value="teacher_confirmation">
+                      学生提交后等待教师确认
+                    </option>
+                  </select>
+                  <small>
+                    AI自动确认保持自动推进；考试的人工推进统一由教师确认。人工流程确认不代替AI证据或成绩复核。
+                  </small>
+                </label>
                 <div className="field">
                   评价方式
                   <div
@@ -6831,7 +6979,7 @@ function SopEditor({ setModal }) {
                 </div>
                 {(active.expectedJudgementMode || active.judgementMode) ===
                   "visual_auto" && (
-                  <p className="evaluation-notice">
+                  <p className="evaluation-notice sop-evaluation-note">
                     <AlertOutlined />{" "}
                     最终是否能启用自动评价，还需完成AI模型适配和工位现场验证。本设置仅表示教师认为该步骤适合视频自动评价。
                   </p>
@@ -7052,7 +7200,7 @@ function SopEditor({ setModal }) {
                         <FileTextOutlined />
                         <b>尚未创建结构化评分规则</b>
                         <p>
-                          如果选择“按评分规则计算”，后续 Mapping
+                          如果选择“按评分规则计算”，后续评价映射
                           必须把每个完成判断项关联到这里的规则，或明确不扣分。
                         </p>
                       </div>
@@ -7199,7 +7347,7 @@ function SopEditor({ setModal }) {
                 <details className="business-rule-details">
                   <summary>流程规则</summary>
                   <p className="hint">
-                    步骤未完成统一由 Incomplete Policy
+                    步骤未完成统一由未完成处理规则
                     处理；流程异常如需扣分，必须引用上方教师评分规则。
                   </p>
                   <div className="flow-policy-grid">
@@ -7296,10 +7444,10 @@ function SopEditor({ setModal }) {
               <h2>
                 {issues.length
                   ? `还有 ${issues.length} 项内容需要完善`
-                  : "SOP 已满足发布条件"}
+                  : "实训标准已满足发布条件"}
               </h2>
               <p>
-                这里只检查教学与评价标准；AI评价尚未配置也可以正常发布 SOP。
+                这里只检查教学与评价标准；AI评价尚未配置也可以正常发布实训标准。
               </p>
             </div>
           </div>
@@ -7325,7 +7473,7 @@ function SopEditor({ setModal }) {
               <>
                 <span>
                   <CheckCircleFilled />
-                  <b>{draft.steps.length} 个固定 Step ID</b>
+                  <b>{draft.steps.length} 个固定步骤编号</b>
                   <small>步骤内容、顺序和依赖完整</small>
                 </span>
                 <span>
@@ -7355,30 +7503,33 @@ function SopEditor({ setModal }) {
               </>
             )}
           </div>
-          <div className="signature-box">
-            <label className="field">
-              专业教师签名
-              <input
-                placeholder="请输入本人姓名"
-                value={signature}
-                onChange={(event) => setSignature(event.target.value)}
-              />
-            </label>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={signed}
-                onChange={(event) => setSigned(event.target.checked)}
-              />{" "}
-              我已逐项审核并确认当前内容为本实训项目正式教学与评价标准。
-            </label>
-          </div>
+          {!editingCurrent && (
+            <div className="signature-box">
+              <label className="field">
+                专业教师签名
+                <input
+                  placeholder="请输入本人姓名"
+                  value={signature}
+                  onChange={(event) => setSignature(event.target.value)}
+                />
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={signed}
+                  onChange={(event) => setSigned(event.target.checked)}
+                />{" "}
+                我已逐项审核并确认当前内容为本实训项目正式教学与评价标准。
+              </label>
+            </div>
+          )}
           <div className="publish-boundary">
             <span>
-              <strong>发布 SOP</strong>
+              <strong>
+                {editingCurrent ? "保存当前实训标准" : "发布实训标准"}
+              </strong>
               <small>
-                签名后当前 SOP 内容冻结；后续调整请复制创建新的独立
-                SOP。AI评价能力在发布后独立建设。
+                当前标准仅保留一份，修改覆盖更新；历史安排使用当时快照，AI评价能力独立建设。
               </small>
             </span>
           </div>
@@ -7400,10 +7551,8 @@ function Learning({ setModal }) {
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
-  const {
-    pageItems: pagedSamples,
-    paginationProps: samplePagination,
-  } = useListPagination(visible);
+  const { pageItems: pagedSamples, paginationProps: samplePagination } =
+    useListPagination(visible);
   const reviewRef = useRef(null);
   const review = (sample) => {
     const sop = store.data.sops.find((item) => item.id === sample.sopId);
@@ -7420,8 +7569,8 @@ function Learning({ setModal }) {
           sop={sop}
           acceptLabel={
             dataset?.status === "已锁定"
-              ? `纳入 ${dataset.nextVersion || "下一版 Dataset"}`
-              : `纳入当前 ${dataset?.version || "Dataset"}`
+              ? `纳入 ${dataset.nextVersion || "下一版数据集"}`
+              : `纳入当前 ${dataset?.version || "数据集"}`
           }
         />
       ),
@@ -7443,14 +7592,14 @@ function Learning({ setModal }) {
       title: "转入正式数据生产链",
       content: (
         <p>
-          将 <strong>{sample.fileName}</strong> 作为 Difficult Sample Feedback
-          转为 Source Video。后续仍需标注与审核，不会直接纳入 Dataset。
+          将 <strong>{sample.fileName}</strong> 作为困难样本反馈
+          转为源视频。后续仍需标注与审核，不会直接纳入数据集。
         </p>
       ),
       confirmText: "转入数据生产",
       onConfirm: () => {
         store.promoteDifficultSample(sample.id);
-        return `${sample.fileName} 已进入 Source Video 待加工队列`;
+        return `${sample.fileName} 已进入源视频待加工队列`;
       },
     });
   };
@@ -7463,7 +7612,7 @@ function Learning({ setModal }) {
       content: (
         <p>
           将把明确勾选的 {pending.length} 条待审样本按现有标签纳入对应可编辑
-          Dataset；当前版本已锁定时进入下一版候选。不会修改任何 SOP
+          数据集；当前版本已锁定时进入下一版候选。不会修改任何实训标准
           或已锁定版本。
         </p>
       ),
@@ -7479,7 +7628,7 @@ function Learning({ setModal }) {
           ),
         );
         setSelectedIds([]);
-        return `${pending.length} 条样本已进入下一版 Dataset`;
+        return `${pending.length} 条样本已进入下一版数据集`;
       },
     });
   };
@@ -7488,15 +7637,15 @@ function Learning({ setModal }) {
       <PageHeader
         back
         title="动作训练样本复核"
-        subtitle="困难样本先进入正式数据生产链；教师只审核已完成标注的候选，SOP 步骤不可由样本反向生成"
+        subtitle="困难样本先进入正式数据生产链；教师只审核已完成标注的候选，实训标准的步骤不可由样本反向生成"
       />
       <section className="sop-boundary-note">
         <DatabaseOutlined />
         <div>
           <strong>纳入边界</strong>
           <p>
-            待加工 → Source Video → 标注与审核 → Dataset
-            候选。运行反馈不会直接进入训练集；当前锁定 Dataset、已发布 SOP
+            待加工 → 源视频 → 标注与审核 → 数据集
+            候选。运行反馈不会直接进入训练集；当前锁定数据集、已发布实训标准
             和已部署模型均不被原地改写。
           </p>
         </div>
@@ -7592,7 +7741,7 @@ function Learning({ setModal }) {
                   <td>{sample.fileName}</td>
                   <td>{sample.source}</td>
                   <td>{sample.aiPrediction}</td>
-                  <td>{sample.reason}</td>
+                  <td>{displayBusinessText(sample.reason)}</td>
                   <td>{sample.label}</td>
                   <td>
                     <Status>{sample.status}</Status>
@@ -7627,86 +7776,6 @@ function Learning({ setModal }) {
   );
 }
 
-const StationCheckForm = forwardRef(function StationCheckForm(
-  { workstation, snapshot, readiness },
-  ref,
-) {
-  const hasFallbackCamera = Boolean(
-    snapshot?.workstationAiBaseConfigSnapshot?.fallbackCameraId ||
-      readiness.gate.workstation?.aiBaseConfig?.fallbackCameraId,
-  );
-  const [checks, setChecks] = useState(() => ({
-    node: false,
-    mainCamera: false,
-    ...(hasFallbackCamera ? { assistCamera: false } : {}),
-    cache: false,
-  }));
-  useImperativeHandle(ref, () => ({ getValue: () => checks }));
-  const toggle = (key) =>
-    setChecks((current) => ({ ...current, [key]: !current[key] }));
-  return (
-    <div className="form-stack">
-      <div className="prep-camera-grid">
-        <figure>
-          <img src="/assets/workstation-male.png" alt="主视角实时检查画面" />
-          <figcaption>主视角 · 画面时间 09:58:21</figcaption>
-        </figure>
-        {hasFallbackCamera && (
-          <figure>
-            <img
-              src="/assets/workstation-female.png"
-              alt="辅助视角实时检查画面"
-            />
-            <figcaption>辅助视角 · 画面时间 09:58:21</figcaption>
-          </figure>
-        )}
-      </div>
-      <p className="hint">
-        将使用{snapshot ? "已锁定" : "首次开放时生成"}
-        的教学标准与工位AI能力快照；后续标准或AI适配升级不会影响本次安排。
-      </p>
-      <div
-        className={`evaluation-gate-callout ${readiness.gate.enabled ? "is-enabled" : "is-fallback"}`}
-      >
-        {readiness.gate.enabled ? <CheckCircleFilled /> : <AlertOutlined />}
-        <div>
-          <strong>{readiness.gate.runtimeLabel}</strong>
-          <p>
-            AI参与步骤 {readiness.gate.aiParticipatingStepCount}{" "}
-            个，其中自动评价
-            {readiness.gate.automaticEvaluationStepCount} 个、AI辅助
-            {readiness.gate.assistedEvaluationStepCount} 个、安全提醒
-            {readiness.gate.safetyMonitoringStepCount} 个。
-            {!readiness.gate.enabled &&
-              "未启用步骤按规则默认通过，不阻塞本次 SOP 使用。"}
-          </p>
-          {!readiness.gate.enabled && (
-            <small>{readiness.warnings.join("；")}</small>
-          )}
-        </div>
-      </div>
-      {readiness.checks.map((key) => (
-        <label className="checkbox-row" key={key}>
-          <input
-            type="checkbox"
-            checked={checks[key]}
-            onChange={() => toggle(key)}
-          />
-          {{
-            node: "边缘节点在线且推理服务正常",
-            mainCamera: "主视角覆盖完整操作区域",
-            assistCamera: "辅助视角可看清关键手部动作",
-            cache: "本地录像缓存空间与写入测试通过",
-          }[key] || key}
-        </label>
-      ))}
-      <small>
-        {workstation.code} · {workstation.location}
-      </small>
-    </div>
-  );
-});
-
 const EndArrangementForm = forwardRef(function EndArrangementForm(
   { arrangement },
   ref,
@@ -7728,7 +7797,8 @@ const EndArrangementForm = forwardRef(function EndArrangementForm(
           active.filter((item) => ["待开始", "可入场"].includes(item.status))
             .length
         }{" "}
-        个待开始会话。 结束后停止入场并进入结果汇总，所有占用工位进入待复位。
+        个待开始会话。
+        结束后停止入场并进入结果汇总，正常工位自动释放占用；异常工位保留使用限制，现场复位在下次开放前确认。
       </p>
       <label className="field">
         结束说明
@@ -7741,9 +7811,271 @@ const EndArrangementForm = forwardRef(function EndArrangementForm(
   );
 });
 
-function ArrangementList({ exam = false }) {
+const PreparationReasonForm = forwardRef(function PreparationReasonForm(
+  { detail },
+  ref,
+) {
+  const [reason, setReason] = useState("");
+  useImperativeHandle(ref, () => ({ getValue: () => reason }));
+  return (
+    <div className="form-stack">
+      <p>{detail}</p>
+      <label className="field">
+        <FieldLabel required>原因说明</FieldLabel>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="请填写原因，操作记录将保留"
+        />
+      </label>
+    </div>
+  );
+});
+
+function ArrangementPreparationActions({
+  arrangement,
+  store,
+  setModal,
+  workstationId,
+  compact = false,
+}) {
   const nav = useNavigate();
-  const { data } = usePrototypeData();
+  const reasonRef = useRef(null);
+  const allowed = preparationActions(arrangement);
+  const base = `/teacher/${arrangement.type === "exam" ? "exams" : "practices"}`;
+  const confirm = (action) => {
+    const title = {
+      deleteDraft: "删除草稿",
+      cancel: "取消本次安排",
+      withdraw: "撤销该工位准备",
+      copy: "复制为新草稿",
+    }[action];
+    const needsReason = ["cancel", "withdraw"].includes(action);
+    const detail =
+      action === "withdraw"
+        ? "只撤销该工位的未开始会话并释放本安排占用；其他工位不受影响。原检查记录与快照保留。"
+        : action === "cancel"
+          ? "仅允许取消尚未开始的安排。已开放的未开始会话将关闭并释放本安排占用，不生成正式成绩。"
+          : action === "copy"
+            ? "复制学生、工位与配置为新的草稿；原取消记录保留，新安排需重新检查开放。"
+            : "删除未开放且没有业务引用的草稿，保留本次删除审计。";
+    setModal({
+      title: `${title}：${arrangement.name}`,
+      content: needsReason ? (
+        <PreparationReasonForm ref={reasonRef} detail={detail} />
+      ) : (
+        <p>{detail}</p>
+      ),
+      confirmText: `确认${title}`,
+      onConfirm: () => {
+        let changed;
+        if (action === "deleteDraft")
+          store.deleteArrangementDraft(arrangement.id);
+        if (action === "cancel")
+          store.cancelArrangement(
+            arrangement.id,
+            reasonRef.current?.getValue(),
+          );
+        if (action === "withdraw")
+          store.withdrawArrangementWorkstation(
+            arrangement.id,
+            workstationId,
+            reasonRef.current?.getValue(),
+          );
+        if (action === "copy")
+          changed = store.copyCancelledArrangement(arrangement.id);
+        if (action !== "withdraw")
+          window.setTimeout(
+            () =>
+              nav(
+                action === "deleteDraft"
+                  ? base
+                  : action === "copy"
+                    ? `${base}/${changed.id}/edit`
+                    : `${base}/${arrangement.id}/prep`,
+              ),
+            0,
+          );
+        return `${title}已完成`;
+      },
+    });
+  };
+  const actionButton = (action, label) =>
+    compact ? (
+      <button
+        key={action}
+        className="table-action"
+        onClick={() => confirm(action)}
+      >
+        {label}
+      </button>
+    ) : (
+      <Button key={action} onClick={() => confirm(action)}>
+        {label}
+      </Button>
+    );
+  if (workstationId)
+    return allowed.withdraw &&
+      arrangement.openWorkstationIds.includes(workstationId)
+      ? actionButton("withdraw", "撤销准备")
+      : null;
+  return (
+    <span className="arrangement-preparation-actions">
+      {allowed.deleteDraft && actionButton("deleteDraft", "删除草稿")}
+      {allowed.cancel && actionButton("cancel", "取消安排")}
+      {allowed.copy && actionButton("copy", "复制为新草稿")}
+    </span>
+  );
+}
+
+function ArrangementAllocation({ arrangement, data, onChange, onRandomize }) {
+  const pairs = arrangementAssignments(arrangement);
+  const issues = allocationIssues(arrangement);
+  const [feedback, setFeedback] = useState(null);
+  const allocationKey = (item) =>
+    JSON.stringify([
+      item.studentIds,
+      item.workstationIds,
+      item.stationAssignments,
+      item.allocationRandomizedAt,
+    ]);
+  const currentKey = allocationKey(arrangement);
+  const setupReason = onChange ? allocationSetupReason(data, arrangement) : "";
+  const selectedStudents = (arrangement.studentIds || []).map(
+    (id) =>
+      data.students.find((s) => s.id === id) || {
+        id,
+        name: "学生已失效",
+        no: id,
+      },
+  );
+  const assign = (workstationId, studentId) => {
+    onChange(swapAllocationStudent(arrangement, workstationId, studentId));
+    setFeedback(null);
+  };
+  const randomize = () => {
+    try {
+      const result = onRandomize();
+      setFeedback({
+        key: allocationKey(result),
+        text: `已随机分配 ${result.studentIds.length} 名学生，可手动调整个别工位；保存后生效。`,
+      });
+    } catch (error) {
+      setFeedback({ key: currentKey, text: error.message });
+    }
+  };
+  const unassigned = selectedStudents.filter(
+    (s) => !pairs.some((p) => p.studentId === s.id),
+  );
+  return (
+    <section className="arrangement-allocation" aria-label="学生与工位分配">
+      <PanelTitle
+        title="学生与工位分配"
+        action={
+          <div className="allocation-actions">
+            <span>
+              {arrangement.studentIds?.length || 0} 人 · {pairs.length} 个工位
+            </span>
+            {onRandomize && (
+              <button
+                type="button"
+                className="button"
+                disabled={Boolean(setupReason)}
+                title={
+                  setupReason || "随机配对所选学生和工位；将替换当前对应关系"
+                }
+                onClick={randomize}
+              >
+                {arrangement.allocationRandomizedAt ? "重新随机" : "随机分配"}
+              </button>
+            )}
+          </div>
+        }
+      />
+      {onChange ? (
+        <div
+          className={setupReason || issues.length ? "readonly-note" : "hint"}
+          role="status"
+        >
+          {setupReason ||
+            (feedback?.key === currentKey
+              ? feedback.text
+              : issues.length
+                ? "对应关系尚未完整，请点击“随机分配”，或手动调整分配。"
+                : "系统已补齐分配，可随机分配或手动调整；选择已分配学生会交换两人的工位。")}
+        </div>
+      ) : issues.length > 0 ? (
+        <div className="readonly-note" role="status">
+          {issues.join("；")}
+          {!onChange && " 历史会话与快照保持不变。"}
+        </div>
+      ) : (
+        <p className="hint">
+          一次一批、一人一工位。
+          {onChange
+            ? "可调整学生对应关系，选择已分配学生将交换两人的工位。"
+            : "开放工位按此对应关系建立会话。"}
+        </p>
+      )}
+      <DataTable
+        columns={["工位", "分配学生", "学号", "会话状态"]}
+        rows={pairs.map((p) => {
+          const student = data.students.find((s) => s.id === p.studentId);
+          const session = (arrangement.sessions || []).find(
+            (s) =>
+              s.workstationId === p.workstationId &&
+              s.studentId === p.studentId,
+          );
+          return [
+            data.workstations.find((w) => w.id === p.workstationId)?.name ||
+              p.workstationId,
+            onChange ? (
+              <select
+                aria-label={`分配学生：${p.workstationId}`}
+                value={p.studentId}
+                onChange={(e) => assign(p.workstationId, e.target.value)}
+              >
+                <option value="">请选择学生</option>
+                {selectedStudents.map((s) => (
+                  <option value={s.id} key={s.id}>
+                    {s.name} · {s.no}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              student?.name || "未分配"
+            ),
+            student?.no || "—",
+            arrangement.status === "已取消"
+              ? "已取消"
+              : session?.status || "未开放",
+          ];
+        })}
+        rowKey={(_, index) => pairs[index].workstationId}
+        pagination={false}
+        emptyText="请先选择学生和工位。"
+      />
+      {unassigned.length > 0 && (
+        <p className="warning-text">
+          尚未分配 {unassigned.length} 人：
+          {unassigned
+            .slice(0, 5)
+            .map((s) => s.name)
+            .join("、")}
+          {unassigned.length > 5 &&
+            (onChange
+              ? "等；完整名单可在上方“按学生选择”的“仅看已选”中查看。"
+              : "等。")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ArrangementList({ exam = false, setModal }) {
+  const nav = useNavigate();
+  const store = usePrototypeData();
+  const { data } = store;
   const name = exam ? "考试" : "练习";
   const base = exam ? "exams" : "practices";
   const [query, setQuery] = useState("");
@@ -7752,7 +8084,7 @@ function ArrangementList({ exam = false }) {
     (item) =>
       item.type === (exam ? "exam" : "practice") && !item.archivedRecord,
   );
-  const filters = ["全部状态", ...new Set(source.map((item) => item.status))];
+  const filters = arrangementStatusOptions(exam ? "exam" : "practice", source);
   const visible = source.filter((item) => {
     const sop = data.sops.find((entry) => entry.id === item.sopId);
     return (
@@ -7770,8 +8102,8 @@ function ArrangementList({ exam = false }) {
       `${item.studentIds.length}人`,
       item.status,
       item.type === "exam" && item.entryEnd
-        ? `${ensureDateTimeSeconds(item.scheduleStart).replace("T", " ")}—${ensureDateTimeSeconds(item.entryEnd).slice(11)}`
-        : ensureDateTimeSeconds(item.scheduleStart).replace("T", " "),
+        ? `${displayBusinessText(item.scheduleStart).replace("T", " ")}—${displayBusinessText(item.entryEnd).slice(11)}`
+        : displayBusinessText(item.scheduleStart).replace("T", " "),
     ];
   });
   const openArrangement = (_, index) => {
@@ -7797,7 +8129,7 @@ function ArrangementList({ exam = false }) {
       />
       <section className="panel panel--table">
         <Toolbar
-          placeholder={`搜索${name}名称或 SOP`}
+          placeholder={`搜索${name}名称或实训标准`}
           filters={filters}
           value={query}
           filterValue={statusFilter}
@@ -7812,7 +8144,7 @@ function ArrangementList({ exam = false }) {
           pagination
           columns={[
             `${name}名称`,
-            "SOP",
+            "实训标准",
             "参与人数",
             "状态",
             exam ? "允许入场时间" : "计划时间",
@@ -7820,6 +8152,14 @@ function ArrangementList({ exam = false }) {
           rows={rows}
           rowKey={(_, index) => visible[index].id}
           onView={openArrangement}
+          renderActions={(_, index) => (
+            <ArrangementPreparationActions
+              arrangement={visible[index]}
+              store={store}
+              setModal={setModal}
+              compact
+            />
+          )}
         />
       </section>
     </>
@@ -7847,6 +8187,9 @@ function ArrangementForm({ exam = false, setModal }) {
     existing
       ? {
           ...JSON.parse(JSON.stringify(existing)),
+          stationAssignments: arrangementAssignments(existing).map((p) => ({
+            ...p,
+          })),
           ...(exam
             ? {
                 examDurationMinutes: normalizeExamDuration(
@@ -7866,17 +8209,28 @@ function ArrangementForm({ exam = false, setModal }) {
             : {}),
           studentIds: [],
           workstationIds: [],
+          stationAssignments: [],
         },
   );
   const update = (key, value) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const toggle = (key, value) =>
-    update(
-      key,
-      draft[key].includes(value)
-        ? draft[key].filter((item) => item !== value)
-        : [...draft[key], value],
-    );
+    setDraft((current) => {
+      const next = {
+        ...current,
+        [key]: current[key].includes(value)
+          ? current[key].filter((id) => id !== value)
+          : [...current[key], value],
+      };
+      return {
+        ...next,
+        stationAssignments: reconcileAssignments(
+          next.studentIds,
+          next.workstationIds,
+          current.stationAssignments,
+        ),
+      };
+    });
   const selectedSop = store.data.sops.find((item) => item.id === draft.sopId);
   const selectedAiStatus = store.getSopAiCapabilityStatus(
     selectedSop?.id,
@@ -7887,8 +8241,7 @@ function ArrangementForm({ exam = false, setModal }) {
   const submit = (finalize) =>
     setModal({
       title: finalize ? `完成${name}配置` : `保存${name}草稿`,
-      className:
-        !exam && !finalize ? "teacher-practice-draft-save-modal" : "",
+      className: !exam && !finalize ? "teacher-practice-draft-save-modal" : "",
       content: (
         <p>
           {finalize
@@ -7914,14 +8267,33 @@ function ArrangementForm({ exam = false, setModal }) {
         return `${saved.name} 已${finalize ? "完成配置" : "保存为草稿"}`;
       },
     });
+  if (id && !existing)
+    return (
+      <MissingState title="安排不存在或已删除" backTo={`/teacher/${base}`} />
+    );
+  if (existing && !preparationActions(existing).edit)
+    return (
+      <Navigate
+        to={`/teacher/${base}/${existing.id}/${arrangementDestination(existing)}`}
+        replace
+      />
+    );
   return (
     <>
       <PageHeader
         back
         title={`${existing ? "编辑" : "创建"}${name}`}
-        subtitle="选择已发布 SOP、参与学生和候选工位；AI能力在准备阶段逐工位确认"
+        subtitle="选择已发布实训标准、参与学生和候选工位；AI能力在准备阶段逐工位确认"
         actions={
           <>
+            {existing && <ArrangementAttendanceEntry arrangement={existing} />}
+            {existing && (
+              <ArrangementPreparationActions
+                arrangement={existing}
+                store={store}
+                setModal={setModal}
+              />
+            )}
             <Button onClick={() => submit(false)}>保存草稿</Button>
             <Button type="primary" onClick={() => submit(true)}>
               完成配置，进入准备
@@ -7945,7 +8317,8 @@ function ArrangementForm({ exam = false, setModal }) {
               {exam ? "允许入场开始时间" : "计划开始时间"}
               <input
                 type="datetime-local"
-                value={draft.scheduleStart}
+                step="1"
+                value={dateTimeInputValue(draft.scheduleStart)}
                 onChange={(event) =>
                   update("scheduleStart", event.target.value)
                 }
@@ -7956,7 +8329,8 @@ function ArrangementForm({ exam = false, setModal }) {
                 允许入场截止时间
                 <input
                   type="datetime-local"
-                  value={draft.entryEnd}
+                  step="1"
+                  value={dateTimeInputValue(draft.entryEnd)}
                   onChange={(event) => update("entryEnd", event.target.value)}
                 />
               </label>
@@ -7980,9 +8354,10 @@ function ArrangementForm({ exam = false, setModal }) {
           )}
           <h2>评价标准与 AI评价能力</h2>
           <label className="field">
-            已发布 SOP
+            已发布实训标准
             <select
               value={draft.sopId}
+              disabled={hasLockedPreparationSnapshot(existing || {})}
               onChange={(event) => update("sopId", event.target.value)}
             >
               {publishedSops.map((sop) => (
@@ -7995,7 +8370,7 @@ function ArrangementForm({ exam = false, setModal }) {
           <div className="selection-card selection-card--static arrangement-ai-card">
             <VideoCameraOutlined />
             <span>
-              <strong>{selectedSop?.name || "未选择 SOP"}</strong>
+              <strong>{selectedSop?.name || "未选择实训标准"}</strong>
               <small>
                 AI判断项 {selectedAiStatus.judgementItemCount} 项 · 引用AI能力{" "}
                 {selectedAiStatus.capabilityCount} 个
@@ -8018,31 +8393,33 @@ function ArrangementForm({ exam = false, setModal }) {
             <SafetyCertificateOutlined /> AI能力不完整不会阻止创建{name}
             ；不可用工位的自动评价步骤将安全降级，AI不确定或证据不足时不自动扣分。
           </p>
-          <h2>参与学生 · 已选 {draft.studentIds.length} 人</h2>
-          <div className="entity-check-grid">
-            {store.data.students
-              .filter((item) => item.status === "启用")
-              .map((student) => {
-                const classItem = store.data.classes.find(
-                  (item) => item.id === student.classId,
-                );
-                return (
-                  <label key={student.id}>
-                    <input
-                      type="checkbox"
-                      checked={draft.studentIds.includes(student.id)}
-                      onChange={() => toggle("studentIds", student.id)}
-                    />
-                    <span>
-                      <strong>{student.name}</strong>
-                      <small>
-                        {student.no} · {classItem?.name || "未分班"}
-                      </small>
-                    </span>
-                  </label>
-                );
-              })}
-          </div>
+          <ArrangementStudentPicker
+            key={`${type}:${existing?.id || "new"}`}
+            students={store.data.students}
+            classes={store.data.classes}
+            selectedIds={draft.studentIds}
+            Pagination={TablePagination}
+            onSelectionChange={(ids, selected) =>
+              setDraft((current) =>
+                changeArrangementParticipants(
+                  current,
+                  store.data.students,
+                  ids,
+                  selected,
+                ),
+              )
+            }
+          />
+          <ArrangementAllocation
+            arrangement={draft}
+            data={store.data}
+            onChange={(pairs) => update("stationAssignments", pairs)}
+            onRandomize={() => {
+              const next = randomizeArrangementAllocation(store.data, draft);
+              setDraft(next);
+              return next;
+            }}
+          />
         </section>
         <aside className="panel station-picker">
           <PanelTitle
@@ -8051,10 +8428,10 @@ function ArrangementForm({ exam = false, setModal }) {
           />
           {store.data.workstations.map((workstation) => {
             const selected = draft.workstationIds.includes(workstation.id);
-            const blocked =
-              ["故障", "维护中", "停用"].includes(workstation.status) ||
-              (workstation.currentArrangement !== "无" &&
-                workstation.currentArrangement !== existing?.name);
+            const blocked = !allocationWorkstationAvailable(
+              workstation,
+              existing,
+            );
             return (
               <label
                 key={workstation.id}
@@ -8068,9 +8445,7 @@ function ArrangementForm({ exam = false, setModal }) {
                 />
                 <span>
                   <strong>{workstation.name}</strong>
-                  <small>
-                    {workstation.location} · {workstation.code}
-                  </small>
+                  <small>{workstationCaption(workstation)}</small>
                 </span>
                 <Status tone={blocked ? "danger" : "success"}>
                   {blocked
@@ -8095,6 +8470,61 @@ function ArrangementForm({ exam = false, setModal }) {
   );
 }
 
+function ArrangementPreparationHistory({ arrangement, data }) {
+  if (
+    !(arrangement.preparationHistory || []).length &&
+    !(arrangement.withdrawnSessions || []).length
+  )
+    return null;
+  return (
+    <section className="panel arrangement-preparation-history">
+      <PanelTitle title="准备操作历史" />
+      {(arrangement.preparationHistory || []).map((entry, index) => (
+        <div className="preparation-history-entry" key={`${entry.at}-${index}`}>
+          <strong>
+            {entry.action === "cancel" ? "取消安排" : "撤销工位准备"} ·{" "}
+            {entry.actor}
+          </strong>
+          <p>{displayBusinessText(entry.reason)}</p>
+          <small>
+            {displayBusinessText(entry.at)} ·{" "}
+            {(entry.workstationIds || [])
+              .map(
+                (id) => data.workstations.find((w) => w.id === id)?.name || id,
+              )
+              .join("、") || "未开放工位"}
+          </small>
+        </div>
+      ))}
+      {(arrangement.withdrawnSessions || []).length > 0 && (
+        <details>
+          <summary>
+            查看已撤销的准备会话 · {arrangement.withdrawnSessions.length} 条
+          </summary>
+          {arrangement.withdrawnSessions.map((s) => (
+            <div className="preparation-history-entry" key={s.id}>
+              <strong>
+                {data.students.find((student) => student.id === s.studentId)
+                  ?.name || s.studentId}{" "}
+                ·{" "}
+                {data.workstations.find((w) => w.id === s.workstationId)
+                  ?.name || s.workstationId}
+              </strong>
+              <p>{s.closedReason}</p>
+              <small>
+                已取消，无正式成绩 · 原检查快照保留 ·{" "}
+                {displayBusinessText(
+                  s.evaluationSnapshot?.lockedAt || s.closedAt,
+                )}
+              </small>
+            </div>
+          ))}
+        </details>
+      )}
+    </section>
+  );
+}
+
 function PrepPage({ exam = false, setModal }) {
   const nav = useNavigate();
   const { id } = useParams();
@@ -8107,6 +8537,45 @@ function PrepPage({ exam = false, setModal }) {
     return (
       <MissingState title="安排不存在或已失效" backTo={`/teacher/${base}`} />
     );
+  if (arrangement.status === "已取消")
+    return (
+      <>
+        <PageHeader
+          back
+          title={`${exam ? "考试" : "练习"}已取消：${arrangement.name}`}
+          subtitle={`${arrangement.cancelledBy || "教师"} · ${arrangement.cancelledAt || "历史记录"}`}
+          actions={
+            <>
+              <ArrangementAttendanceEntry arrangement={arrangement} />
+              <ArrangementPreparationActions
+                arrangement={arrangement}
+                store={store}
+                setModal={setModal}
+              />
+            </>
+          }
+        />
+        <p className="readonly-note">
+          取消原因：{arrangement.cancelReason || "历史记录未填写"}
+          。未开始会话已关闭，本次不生成正式成绩。
+        </p>
+        <section className="panel">
+          <ArrangementAllocation arrangement={arrangement} data={store.data} />
+        </section>
+        <ArrangementPreparationHistory
+          arrangement={arrangement}
+          data={store.data}
+        />
+      </>
+    );
+  if (!["待开始", "准备中", "进行中", "已暂停"].includes(arrangement.status))
+    return (
+      <Navigate
+        to={`/teacher/${base}/${arrangement.id}/${arrangementDestination(arrangement)}`}
+        replace
+      />
+    );
+  const lockedSnapshot = hasLockedPreparationSnapshot(arrangement);
   const selectedWorkstations = arrangement.workstationIds
     .map((workstationId) =>
       store.data.workstations.find((item) => item.id === workstationId),
@@ -8127,7 +8596,7 @@ function PrepPage({ exam = false, setModal }) {
               <AlertOutlined /> 阻断原因
             </strong>
             {readiness.errors.map((error) => (
-              <p key={error}>{error}</p>
+              <p key={error}>{displayBusinessText(error)}</p>
             ))}
           </div>
         ),
@@ -8138,7 +8607,9 @@ function PrepPage({ exam = false, setModal }) {
       return;
     }
     setModal({
-      title: `${workstation.name} · 拍摄检查与开放`,
+      title: `${workstation.name} · 检查与开放`,
+      requireContentReady: true,
+      className: "workstation-opening-modal",
       size: "large",
       content: (
         <StationCheckForm
@@ -8146,15 +8617,24 @@ function PrepPage({ exam = false, setModal }) {
           workstation={workstation}
           snapshot={arrangement.snapshot}
           readiness={readiness}
+          runCheck={() =>
+            store.runWorkstationOpeningCheck(arrangement.id, workstation.id)
+          }
         />
       ),
-      confirmText: "确认检查并开放",
+      confirmText: "确认并开放",
       onConfirm: () => {
-        const result = store.openArrangementWorkstation(
-          arrangement.id,
-          workstation.id,
-          checkRef.current.getValue(),
-        );
+        let result;
+        try {
+          result = store.openArrangementWorkstation(
+            arrangement.id,
+            workstation.id,
+            checkRef.current.getValue(),
+          );
+        } catch (error) {
+          checkRef.current?.invalidate();
+          throw error;
+        }
         return `${workstation.name} 已开放，${(result.session.evaluationProfile.aiRuntimeEnabled ?? result.session.evaluationProfile.automaticEvaluationEnabled) ? "AI运行已启用" : "AI运行已安全降级"}`;
       },
     });
@@ -8186,22 +8666,40 @@ function PrepPage({ exam = false, setModal }) {
         title={`${exam ? "考试" : "练习"}准备：${arrangement.name}`}
         subtitle="逐工位检查；确认提交才开放，取消不会改变状态"
         actions={
-          alreadyStarted ? (
-            <Button
-              type="primary"
-              onClick={() => nav(`/teacher/${base}/${arrangement.id}/live`)}
-            >
-              返回实时监控
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              disabled={!arrangement.openWorkstationIds.length}
-              onClick={start}
-            >
-              开始并进入实时监控
-            </Button>
-          )
+          <>
+            <ArrangementAttendanceEntry arrangement={arrangement} />
+            <ArrangementPreparationActions
+              arrangement={arrangement}
+              store={store}
+              setModal={setModal}
+            />
+            {preparationActions(arrangement).edit && (
+              <Button
+                onClick={() => nav(`/teacher/${base}/${arrangement.id}/edit`)}
+              >
+                编辑分配
+              </Button>
+            )}
+            {alreadyStarted ? (
+              <Button
+                type="primary"
+                onClick={() => nav(`/teacher/${base}/${arrangement.id}/live`)}
+              >
+                返回实时监控
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                disabled={
+                  !arrangement.openWorkstationIds.length ||
+                  allocationIssues(arrangement).length > 0
+                }
+                onClick={start}
+              >
+                开始并进入实时监控
+              </Button>
+            )}
+          </>
         }
       />
       <div className="prep-banner">
@@ -8209,36 +8707,43 @@ function PrepPage({ exam = false, setModal }) {
           <SafetyCertificateOutlined />
           <span>
             <strong>
-              {arrangement.snapshot
+              {lockedSnapshot
                 ? "已锁定本次教学标准与AI能力快照"
                 : "首次开放工位时生成本次教学与AI能力快照"}
             </strong>
             <small>
-              {arrangement.snapshot
-                ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续新 SOP 和 AI 调整不影响本安排。`
-                : "尚未开放工位，因此没有虚假显示已锁定。"}
+              {displayBusinessText(
+                lockedSnapshot
+                  ? `锁定时间 ${arrangement.snapshot.lockedAt}，后续实训标准和 AI 调整不影响本安排。`
+                  : "尚未开放工位，因此没有虚假显示已锁定。",
+              )}
             </small>
           </span>
         </div>
-        <Status tone={arrangement.snapshot ? "success" : "warning"}>
-          {arrangement.snapshot ? "已锁定" : "尚未锁定"}
+        <Status tone={lockedSnapshot ? "success" : "warning"}>
+          {lockedSnapshot ? "已锁定" : "尚未锁定"}
         </Status>
       </div>
-      {arrangement.snapshot && (
+      <section className="panel arrangement-allocation-panel">
+        <ArrangementAllocation arrangement={arrangement} data={store.data} />
+      </section>
+      {lockedSnapshot && (
         <section className="panel evaluation-snapshot-panel">
           <PanelTitle title="本次运行快照" action={<LockOutlined />} />
           <div className="version-binding">
             <span>
-              <small>SOP标准</small>
+              <small>实训标准</small>
               <b>{arrangement.snapshot.sopSnapshot?.name || "已锁定"}</b>
             </span>
             <span>
-              <small>SOP ID</small>
+              <small>标准 ID</small>
               <b>{arrangement.snapshot.sopId || arrangement.sopId}</b>
             </span>
             <span>
               <small>快照时间</small>
-              <b>{arrangement.snapshot.lockedAt || "已锁定"}</b>
+              <b>
+                {displayBusinessText(arrangement.snapshot.lockedAt || "已锁定")}
+              </b>
             </span>
           </div>
           <p className="hint">
@@ -8275,11 +8780,9 @@ function PrepPage({ exam = false, setModal }) {
                   }
                   alt={`${workstation.name}主视角预览`}
                 />
-                <span>
+                <span className="prep-station-info">
                   <strong>{workstation.name}</strong>
-                  <small>
-                    {workstation.location} · {workstation.code}
-                  </small>
+                  <small>{workstationCaption(workstation)}</small>
                   {!readiness.ok && (
                     <em className="danger-text">
                       {readiness.errors.join("；")}
@@ -8291,7 +8794,19 @@ function PrepPage({ exam = false, setModal }) {
                     </em>
                   )}
                 </span>
-                <div>
+                <span className="prep-station-student">
+                  <small>分配学生</small>
+                  <strong>
+                    {store.data.students.find(
+                      (s) =>
+                        s.id ===
+                        arrangementAssignments(arrangement).find(
+                          (p) => p.workstationId === workstation.id,
+                        )?.studentId,
+                    )?.name || "未分配"}
+                  </strong>
+                </span>
+                <div className="prep-station-statuses">
                   <Status tone={readiness.ok ? "success" : "danger"}>
                     {readiness.ok ? "基础检查可执行" : "准备阻断"}
                   </Status>
@@ -8300,22 +8815,36 @@ function PrepPage({ exam = false, setModal }) {
                   </Status>
                   <Status>{opened ? "已锁定" : "待检查"}</Status>
                 </div>
-                <Button
-                  disabled={opened}
-                  type={opened ? "success" : "primary"}
-                  onClick={() => openCheck(workstation)}
-                >
-                  {opened
-                    ? "已开放"
-                    : readiness.ok
-                      ? "检查并开放"
-                      : "查看阻断原因"}
-                </Button>
+                <div className="prep-station-actions">
+                  <Button
+                    disabled={opened}
+                    type={opened ? "success" : "primary"}
+                    onClick={() => openCheck(workstation)}
+                  >
+                    {opened
+                      ? "已开放"
+                      : readiness.ok
+                        ? "检查并开放"
+                        : "查看阻断原因"}
+                  </Button>
+                  {opened && (
+                    <ArrangementPreparationActions
+                      arrangement={arrangement}
+                      store={store}
+                      setModal={setModal}
+                      workstationId={workstation.id}
+                    />
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       </section>
+      <ArrangementPreparationHistory
+        arrangement={arrangement}
+        data={store.data}
+      />
     </>
   );
 }
@@ -8325,7 +8854,18 @@ function downloadTextFile(
   content,
   mime = "text/plain;charset=utf-8",
 ) {
-  const blob = new Blob([content], { type: mime });
+  downloadBlobFile(
+    fileName,
+    new Blob(
+      [mime.startsWith("text/") ? displayBusinessText(content) : content],
+      {
+        type: mime,
+      },
+    ),
+  );
+}
+
+function downloadBlobFile(fileName, blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -8337,7 +8877,7 @@ function downloadTextFile(
 }
 
 function csvCell(value) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  return `"${String(displayBusinessText(value) ?? "").replaceAll('"', '""')}"`;
 }
 
 const ReviewStepForm = forwardRef(function ReviewStepForm(
@@ -8346,16 +8886,26 @@ const ReviewStepForm = forwardRef(function ReviewStepForm(
 ) {
   const [conclusion, setConclusion] = useState("pass");
   const [note, setNote] = useState("");
+  const [studentInstruction, setStudentInstruction] = useState("");
   const [archiveEvidence, setArchiveEvidence] = useState(true);
   const [returnToLearning, setReturnToLearning] = useState(false);
   const current = Number(step.effectiveScore ?? step.rawScore ?? 0);
   const after =
     conclusion === "pass"
       ? Number(step.maxScore || 0)
-      : Number(step.rawScore || 0);
+      : conclusion === "insufficient"
+        ? current
+        : Number(step.rawScore ?? current);
   const totalAfter = Number(session.score || 0) - current + after;
   useImperativeHandle(ref, () => ({
-    getValue: () => ({ conclusion, note, archiveEvidence, returnToLearning }),
+    getValue: () => ({
+      conclusion,
+      note,
+      archiveEvidence,
+      returnToLearning,
+      studentInstruction,
+      ...(conclusion === "insufficient" ? {} : { score: after }),
+    }),
   }));
   return (
     <div className="review-form">
@@ -8367,7 +8917,7 @@ const ReviewStepForm = forwardRef(function ReviewStepForm(
             {(step.evidenceSources || []).join(" + ") || "无可用片段"}
           </strong>
           <small>
-            {step.ruleId} · {step.observation}
+            {step.ruleId} · {displayBusinessText(step.observation)}
           </small>
         </div>
         <Status
@@ -8395,13 +8945,23 @@ const ReviewStepForm = forwardRef(function ReviewStepForm(
           placeholder="说明观察到的事实、采用的证据与结论依据"
         />
       </label>
+      {conclusion === "insufficient" && (
+        <label className="field">
+          <FieldLabel required>学生需要补充的事项</FieldLabel>
+          <textarea
+            value={studentInstruction}
+            onChange={(e) => setStudentInstruction(e.target.value)}
+            placeholder="说明需到场做什么、向哪位教师补充材料；不要填写教师内部判分结论"
+          />
+        </label>
+      )}
       <label className="review-check">
         <input
           type="checkbox"
           checked={archiveEvidence}
           onChange={(event) => setArchiveEvidence(event.target.checked)}
         />
-        将当前步骤的主辅视角片段作为本次复核证据归档
+        确认采用已有证据记录或填写的现场核验依据（不生成录像附件）
       </label>
       <label className="review-check">
         <input
@@ -8409,7 +8969,7 @@ const ReviewStepForm = forwardRef(function ReviewStepForm(
           checked={returnToLearning}
           onChange={(event) => setReturnToLearning(event.target.checked)}
         />
-        将本次纠正作为待审样本回流到下一版 Dataset
+        将本次纠正作为待审样本回流到下一版数据集
       </label>
       <section className="score-impact">
         <span>
@@ -8477,8 +9037,9 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
     step.effectiveScore ?? step.rawScore ?? step.maxScore ?? 0,
   );
   const [reason, setReason] = useState("");
+  const [studentInstruction, setStudentInstruction] = useState("");
   useImperativeHandle(ref, () => ({
-    getValue: () => ({ status, score, reason }),
+    getValue: () => ({ status, score, reason, studentInstruction }),
   }));
   const needsScore = status !== "retest_required";
   return (
@@ -8489,7 +9050,7 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
           {SCORE_DISPOSITIONS[step.scoreDisposition?.status] || "待教师处置"}
         </strong>
         <p>
-          {step.scoreDisposition?.reason ||
+          {displayGradeText(step.scoreDisposition?.reason) ||
             "需要教师基于证据决定后续处理，系统不会自行补分或扣分。"}
         </p>
       </div>
@@ -8501,10 +9062,19 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
         >
           <option value="teacher_resolved">教师直接处置</option>
           <option value="retest_required">需要补测</option>
-          <option value="retest_resolved">补测完成</option>
           <option value="policy_protected">政策保护</option>
         </select>
       </label>
+      {!needsScore && (
+        <label className="field">
+          <FieldLabel required>学生线下补测要求</FieldLabel>
+          <textarea
+            value={studentInstruction}
+            onChange={(e) => setStudentInstruction(e.target.value)}
+            placeholder="说明补测范围、到场要求和负责教师；补测结果将在登记核验后确认"
+          />
+        </label>
+      )}
       {needsScore && (
         <label className="field">
           最终步骤分
@@ -8529,7 +9099,7 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
   );
 });
 
-function getArrangementResultStats(arrangement) {
+function getArrangementResultStats(arrangement, sops = []) {
   const sessions = arrangement.sessions || [];
   const resultSessions = sessions.filter(
     (item) => item.resultStatus !== "未参加",
@@ -8540,15 +9110,25 @@ function getArrangementResultStats(arrangement) {
         resultSessions.length
       ).toFixed(1)
     : "--";
-  const publishGate = getExamPublishGate(sessions);
+  const publishGate = getExamPublishGate(
+    sessions,
+    arrangement.snapshot?.sopSnapshot ||
+      sops.find((s) => s.id === arrangement.sopId),
+  );
   const blockerIds = new Set(publishGate.details.map((item) => item.sessionId));
   const blockers = sessions.filter((session) => blockerIds.has(session.id));
   return { sessions, average, blockers, publishGate };
 }
 
 function ArrangementResultMetrics({ arrangement, exam = false }) {
-  const { sessions, average, blockers } =
-    getArrangementResultStats(arrangement);
+  const { data } = usePrototypeData();
+  const { sessions, average, blockers } = getArrangementResultStats(
+    arrangement,
+    data.sops,
+  );
+  const restrictedCount = data.workstations.filter(
+    (station) => station.releaseHold?.arrangementId === arrangement.id,
+  ).length;
   return (
     <div className="metric-grid">
       <Metric
@@ -8581,9 +9161,9 @@ function ArrangementResultMetrics({ arrangement, exam = false }) {
         tone="amber"
       />
       <Metric
-        label="故障阻断"
-        value={sessions.filter((item) => item.status === "故障").length}
-        hint="需技术恢复后处理"
+        label="异常工位"
+        value={restrictedCount}
+        hint={restrictedCount ? "处理异常后可重新开放" : "无使用限制"}
         icon={<SafetyCertificateOutlined />}
         tone="purple"
       />
@@ -8591,61 +9171,48 @@ function ArrangementResultMetrics({ arrangement, exam = false }) {
   );
 }
 
-function WorkstationReleasePanel({ arrangement, store, onReset }) {
-  const sessions = arrangement.sessions || [];
+function WorkstationRestrictionPanel({
+  arrangement,
+  store,
+  adminReadOnly = false,
+}) {
+  const nav = useNavigate();
+  const restricted = store.data.workstations.filter(
+    (station) => station.releaseHold?.arrangementId === arrangement.id,
+  );
+  if (!restricted.length) return null;
   return (
     <section className="panel workstation-release-panel">
       <PanelTitle
-        title="工位复位与释放"
+        title="待处理工位异常"
         action={
-          <span className="panel-title__meta">
-            已复位 {sessions.filter((item) => item.status === "已复位").length}{" "}
-            / {sessions.length}
-          </span>
+          <span className="panel-title__meta">{restricted.length} 个工位</span>
         }
       />
+      <p className="hint">
+        以下工位保留使用限制，请联系管理员处理异常后再开放。
+      </p>
       <div className="reset-grid">
-        {sessions.map((session) => {
-          const workstation = store.data.workstations.find(
-            (item) => item.id === session.workstationId,
-          );
-          return (
-            <article key={session.id}>
-              <div>
-                <strong>{workstation?.name || session.workstationId}</strong>
-                <small>会话 {session.id}</small>
-              </div>
-              <Status
-                tone={
-                  session.status === "故障"
-                    ? "danger"
-                    : session.status === "已复位"
-                      ? "success"
-                      : "warning"
-                }
-              >
-                {session.status}
-              </Status>
-              {onReset ? (
-                <Button
-                  disabled={session.status !== "待复位"}
-                  onClick={() => onReset(session)}
-                >
-                  {session.status === "已复位"
-                    ? "已释放"
-                    : session.status === "故障"
-                      ? "等待技术恢复"
-                      : "确认复位"}
-                </Button>
-              ) : (
-                <span className="hint">只读</span>
-              )}
-            </article>
-          );
-        })}
-        {!sessions.length && (
-          <p className="hint">该历史安排没有工位会话明细。</p>
-        )}
+        {restricted.map((station) => (
+          <article key={station.id}>
+            <div>
+              <strong>{station.name}</strong>
+              <small>{station.releaseHold.reasons.join("；")}</small>
+            </div>
+            <Status tone="danger">暂不可用</Status>
+            <Button
+              onClick={() =>
+                nav(
+                  adminReadOnly
+                    ? `/admin/workstations/${station.id}`
+                    : `/teacher/${arrangement.type === "exam" ? "exams" : "practices"}/${arrangement.id}/stations/${station.id}`,
+                )
+              }
+            >
+              {adminReadOnly ? "查看工位" : "查看异常"}
+            </Button>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -8653,6 +9220,10 @@ function WorkstationReleasePanel({ arrangement, store, onReset }) {
 
 function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
   const nav = useNavigate();
+  const resultLocation = useLocation();
+  const selectedResult = new URLSearchParams(resultLocation.search).get(
+    "sessionId",
+  );
   const { id } = useParams();
   const store = usePrototypeData();
   const arrangement = store.data.arrangements.find((item) => item.id === id);
@@ -8678,8 +9249,50 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         backTo={`/${adminReadOnly ? "admin" : "teacher"}/${base}`}
       />
     );
-  const { sessions, blockers, publishGate } =
-    getArrangementResultStats(arrangement);
+  if (
+    selectedResult &&
+    !arrangement.sessions.some((s) => s.id === selectedResult)
+  )
+    return (
+      <MissingState
+        title="指定结果已失效，未替换为其他学生记录"
+        backTo={`/${adminReadOnly ? "admin" : "teacher"}/${base}/${arrangement.id}/results`}
+      />
+    );
+  const { sessions, blockers, publishGate } = getArrangementResultStats(
+    arrangement,
+    store.data.sops,
+  );
+  const resultsPublished = arrangement.status === "已发布";
+  if (arrangement.status === "已取消")
+    return (
+      <>
+        <PageHeader
+          back
+          title={`${arrangement.name} · 已取消`}
+          subtitle={`取消时间 ${arrangement.cancelledAt || "历史记录"}`}
+          actions={
+            !adminReadOnly && (
+              <ArrangementPreparationActions
+                arrangement={arrangement}
+                store={store}
+                setModal={setModal}
+              />
+            )
+          }
+        />
+        <p className="readonly-note">
+          {arrangement.cancelReason || "安排已取消"}。未开始会话不生成正式成绩。
+        </p>
+        <section className="panel">
+          <ArrangementAllocation arrangement={arrangement} data={store.data} />
+        </section>
+        <ArrangementPreparationHistory
+          arrangement={arrangement}
+          data={store.data}
+        />
+      </>
+    );
   const rows = sessions.map((session) => {
     const student = store.data.students.find(
       (item) => item.id === session.studentId,
@@ -8691,9 +9304,10 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       student?.name || "学生已失效",
       student?.no || "—",
       classItem?.name || "—",
+      store.data.workstations.find((w) => w.id === session.workstationId)
+        ?.name || "未分配工位",
       session.resultStatus === "未参加" ? "—" : `${session.score}分`,
-      session.resultStatus ||
-        (session.status === "待复位" ? "结果生成中" : "已有记录"),
+      session.resultStatus || "已有记录",
       sessionPrimaryIssue(session),
     ];
   });
@@ -8707,8 +9321,10 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       "班级",
       "有效得分",
       "成绩状态",
-      "成绩版本",
-      "SOP",
+      "实训标准",
+      "检测结果来源",
+      "证据支持步骤数",
+      "未确认保分步骤数",
     ];
     const body = sessions.map((session) => {
       const student = store.data.students.find(
@@ -8723,9 +9339,13 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         classItem?.name || "—",
         session.resultStatus === "未参加" ? "—" : session.score,
         session.resultStatus,
-        `V${session.scoreVersion || 0}`,
         store.data.sops.find((item) => item.id === arrangement.sopId)?.name ||
           "历史标准",
+        session.evaluationSnapshot?.executionPurpose === "real"
+          ? "真实用途待核实"
+          : "原型演示/历史未核实",
+        evaluationCoverage(session.steps).confirmed,
+        evaluationCoverage(session.steps).unknown,
       ];
     });
     return [header, ...body]
@@ -8742,7 +9362,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         <div className="form-stack">
           <p>
             范围：当前安排全部 {sessions.length}{" "}
-            条学生记录；格式：CSV；分数：各记录当前有效成绩版本。
+            条学生记录；格式：CSV；分数：各记录当前成绩。
           </p>
           <p className="hint">
             文件包含未参加和待复核状态，不会把未正式发布的考试成绩标记为已发布。
@@ -8757,7 +9377,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           targetId: arrangement.id,
           fileName,
           format: "CSV",
-          scoreVersion: "逐学生当前有效版本",
+          dataScope: "当前成绩",
         });
         downloadTextFile(
           fileName,
@@ -8808,7 +9428,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           {
             sessions.filter((item) => item.resultStatus === "未参加").length
           }{" "}
-          人保留未参加状态。发布后当前成绩版本冻结。
+          人保留未参加状态。发布后学生可查看当前成绩，教师更正后同步更新。
         </p>
       ),
       confirmText: "确认统一发布",
@@ -8818,35 +9438,19 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       },
     });
   };
-  const reset = (session) => {
-    const workstation = store.data.workstations.find(
-      (item) => item.id === session.workstationId,
-    );
-    setModal({
-      title: `确认${workstation?.name}复位`,
-      content: (
-        <p>
-          请现场确认工具、设备、急停和操作区域均已恢复。提交后释放工位占用，历史会话与证据保持不变。
-        </p>
-      ),
-      confirmText: "确认复位并释放",
-      onConfirm: () => {
-        store.resetArrangementWorkstation(
-          arrangement.id,
-          session.workstationId,
-        );
-        return `${workstation?.name} 已复位并释放`;
-      },
-    });
-  };
+
   return (
     <div className={adminReadOnly ? "admin-record-detail" : undefined}>
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}${adminReadOnly ? "记录" : "结果"}：${arrangement.name}`}
-        subtitle={`状态 ${arrangement.status} · 结束时间 ${arrangement.endedAt || "历史安排"} · SOP ${store.data.sops.find((item) => item.id === arrangement.sopId)?.name || "历史标准"}`}
+        subtitle={`状态 ${arrangement.status} · 结束时间 ${arrangement.endedAt || "历史安排"} · 实训标准 ${store.data.sops.find((item) => item.id === arrangement.sopId)?.name || "历史标准"}`}
         actions={
           <>
+            <ArrangementAttendanceEntry
+              arrangement={arrangement}
+              adminReadOnly={adminReadOnly}
+            />
             <Button icon={<ExportOutlined />} onClick={exportResults}>
               导出结果
             </Button>
@@ -8857,7 +9461,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
             )}
             {exam && arrangement.status === "已发布" && (
               <Status tone="success">
-                已于 {arrangement.publishedAt} 发布
+                已于 {displayBusinessText(arrangement.publishedAt)} 发布
               </Status>
             )}
           </>
@@ -8866,10 +9470,16 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       {adminReadOnly && (
         <p className="readonly-note readonly-note--prominent">
           <EyeOutlined />{" "}
-          管理员只读查看同一份教学结果；技术诊断位于页面底部，不提供发布、复位、复核或改分操作。
+          管理员只读查看同一份教学结果；技术诊断位于页面底部，不提供发布、复核或改分操作。
         </p>
       )}
       <ArrangementResultMetrics arrangement={arrangement} exam={exam} />
+      {/* 考试发布卡片展示三种业务状态：暂不可发布（列出待处理人数及原因）、
+          可发布（会话成绩校验通过，仍由教师执行统一发布）、已发布（学生可查看）。
+          已发布优先显示，避免把发布后的检查通过误呈现为仍可再次发布。
+          “成绩处理状态”是 Score Disposition 的中文业务名称；分数无效、
+          未完成复核、待处理成绩或安全事件须先闭环，未参加学生保留原状态。
+          最终是否允许发布由发布命令复查，包括未完成的补证／补测任务。 */}
       {exam && (
         <section
           className={`panel publish-gate ${publishGate.passed ? "is-ready" : "is-blocked"}`}
@@ -8877,16 +9487,23 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           <PanelTitle
             title="考试发布门槛"
             action={
-              <Status tone={publishGate.passed ? "success" : "warning"}>
-                {publishGate.passed
-                  ? "可发布"
-                  : `${publishGate.details.length} 人被阻断`}
+              <Status
+                tone={
+                  resultsPublished || publishGate.passed ? "success" : "warning"
+                }
+              >
+                {resultsPublished
+                  ? "已发布"
+                  : publishGate.passed
+                    ? "可发布"
+                    : `暂不可发布 · ${publishGate.details.length} 人待处理`}
               </Status>
             }
           />
           <p className="hint">
-            统一检查待复核、Score
-            Disposition、安全候选、空成绩与成绩冻结状态；任何未闭环项都不能发布。
+            {resultsPublished
+              ? "成绩已统一发布，学生可查看当前成绩，教师更正后同步更新；未参加学生保留未参加状态。"
+              : "发布前需完成成绩复核、异常成绩处理和安全事件确认，确保分数完整有效、成绩已核定。未参加学生保留未参加状态，发布后向学生展示当前成绩。"}
           </p>
           {!publishGate.passed && (
             <div className="publish-gate-list">
@@ -8899,11 +9516,16 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
                 );
                 return (
                   <span key={detail.sessionId}>
-                    <b>{blockedStudent?.name || detail.sessionId}</b> 复核{" "}
-                    {detail.pendingReviewCount} · 处置{" "}
-                    {detail.pendingDispositionCount} · 安全{" "}
-                    {detail.pendingSafetyCount} · 空成绩{" "}
+                    <b>{blockedStudent?.name || detail.sessionId}</b> 待复核{" "}
+                    {detail.pendingReviewCount} · 成绩待处理{" "}
+                    {detail.pendingDispositionCount} · 安全待确认{" "}
+                    {detail.pendingSafetyCount} · 步骤分无效{" "}
                     {detail.emptyScoreCount}
+                    {detail.resultNotReady && " · 结果尚未完成核定，请处理复核"}
+                    {detail.invalidTotal &&
+                      " · 总分为空或超出有效范围，请进入学生结果核定"}
+                    {detail.invalidMaximum &&
+                      " · 缺少有效满分依据，请核对锁定标准"}
                   </span>
                 );
               })}
@@ -8911,10 +9533,10 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           )}
         </section>
       )}
-      <WorkstationReleasePanel
+      <WorkstationRestrictionPanel
         arrangement={arrangement}
         store={store}
-        onReset={adminReadOnly ? undefined : reset}
+        adminReadOnly={adminReadOnly}
       />
       <section className="panel panel--table arrangement-student-results">
         <PanelTitle
@@ -8934,20 +9556,28 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         />
         <DataTable
           pagination
-          columns={["学生", "学号", "班级", "当前得分", "结果状态", "主要问题"]}
+          columns={[
+            "学生",
+            "学号",
+            "班级",
+            "工位",
+            "当前得分",
+            "结果状态",
+            "主要问题",
+          ]}
+          statusColumns={[5]}
           rows={rows}
-          rowKey={(row) => row[1]}
-          onRow={(row) => {
-            const student = store.data.students.find(
-              (item) => item.no === row[1],
-            );
-            if (student)
-              nav(
-                adminReadOnly
-                  ? `/admin/${base}/${arrangement.id}/students/${student.id}`
-                  : `/teacher/${base}/${arrangement.id}/students/${student.id}`,
-              );
-          }}
+          rowKey={(_, index) => sessions[index].id}
+          selectedRowKey={selectedResult}
+          onRow={(_, index) =>
+            nav(
+              sessionReportPath(
+                arrangement,
+                sessions[index],
+                adminReadOnly ? "admin" : "teacher",
+              ),
+            )
+          }
         />
       </section>
       {exportRows.length > 0 && (
@@ -8963,7 +9593,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
                 <div>
                   <strong>{job.fileName}</strong>
                   <small>
-                    {job.createdAt} · {job.scope} · {job.scoreVersion}
+                    {displayBusinessText(job.createdAt)} · {job.scope} ·{" "}
+                    {job.dataScope || "导出时当前数据"}
                   </small>
                 </div>
                 <Status tone="success">{job.status}</Status>
@@ -9008,25 +9639,77 @@ function timestampForFile() {
 function Report({ exam = false, setModal, adminReadOnly = false }) {
   const nav = useNavigate();
   const { id, studentId } = useParams();
+  const location = useLocation();
+  const requestedSessionId = new URLSearchParams(location.search).get(
+    "sessionId",
+  );
   const store = usePrototypeData();
   const arrangement = store.data.arrangements.find((item) => item.id === id);
-  const session = arrangement?.sessions.find(
-    (item) => item.studentId === studentId,
-  );
+  const session = reportSession(arrangement, studentId, requestedSessionId);
   const student = store.data.students.find((item) => item.id === studentId);
   const sop = store.data.sops.find((item) => item.id === arrangement?.sopId);
   const initialStep = Math.max(
     0,
-    session?.steps.findIndex(
-      (item) =>
-        ["待复核", "待补充证据"].includes(item.reviewStatus) ||
-        ["pending", "retest_required"].includes(item.scoreDisposition?.status),
+    session?.steps.findIndex((item) =>
+      new URLSearchParams(location.search).get("stepId")
+        ? item.id === new URLSearchParams(location.search).get("stepId")
+        : ["待复核", "待补充证据"].includes(item.reviewStatus) ||
+          ["pending", "retest_required"].includes(
+            item.scoreDisposition?.status,
+          ),
     ) ?? 0,
   );
   const [sel, setSel] = useState(initialStep);
+  useEffect(() => setSel(initialStep), [session?.id, location.search]);
   const reviewRef = useRef(null);
   const adjustRef = useRef(null);
   const dispositionRef = useRef(null);
+  if (
+    arrangement &&
+    student &&
+    !requestedSessionId &&
+    !session &&
+    arrangement.sessions.filter((s) => s.studentId === studentId).length > 1
+  )
+    return (
+      <>
+        <PageHeader
+          back
+          title={`${student.name} · 选择操作记录`}
+          subtitle="该学生有多条历史会话，请选择具体记录；不会默认打开第一条。"
+        />
+        <section className="panel">
+          <DataTable
+            columns={["工位", "会话状态", "结果状态", "开始时间"]}
+            rows={arrangement.sessions
+              .filter((s) => s.studentId === studentId)
+              .map((s) => [
+                store.data.workstations.find((w) => w.id === s.workstationId)
+                  ?.name || "未分配工位",
+                s.status,
+                s.resultStatus || "未生成结果",
+                s.startedAt || "未开始",
+              ])}
+            rowKey={(_, index) =>
+              arrangement.sessions.filter((s) => s.studentId === studentId)[
+                index
+              ].id
+            }
+            onView={(_, index) =>
+              nav(
+                sessionReportPath(
+                  arrangement,
+                  arrangement.sessions.filter((s) => s.studentId === studentId)[
+                    index
+                  ],
+                  adminReadOnly ? "admin" : "teacher",
+                ),
+              )
+            }
+          />
+        </section>
+      </>
+    );
   if (!arrangement || !session || !student)
     return (
       <MissingState
@@ -9037,6 +9720,24 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
             : `/teacher/${exam ? "exams" : "practices"}/${id}/results`
         }
       />
+    );
+  if (["未参加", "已取消"].includes(session.resultStatus))
+    return (
+      <>
+        <PageHeader
+          back
+          title={`${student.name} · ${session.resultStatus}`}
+          subtitle={arrangement.name}
+        />
+        <section className="panel">
+          <p>
+            {session.absenceReason ||
+              session.closedReason ||
+              "未开始操作，不生成正式成绩。"}
+          </p>
+          <p className="hint">本条记录不计入平均分，不存在可评价的操作录像。</p>
+        </section>
+      </>
     );
   const steps = session.steps || [];
   const activeStep = steps[sel] || steps[0];
@@ -9063,41 +9764,61 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
   const completedCount = steps.filter(
     (item) => item.state !== "pending",
   ).length;
-  const locked = arrangement.status === "已发布";
+  const locked =
+    arrangement.status === "已发布" ||
+    session.resultStatus === "已发布" ||
+    Boolean(session.scoreFrozen);
+  const activeTask = evidenceTasksForSession(
+    store.data,
+    session.id,
+    arrangement.id,
+  ).find(
+    (t) =>
+      t.stepId === activeStep.id &&
+      ["pending", "handling", "awaiting_confirmation"].includes(t.status),
+  );
   const canReview =
     !adminReadOnly &&
     ["已结束", "待发布"].includes(arrangement.status) &&
     !locked;
+  const canAdjust =
+    !adminReadOnly &&
+    ["已结束", "待发布", "已发布", "已归档"].includes(arrangement.status) &&
+    session.resultStatus !== "未参加";
   const exportReport = () =>
     setModal({
       title: "导出个人评价报告",
       content: (
         <p>
-          将生成包含当前有效成绩版本、逐步骤证据状态和复核历史的可读 HTML 报告。
+          将生成可在浏览器中查看的报告，包含当前成绩、逐步骤证据状态和修改记录。
         </p>
       ),
       confirmText: "生成并下载报告",
       onConfirm: () => {
-        const fileName = `${student.name}-${arrangement.name}-成绩V${session.scoreVersion || 0}.html`;
+        const fileName = `${student.name}-${arrangement.name}-评价报告.html`;
         const rows = steps
           .map(
             (step) =>
-              `<tr><td>${step.id}</td><td>${step.name}</td><td>${step.effectiveScore}/${step.maxScore}</td><td>${step.result}</td><td>${step.reviewStatus}</td><td>${step.timeRange}</td></tr>`,
+              `<tr><td>${step.id}</td><td>${step.name}</td><td>${step.effectiveScore}/${step.maxScore}</td><td>${step.result} · ${stepEvaluationMeaning(step).label}</td><td>${step.reviewStatus}</td><td>${step.timeRange}</td></tr>`,
           )
           .join("");
-        const html = `<!doctype html><meta charset="utf-8"><title>${student.name}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${arrangement.name} · ${student.name}</h1><p>学号 ${student.no}｜SOP ${sop?.name || "历史标准"}｜有效成绩 ${session.score}/${totalMax}｜成绩版本 V${session.scoreVersion || 0}｜状态 ${session.resultStatus}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>修订历史</h2><pre>${(session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${item.reason}`).join("\n") || "无修订"}</pre>`;
+        const html = `<!doctype html><meta charset="utf-8"><title>${student.name}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${arrangement.name} · ${student.name}</h1><p>学号 ${student.no}｜实训标准 ${sop?.name || "历史标准"}｜有效成绩 ${session.score}/${totalMax}｜状态 ${session.resultStatus}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>成绩修改记录</h2><pre>${(session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${displayGradeText(item.reason)}`).join("\n") || "无修订"}</pre>`;
         store.createExportJob({
           scope: "个人报告",
           targetId: arrangement.id,
           fileName,
           format: "HTML",
-          scoreVersion: `成绩 V${session.scoreVersion || 0}`,
+          dataScope: "当前成绩",
         });
         downloadTextFile(fileName, html, "text/html;charset=utf-8");
         return `${fileName} 已生成并开始下载`;
       },
     });
-  const review = () =>
+  const review = () => {
+    const context = {
+      expectedState: gradeStateToken(session),
+      operationId: taskOperationId(),
+    };
     setModal({
       eyebrow: "评价复核",
       title: `${activeStep.id} · ${activeStep.name}`,
@@ -9107,16 +9828,19 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
         <ReviewStepForm ref={reviewRef} session={session} step={activeStep} />
       ),
       onConfirm: () => {
-        store.reviewSessionStep(
-          arrangement.id,
-          session.id,
-          activeStep.id,
-          reviewRef.current.getValue(),
-        );
+        store.reviewSessionStep(arrangement.id, session.id, activeStep.id, {
+          ...reviewRef.current.getValue(),
+          ...context,
+        });
         return `${student.name} 的 ${activeStep.id} 复核已保存`;
       },
     });
-  const adjust = () =>
+  };
+  const adjust = () => {
+    const context = {
+      expectedState: gradeStateToken(session),
+      operationId: taskOperationId(),
+    };
     setModal({
       title: `调整 ${activeStep.id} 有效得分`,
       content: <ScoreAdjustForm ref={adjustRef} step={activeStep} />,
@@ -9126,14 +9850,19 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           arrangement.id,
           session.id,
           activeStep.id,
-          adjustRef.current.getValue(),
+          { ...adjustRef.current.getValue(), ...context },
         );
         return `${activeStep.id} 有效得分已更新`;
       },
     });
-  const resolveDisposition = () =>
+  };
+  const resolveDisposition = () => {
+    const context = {
+      expectedState: gradeStateToken(session),
+      operationId: taskOperationId(),
+    };
     setModal({
-      title: `处理 ${activeStep.id} Score Disposition`,
+      title: `处理 ${activeStep.id} 成绩处置`,
       content: <ScoreDispositionForm ref={dispositionRef} step={activeStep} />,
       confirmText: "保存处置",
       onConfirm: () => {
@@ -9141,17 +9870,18 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           arrangement.id,
           session.id,
           activeStep.id,
-          dispositionRef.current.getValue(),
+          { ...dispositionRef.current.getValue(), ...context },
         );
         return `${activeStep.id} 成绩处置已保存`;
       },
     });
+  };
   return (
     <>
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}个人${adminReadOnly ? "记录" : "报告"} · ${student.name}`}
-        subtitle={`${sop?.name || "历史标准"} · 成绩版本 V${session.scoreVersion || 0}`}
+        subtitle={sop?.name || "历史标准"}
         actions={
           <>
             {!exam && !adminReadOnly && (
@@ -9172,11 +9902,15 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           </>
         }
       />
+      <OpeningInspectionRecord
+        session={session}
+        teachers={store.data.teachers}
+      />
       <div className="report-summary">
         <div>
           <span className="score-ring">
-            <strong>{session.score}</strong>
-            <small>分</small>
+            <strong>{session.score ?? "—"}</strong>
+            <small>{session.score == null ? "待核对" : "分"}</small>
           </span>
           <div>
             <Status>{session.resultStatus || "过程记录"}</Status>
@@ -9199,10 +9933,6 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           <span>
             <small>{arrangement.endedAt ? "有效扣分" : "当前有效扣分"}</small>
             <strong>-{recordedDeduction}</strong>
-          </span>
-          <span>
-            <small>成绩版本</small>
-            <strong>V{session.scoreVersion || 0}</strong>
           </span>
           <span>
             <small>待复核</small>
@@ -9229,6 +9959,10 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           </div>
         </div>
       )}
+      <CoverageSummary steps={steps} />
+      <div className="report-observation-summary">
+        <ObservationTimeline session={session} />
+      </div>
       <div className="report-layout">
         <aside className="panel report-steps">
           <PanelTitle title="步骤评价" />
@@ -9275,6 +10009,17 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
                 : activeStep.reviewStatus}
             </Status>
           </header>
+          {cameraViews(
+            session.evaluationSnapshot?.workstationAiBaseConfigSnapshot || {},
+          ).length > 2 && (
+            <SessionCameraViewer
+              session={session}
+              workstation={store.data.workstations.find(
+                (w) => w.id === session.workstationId,
+              )}
+              devices={store.data.devices}
+            />
+          )}
           <div className="video-compare">
             <figure>
               {activeStep.evidenceMetadata?.cameras?.includes("主视角") ? (
@@ -9295,7 +10040,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               <figcaption>
                 主视角 · {activeStep.timeRange} ·{" "}
                 {activeStep.evidenceMetadata?.cameras?.includes("主视角")
-                  ? "有效片段"
+                  ? "占位示意（媒体未接入）"
                   : "片段缺失"}
               </figcaption>
             </figure>
@@ -9319,7 +10064,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
                 <figcaption>
                   辅助视角 · {activeStep.timeRange} ·{" "}
                   {activeStep.evidenceMetadata?.cameras?.includes("辅助视角")
-                    ? "有效片段"
+                    ? "占位示意（媒体未接入）"
                     : "片段缺失"}
                 </figcaption>
               </figure>
@@ -9334,7 +10079,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               </strong>
             </span>
             <span>
-              <small>Score Disposition</small>
+              <small>成绩处理状态</small>
               <strong>
                 {SCORE_DISPOSITIONS[activeStep.scoreDisposition?.status] ||
                   "正常计分"}
@@ -9345,12 +10090,12 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               <strong>
                 {sop?.steps?.find((item) => item.id === activeStep.id)
                   ?.completionCondition ||
-                  `${activeStep.name}满足教师冻结的完成条件。`}
+                  `${activeStep.name}满足本次标准快照中的完成条件。`}
               </strong>
             </span>
             <span>
               <small>观察事实</small>
-              <strong>{activeStep.observation}</strong>
+              <strong>{displayBusinessText(activeStep.observation)}</strong>
             </span>
             <span>
               <small>触发规则</small>
@@ -9371,6 +10116,18 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               </strong>
             </span>
           </div>
+          <StepEvaluationExplanation
+            key={activeStep.id}
+            step={activeStep}
+            teachingStep={sessionStandardMediaStep({
+              session,
+              arrangement,
+              sop,
+              stepId: activeStep.id,
+            })}
+          >
+            <EvidenceCameraSummary step={activeStep} session={session} />
+          </StepEvaluationExplanation>
           <div className="evidence-timeline">
             <span>
               <small>证据状态</small>
@@ -9400,25 +10157,48 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
               <AlertOutlined /> {activeStep.evidenceMetadata.scoringPolicy}
             </p>
           )}
+          <EvidenceTaskSessionPanel
+            session={session}
+            arrangement={arrangement}
+            readOnly={adminReadOnly}
+          />
+          <SupportTaskSourcePanel
+            arrangement={arrangement}
+            session={session}
+            readOnly={adminReadOnly}
+          />
+          {activeTask && (
+            <p className="hint">
+              本步骤已有未完成补证或补测任务，请从任务入口办理。
+            </p>
+          )}
           <div className="evidence-actions">
             {!canReview && (
               <p className="hint">
                 {adminReadOnly
                   ? "管理员只读查看，不提供复核或改分操作。"
                   : locked
-                    ? "成绩已发布并冻结，当前页面只读。"
+                    ? "成绩已发布；如需更正，可直接修改成绩。"
                     : "会话结束并形成结果后才能进行人工复核。"}
               </p>
             )}
-            <Button disabled={!canReview} onClick={review}>
+            <Button
+              disabled={!canReview || Boolean(activeTask)}
+              onClick={review}
+            >
               处理步骤复核
             </Button>
-            <Button disabled={!canReview} type="primary" onClick={adjust}>
+            <Button
+              disabled={!canAdjust || Boolean(activeTask)}
+              type="primary"
+              onClick={adjust}
+            >
               调整有效得分
             </Button>
             <Button
               disabled={
                 !canReview ||
+                Boolean(activeTask) ||
                 !["pending", "retest_required"].includes(
                   activeStep.scoreDisposition?.status,
                 )
@@ -9430,7 +10210,7 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
           </div>
           {(session.reviewHistory || []).length > 0 && (
             <div className="review-history">
-              <h3>评分修订历史</h3>
+              <h3>成绩修改记录</h3>
               {[...session.reviewHistory].reverse().map((item, index) => (
                 <article key={`${item.time}-${index}`}>
                   <HistoryOutlined />
@@ -9440,7 +10220,8 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
                       分
                     </strong>
                     <small>
-                      {item.time} · {item.operator} · {item.reason}
+                      {displayBusinessText(item.time)} · {item.operator} ·{" "}
+                      {displayGradeText(item.reason)}
                     </small>
                   </div>
                 </article>
@@ -9460,14 +10241,14 @@ function HistoryCompare() {
   const sourceArrangement = data.arrangements.find((item) => item.id === id);
   const eligibleStudents = data.students.filter(
     (student) =>
-      data.arrangements.filter(
-        (arrangement) =>
-          arrangement.type === "practice" &&
-          arrangement.sessions?.some(
-            (session) =>
-              session.studentId === student.id &&
-              ["正式成绩", "已发布"].includes(session.resultStatus),
-          ),
+      data.arrangements.flatMap((arrangement) =>
+        arrangement.type !== "practice"
+          ? []
+          : (arrangement.sessions || []).filter(
+              (session) =>
+                session.studentId === student.id &&
+                ["正式成绩", "已发布"].includes(session.resultStatus),
+            ),
       ).length >= 2,
   );
   const [studentId, setStudentId] = useState(
@@ -9491,12 +10272,12 @@ function HistoryCompare() {
     .sort((a, b) =>
       a.arrangement.scheduleStart.localeCompare(b.arrangement.scheduleStart),
     );
-  const [beforeId, setBeforeId] = useState(records[0]?.arrangement.id || "");
-  const [afterId, setAfterId] = useState(records.at(-1)?.arrangement.id || "");
+  const [beforeId, setBeforeId] = useState(records[0]?.session.id || "");
+  const [afterId, setAfterId] = useState(records.at(-1)?.session.id || "");
   const before =
-    records.find((item) => item.arrangement.id === beforeId) || records[0];
+    records.find((item) => item.session.id === beforeId) || records[0];
   const after =
-    records.find((item) => item.arrangement.id === afterId) || records.at(-1);
+    records.find((item) => item.session.id === afterId) || records.at(-1);
   if (!records.length)
     return (
       <MissingState
@@ -9511,6 +10292,9 @@ function HistoryCompare() {
       after &&
       before.arrangement.sopId === after.arrangement.sopId &&
       beforeSteps.length === afterSteps.length &&
+      historicalStandardBasis(before.arrangement, before.session).complete &&
+      historicalStandardBasis(before.arrangement, before.session).key ===
+        historicalStandardBasis(after.arrangement, after.session).key &&
       beforeSteps.every(
         (step, index) =>
           step.id === afterSteps[index]?.id &&
@@ -9535,7 +10319,7 @@ function HistoryCompare() {
       <PageHeader
         back
         title={`练习历史比较 · ${student?.name || "选择学生"}`}
-        subtitle="先选择同一学生的两次正式记录；不同 SOP 或步骤结构会提示不可直接比较"
+        subtitle="先选择同一学生的两次正式记录；不同实训标准或步骤结构会提示不可直接比较"
       />
       <section className="panel comparison">
         <div className="comparison-controls">
@@ -9559,16 +10343,19 @@ function HistoryCompare() {
           <label className="field">
             基准记录
             <select
-              value={before?.arrangement.id || ""}
+              value={before?.session.id || ""}
               onChange={(event) => setBeforeId(event.target.value)}
             >
               {records.map((item) => (
                 <option
-                  key={`before-${item.arrangement.id}`}
-                  value={item.arrangement.id}
+                  key={`before-${item.session.id}`}
+                  value={item.session.id}
                 >
-                  {item.arrangement.scheduleStart.slice(0, 10)} ·{" "}
-                  {item.arrangement.name} · {item.session.score}分
+                  {displayBusinessText(item.arrangement.scheduleStart)?.slice(
+                    0,
+                    10,
+                  )}{" "}
+                  · {item.arrangement.name} · {item.session.score}分
                 </option>
               ))}
             </select>
@@ -9576,16 +10363,19 @@ function HistoryCompare() {
           <label className="field">
             对比记录
             <select
-              value={after?.arrangement.id || ""}
+              value={after?.session.id || ""}
               onChange={(event) => setAfterId(event.target.value)}
             >
               {records.map((item) => (
                 <option
-                  key={`after-${item.arrangement.id}`}
-                  value={item.arrangement.id}
+                  key={`after-${item.session.id}`}
+                  value={item.session.id}
                 >
-                  {item.arrangement.scheduleStart.slice(0, 10)} ·{" "}
-                  {item.arrangement.name} · {item.session.score}分
+                  {displayBusinessText(item.arrangement.scheduleStart)?.slice(
+                    0,
+                    10,
+                  )}{" "}
+                  · {item.arrangement.name} · {item.session.score}分
                 </option>
               ))}
             </select>
@@ -9594,7 +10384,11 @@ function HistoryCompare() {
         <div className="comparison-head">
           <span>
             <small>
-              基准 · {before?.arrangement.scheduleStart.slice(0, 10)}
+              基准 ·{" "}
+              {displayBusinessText(before?.arrangement.scheduleStart)?.slice(
+                0,
+                10,
+              )}
             </small>
             <strong>{before?.session.score}分</strong>
             <Status>
@@ -9612,7 +10406,11 @@ function HistoryCompare() {
           </span>
           <span>
             <small>
-              对比 · {after?.arrangement.scheduleStart.slice(0, 10)}
+              对比 ·{" "}
+              {displayBusinessText(after?.arrangement.scheduleStart)?.slice(
+                0,
+                10,
+              )}
             </small>
             <strong>{after?.session.score}分</strong>
             <Status>
@@ -9675,8 +10473,8 @@ function HistoryCompare() {
             </strong>
             <p>
               {comparable
-                ? "两次记录引用同一 SOP，步骤名称和分值结构一致。柱形按各自步骤满分归一化，顶部保留原始分。"
-                : "两次记录使用不同 SOP 或步骤结构，只展示原始事实，不计算或宣称能力提升。"}
+                ? "两次记录引用同一实训标准，步骤名称和分值结构一致。柱形按各自步骤满分归一化，顶部保留原始分。"
+                : "两次记录使用不同实训标准或步骤结构，只展示原始事实，不计算或宣称能力提升。"}
             </p>
           </div>
         </div>
@@ -9726,7 +10524,7 @@ function AiDatasetSamples({ sop, setModal }) {
           acceptLabel={
             dataset?.status === "已锁定"
               ? `纳入 ${dataset.nextVersion || `D${versionNumber(dataset.version) + 1}`}`
-              : `纳入当前 ${dataset?.version || "Dataset"}`
+              : `纳入当前 ${dataset?.version || "数据集"}`
           }
         />
       ),
@@ -9749,12 +10547,11 @@ function AiDatasetSamples({ sop, setModal }) {
       content: (
         <div className="form-stack">
           <p>
-            将困难样本候选 <strong>{sample.fileName}</strong> 转为 Source
-            Video，之后仍需时间片段标注、Annotation 审核和 Dataset
-            纳入，不会直接污染训练集。
+            将困难样本候选 <strong>{sample.fileName}</strong>{" "}
+            转为源视频，之后仍需完成时间片段标注、审核和数据集纳入，不会直接进入训练集。
           </p>
           <p className="hint">
-            来源 Session：{sample.sourceSessionId || "未记录"} · Step：
+            来源实训记录：{sample.sourceSessionId || "未记录"} · 步骤：
             {sample.sourceStepId || sample.label || "未记录"}
           </p>
         </div>
@@ -9762,7 +10559,7 @@ function AiDatasetSamples({ sop, setModal }) {
       confirmText: "转入数据生产",
       onConfirm: () => {
         store.promoteDifficultSample(sample.id);
-        return `${sample.fileName} 已转入 Source Video 待加工队列`;
+        return `${sample.fileName} 已转入源视频待加工队列`;
       },
     });
   };
@@ -9815,7 +10612,7 @@ function AiDatasetSamples({ sop, setModal }) {
         viewLabel={(_, index) =>
           samples[index].status === "待加工" ? "转入数据生产" : "复核"
         }
-        emptyText="当前 SOP 暂无样本"
+        emptyText="当前实训标准暂无样本"
       />
     </section>
   );
@@ -9835,7 +10632,7 @@ const MappingRejectForm = forwardRef(function MappingRejectForm(_, ref) {
       <textarea
         value={comment}
         onChange={(event) => setComment(event.target.value)}
-        placeholder="请指出与SOP业务标准不一致的判断项或处置方式。"
+        placeholder="请指出与实训标准不一致的判断项或处置方式。"
       />
     </label>
   );
@@ -9891,7 +10688,7 @@ function TeacherMappingReview({ setModal }) {
       <PageHeader
         back
         title={`${sop.name} · AI业务口径确认`}
-        subtitle={`${sop.version} / ${mapping.version} · 教师只确认业务含义、规则来源和无法判断时的处理`}
+        subtitle={`${sop.name} / ${mapping.version} · 教师只确认业务含义、规则来源和无法判断时的处理`}
         actions={
           mapping.status === "pending_teacher_confirmation" ? (
             <>
@@ -9906,7 +10703,7 @@ function TeacherMappingReview({ setModal }) {
       <section className="sop-boundary-note">
         <SafetyCertificateOutlined />
         <div>
-          <strong>确认 Mapping ≠ AI能力可用</strong>
+          <strong>确认评价映射 ≠ AI能力可用</strong>
           <p>后续数据、能力包和工位验证未完成时，系统仍不能启用自动评价。</p>
         </div>
         <Status>{status.status}</Status>
@@ -9998,7 +10795,8 @@ function TeacherMappingReview({ setModal }) {
               ))}
               {item.scoreTreatment?.type === "no_deduction" && (
                 <p>
-                  <b>未完成处置：</b>不扣分；{item.scoreTreatment.note}
+                  <b>未完成处置：</b>不扣分；
+                  {displayBusinessText(item.scoreTreatment.note)}
                 </p>
               )}
               <footer>
@@ -10081,7 +10879,7 @@ function defaultAiCondition(capability) {
   };
 }
 
-const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
+export const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
   { initial, step, capabilities, logicalAreas },
   ref,
 ) {
@@ -10099,6 +10897,9 @@ const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
           scoreRuleIds: [],
           safetyRuleIds: [],
           combination: "all",
+          completionBasis: "action",
+          sameActorRequired: true,
+          observationScope: "current_step",
           conditions: firstCapability
             ? [defaultAiCondition(firstCapability)]
             : [],
@@ -10140,6 +10941,66 @@ const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
           onChange={(event) => update("name", event.target.value)}
           placeholder="例如：确认绝缘手套已佩戴"
         />
+      </label>
+      <StandardMediaSection key={`teaching-${step.id}`} step={step} />
+      <RequirementsView step={step} />
+      {!!step.visualRequirements?.length && (
+        <label className="field">
+          关联教师可见要求
+          <select
+            value={form.requirementId || ""}
+            onChange={(e) => {
+              update("requirementId", e.target.value);
+              const r = step.visualRequirements.find(
+                (r) => r.id === e.target.value,
+              );
+              update(
+                "completionBasis",
+                r?.assessDonning
+                  ? "both"
+                  : r?.target === "state"
+                    ? "state"
+                    : "action",
+              );
+            }}
+          >
+            <option value="">请选择</option>
+            {step.visualRequirements.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="form-row">
+        <label className="field">
+          完成证据
+          <select
+            value={form.completionBasis || "action"}
+            onChange={(e) => update("completionBasis", e.target.value)}
+          >
+            {Object.entries(COMPLETION_BASES).map(([k, v]) => (
+              <option key={k} value={k}>
+                {displayBusinessText(v)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          观察范围
+          <select
+            value={form.observationScope || "current_step"}
+            onChange={(e) => update("observationScope", e.target.value)}
+          >
+            <option value="current_step">当前步骤</option>
+            <option value="session">全程记录，按教师规则使用</option>
+          </select>
+        </label>
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked disabled />
+        事实必须属于当前已确认主操作人
       </label>
       <div className="ai-config-purpose-picker">
         <small>判断用途（可多选）</small>
@@ -10309,7 +11170,9 @@ const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
                   <span>识别目标：{selected.targetName || "—"}</span>
                   <span>
                     最近发布：
-                    {selected.currentPublishedModel?.publishedAt || "—"}
+                    {displayBusinessText(
+                      selected.currentPublishedModel?.publishedAt || "—",
+                    )}
                   </span>
                   <p>{selected.description || "暂无能力说明"}</p>
                 </div>
@@ -10347,6 +11210,41 @@ const AiJudgementItemForm = forwardRef(function AiJudgementItemForm(
                         })
                       }
                     />
+                  </label>
+                </div>
+              )}
+              {selected && !isObject && (
+                <div className="form-row">
+                  <label className="field">
+                    动作最短持续时间（秒）
+                    <input
+                      type="number"
+                      min="0"
+                      value={condition.minDurationSeconds || 0}
+                      onChange={(e) =>
+                        updateCondition(index, {
+                          minDurationSeconds: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    动作发生区域
+                    <select
+                      value={condition.logicalAreaId || ""}
+                      onChange={(e) =>
+                        updateCondition(index, {
+                          logicalAreaId: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="">不限制区域</option>
+                      {logicalAreas.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
               )}
@@ -10517,9 +11415,7 @@ function AiRuleTreatmentRow({
               ))}
             </select>
             {!candidates.length && (
-              <small className="form-error">
-                请先新增关联本规则的判断项。
-              </small>
+              <small className="form-error">请先新增关联本规则的判断项。</small>
             )}
           </label>
         )}
@@ -10560,7 +11456,7 @@ function AiRuleTreatmentRow({
   );
 }
 
-function AiConfigStepCard({
+export function AiConfigStepCard({
   sop,
   step,
   index,
@@ -10668,6 +11564,11 @@ function AiConfigStepCard({
               <strong>{step.predecessor || "无"}</strong>
             </div>
           </div>
+          <StandardMediaSection
+            key={`teaching-${step.id}`}
+            step={step}
+            note="仅作教学参考，AI训练样本在能力库中单独采集与标注。"
+          />
           <div className="ai-config-teacher-rules">
             <article>
               <strong>评分规则</strong>
@@ -10960,7 +11861,7 @@ function AiCapabilityConfigList() {
       sop,
       evaluation,
       row: [
-        sop.name || "未命名SOP",
+        sop.name || "未命名实训标准",
         [sop.major, sop.course].filter(Boolean).join(" / ") || "未设置",
         sop.owner || "未设置",
         `${evaluation.totalSteps} 步`,
@@ -10973,9 +11874,7 @@ function AiCapabilityConfigList() {
           : "尚未添加工位",
         <button
           className="table-action"
-          onClick={() =>
-            nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}`)
-          }
+          onClick={() => nav(`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}`)}
         >
           {evaluation.status === "unconfigured"
             ? "开始配置"
@@ -11004,15 +11903,17 @@ function AiCapabilityConfigList() {
     <>
       <PageHeader
         title="AI能力配置"
-        subtitle="按已发布SOP步骤组装AI判断项、已发布能力和教师业务规则。"
+        subtitle="按已发布实训标准的步骤组装AI判断项、已发布能力和教师业务规则。"
       />
       {sops.length ? (
         <section className="panel panel--table ai-config-list-table">
           <Toolbar
-            placeholder="搜索SOP名称、专业或课程"
+            placeholder="搜索标准名称、专业或课程"
             filters={[
               "全部配置状态",
-              ...new Set(entries.map(({ evaluation }) => evaluation.statusLabel)),
+              ...new Set(
+                entries.map(({ evaluation }) => evaluation.statusLabel),
+              ),
             ]}
             value={query}
             filterValue={statusFilter}
@@ -11053,7 +11954,7 @@ function AiCapabilityConfigList() {
           <DataTable
             pagination
             columns={[
-              "SOP名称",
+              "标准名称",
               "专业/课程",
               "创建教师",
               "步骤数",
@@ -11066,15 +11967,15 @@ function AiCapabilityConfigList() {
             ]}
             rows={filteredEntries.map(({ row }) => row)}
             rowKey={(_, index) => filteredEntries[index]?.sop.id || index}
-            emptyText="暂无符合筛选条件的SOP"
+            emptyText="暂无符合筛选条件的实训标准"
             statusColumns={[4, 8]}
           />
         </section>
       ) : (
         <section className="panel empty-state ai-entry-table">
           <BookOutlined />
-          <h2>暂无可配置的SOP</h2>
-          <p>教师发布SOP后，可在此为SOP配置AI判断能力。</p>
+          <h2>暂无可配置的实训标准</h2>
+          <p>教师发布实训标准后，可在此为实训标准配置AI判断能力。</p>
         </section>
       )}
     </>
@@ -11108,7 +12009,7 @@ const AiWorkstationSelectForm = forwardRef(function AiWorkstationSelectForm(
             });
             return (
               <option key={workstation.id} value={workstation.id}>
-                {workstation.name} · {workstation.code} · AI{readiness.label}
+                {workstationOptionLabel(workstation)} · AI{readiness.label}
               </option>
             );
           })}
@@ -11206,7 +12107,7 @@ function AiAreaMappingEditor({ area, mapping, cameras, relationId, store }) {
       <summary>
         <span>
           <strong>{area.name}</strong>
-          <small>{area.description || "当前SOP需要的逻辑区域"}</small>
+          <small>{area.description || "当前实训标准需要的逻辑区域"}</small>
         </span>
         <Status>{mapping ? "已配置" : "未配置"}</Status>
       </summary>
@@ -11388,6 +12289,38 @@ function AiValidationCaseCard({
           />
         </label>
       </div>
+      <div className="form-row">
+        <label className="field">
+          执行结果来源
+          <select
+            value={draft.resultSource || "legacy_unverified"}
+            onChange={(e) =>
+              setDraft({ ...draft, resultSource: e.target.value })
+            }
+          >
+            <option value="legacy_unverified">历史未核实</option>
+            <option value="prototype_demo">原型模拟</option>
+            <option value="manual">人工录入</option>
+            <option value="real">真实模型执行</option>
+          </select>
+        </label>
+        <label className="field">
+          证据记录
+          <input
+            value={draft.evidenceRef || ""}
+            onChange={(e) =>
+              setDraft({ ...draft, evidenceRef: e.target.value })
+            }
+          />
+        </label>
+        <label className="field">
+          执行人
+          <input
+            value={draft.executor || ""}
+            onChange={(e) => setDraft({ ...draft, executor: e.target.value })}
+          />
+        </label>
+      </div>
       <Button
         disabled={draft.result === "pending" || !draft.actualResult.trim()}
         onClick={() =>
@@ -11424,10 +12357,7 @@ function AiWorkstationConfigWorkspace({
   const fallbackCamera = data.devices.find(
     (item) => item.id === base.fallbackCameraId,
   );
-  const cameras = [
-    primaryCamera && { ...primaryCamera, label: "主摄像头" },
-    fallbackCamera && { ...fallbackCamera, label: "备用摄像头" },
-  ].filter(Boolean);
+  const cameras = workstationCameras(workstation, data.devices);
   const checks = checkSopWorkstationAiConfig({
     config: normalized,
     aiConfig,
@@ -11464,17 +12394,22 @@ function AiWorkstationConfigWorkspace({
       content: (
         <p>
           确认在{workstation.name}
-          启用当前SOP的AI评价？启用后，新进入该工位执行本SOP的学生将按当前AI判断配置运行。
+          启用当前实训标准的AI评价？启用后，新进入该工位执行本实训标准的学生将按当前AI判断配置运行。
         </p>
       ),
       confirmText: "确认启用",
       onConfirm: () => {
         store.enableSopWorkstationAi(normalized.id);
-        return `${workstation.name}已启用当前SOP的AI评价`;
+        return `${workstation.name}已启用当前实训标准的AI评价`;
       },
     });
   return (
     <div className="ai-workstation-workspace">
+      <ValidationPurposePanel
+        key={normalized.id}
+        relation={normalized}
+        store={store}
+      />
       <section className="ai-workstation-block">
         <PanelTitle
           title={`${workstation.name} · 工位基础信息`}
@@ -11486,10 +12421,10 @@ function AiWorkstationConfigWorkspace({
         />
         <div className="ai-workstation-facts">
           {[
-            ["工位编号", workstation.code],
+            ["工位编号", workstationBusinessCode(workstation) || "演示工位"],
             ["工位状态", workstation.status],
-            ["主摄像头", primaryCamera?.name || "未配置"],
-            ["备用摄像头", fallbackCamera?.name || "未配置"],
+            ["主摄像头", deviceDisplayName(primaryCamera)],
+            ["第二视角（角色见集合）", deviceDisplayName(fallbackCamera)],
             [
               "主摄像头状态",
               primaryCamera
@@ -11500,7 +12435,7 @@ function AiWorkstationConfigWorkspace({
           ].map(([label, value]) => (
             <span key={label}>
               <small>{label}</small>
-              <strong>{value}</strong>
+              <strong>{displayBusinessText(value)}</strong>
             </span>
           ))}
         </div>
@@ -11515,39 +12450,18 @@ function AiWorkstationConfigWorkspace({
       <section className="ai-workstation-block">
         <PanelTitle
           title="判断项摄像头配置"
-          action={<span>每项仅使用一个主要摄像头</span>}
+          action={<span>按判断项配置有效视角</span>}
         />
         <div className="ai-judgement-camera-list">
-          {checks.activeJudgementItems.map((item) => {
-            const binding = normalized.judgementCameraBindings.find(
-              (entry) => entry.judgementItemId === item.id,
-            );
-            return (
-              <article key={item.id}>
-                <div>
-                  <strong>{item.name}</strong>
-                  <small>默认使用工位主摄像头</small>
-                </div>
-                <select
-                  aria-label={`${item.name}摄像头`}
-                  value={binding?.cameraId || base.primaryCameraId}
-                  onChange={(event) =>
-                    store.saveSopWorkstationCameraBinding(
-                      normalized.id,
-                      item.id,
-                      event.target.value,
-                    )
-                  }
-                >
-                  {cameras.map((camera) => (
-                    <option key={camera.id} value={camera.id}>
-                      {camera.label} · {camera.name}
-                    </option>
-                  ))}
-                </select>
-              </article>
-            );
-          })}
+          {checks.activeJudgementItems.map((item) => (
+            <ViewBindingEditor
+              key={item.id}
+              relation={normalized}
+              item={item}
+              cameras={cameras}
+              store={store}
+            />
+          ))}
         </div>
       </section>
 
@@ -11556,18 +12470,23 @@ function AiWorkstationConfigWorkspace({
           title="逻辑区域到实际区域"
           action={<span>{areas.length} 个需要映射</span>}
         />
-        {areas.map((area) => (
-          <AiAreaMappingEditor
-            key={area.id}
-            area={area}
-            mapping={normalized.logicalAreaMappings.find(
-              (item) => item.logicalAreaId === area.id,
-            )}
-            cameras={cameras}
-            relationId={normalized.id}
-            store={store}
-          />
-        ))}
+        {areas.flatMap((area) =>
+          cameras.map((camera) => (
+            <AiAreaMappingEditor
+              key={`${area.id}:${camera.id}`}
+              area={{ ...area, name: `${area.name} · ${camera.label}` }}
+              mapping={
+                normalized.logicalAreaMappings.find(
+                  (m) =>
+                    m.logicalAreaId === area.id && m.cameraId === camera.id,
+                ) || { cameraId: camera.id }
+              }
+              cameras={[camera]}
+              relationId={normalized.id}
+              store={store}
+            />
+          )),
+        )}
         {!areas.length && <p className="hint">当前AI判断项不依赖逻辑区域。</p>}
       </section>
 
@@ -11675,8 +12594,8 @@ function AiWorkstationConfigWorkspace({
                     note: event.target.value,
                   }))
                 }
-                />
-              </label>
+              />
+            </label>
             <div className="ai-validation-actions">
               {normalized.validationStatus === "pending_revalidation" && (
                 <div className="evaluation-notice evaluation-notice--warning">
@@ -11701,7 +12620,9 @@ function AiWorkstationConfigWorkspace({
             <div className="ai-validation-summary-strip">
               <span>
                 <small>验证场景</small>
-                <strong>{normalized.validationCases.length}/8</strong>
+                <strong>
+                  {normalized.validationCases.length} 类（基础8类，可扩展）
+                </strong>
               </span>
               <span>
                 <small>判断项覆盖</small>
@@ -11800,7 +12721,9 @@ function AiWorkstationConfigWorkspace({
           </span>
           <span>
             <small>最近验证</small>
-            <strong>{normalized.lastValidatedAt || "未验证"}</strong>
+            <strong>
+              {displayBusinessText(normalized.lastValidatedAt || "未验证")}
+            </strong>
           </span>
         </div>
         <div className="row-actions">
@@ -11894,7 +12817,7 @@ function SopWorkstationEnablementSection({
     return (
       <section className="panel empty-state ai-workstation-enablement">
         <AlertOutlined />
-        <h2>当前SOP的AI能力配置尚未完成</h2>
+        <h2>当前实训标准的AI能力配置尚未完成</h2>
         <p>请先完成AI判断项和能力引用配置，再进入工位启用与现场验证。</p>
       </section>
     );
@@ -11975,9 +12898,7 @@ function SopWorkstationEnablementSection({
                 >
                   <span>
                     <strong>{workstation.name}</strong>
-                    <small>
-                      {workstation.code} · {workstation.location}
-                    </small>
+                    <small>{workstationCaption(workstation)}</small>
                   </span>
                   <span>
                     <small>AI基础状态</small>
@@ -12020,7 +12941,11 @@ function SopWorkstationEnablementSection({
                   </span>
                   <span>
                     <small>最近验证</small>
-                    <strong>{relation.lastValidatedAt || "未验证"}</strong>
+                    <strong>
+                      {displayBusinessText(
+                        relation.lastValidatedAt || "未验证",
+                      )}
+                    </strong>
                   </span>
                 </button>
               );
@@ -12141,9 +13066,9 @@ function AiConfigLogicalAreaManager({ sopId }) {
         </Button>
       </div>
       <p className="hint">
-        逻辑区域是SOP层业务区域；具体摄像头画面坐标仍在工位验证中配置。
+        逻辑区域是实训标准中的业务区域；具体摄像头画面坐标仍在工位验证中配置。
       </p>
-      {error && <p className="form-error">{error}</p>}
+      {error && <p className="form-error">{displayBusinessText(error)}</p>}
       <div className="ai-config-area-manager__list">
         {config.logicalAreas.map((area) => {
           const count = referenceCount(area.id);
@@ -12217,6 +13142,11 @@ function AiCapabilityConfigOverviewTab({
   ).length;
   return (
     <div className="ai-config-tab-stack">
+      {config.standardReviewRequired && (
+        <p className="hint">
+          实训标准内容已更新，请核对步骤与评分规则，完成配置后重新进行工位现场验证。
+        </p>
+      )}
       <section className="panel ai-config-tab-overview">
         <PanelTitle
           title="配置概览"
@@ -12224,8 +13154,8 @@ function AiCapabilityConfigOverviewTab({
         />
         <div className="ai-config-summary__grid ai-config-summary__grid--wide">
           <div>
-            <small>SOP名称</small>
-            <strong>{sop.name || "未命名SOP"}</strong>
+            <small>标准名称</small>
+            <strong>{sop.name || "未命名实训标准"}</strong>
           </div>
           <div>
             <small>创建教师</small>
@@ -12238,7 +13168,7 @@ function AiCapabilityConfigOverviewTab({
             </strong>
           </div>
           <div>
-            <small>SOP状态</small>
+            <small>标准状态</small>
             <Status>{sop.status}</Status>
           </div>
           <div>
@@ -12422,9 +13352,9 @@ function AiCapabilityConfigJudgementTab({
         逐个步骤引用已发布AI能力，并配置评分与安全规则覆盖。
       </p>
       <div className="ai-config-judgement-layout">
-        <aside className="ai-config-step-nav" aria-label="SOP步骤导航">
+        <aside className="ai-config-step-nav" aria-label="实训操作步骤导航">
           <header>
-            <small>SOP步骤</small>
+            <small>操作步骤</small>
             <strong>{steps.length} 个步骤</strong>
           </header>
           <div ref={stepNavRef}>
@@ -12453,7 +13383,7 @@ function AiCapabilityConfigJudgementTab({
                           : "○"}
                   </span>
                   <span>
-                    <small>Step {String(index + 1).padStart(2, "0")}</small>
+                    <small>步骤 {String(index + 1).padStart(2, "0")}</small>
                     <strong>{step.name || "未命名步骤"}</strong>
                     <em>{AI_CONFIG_STEP_STATUSES[result.status]}</em>
                   </span>
@@ -12468,10 +13398,11 @@ function AiCapabilityConfigJudgementTab({
               <header className="ai-config-tab-step__header">
                 <div>
                   <small>
-                    当前步骤 · Step {String(selectedIndex + 1).padStart(2, "0")}
+                    当前步骤 {String(selectedIndex + 1).padStart(2, "0")}
                   </small>
                   <h2>
-                    {selectedStep.id} · {selectedStep.name || "未命名步骤"}
+                    {displayStepLabel(selectedStep.id)} ·{" "}
+                    {selectedStep.name || "未命名步骤"}
                   </h2>
                   <p>教师期望：{aiExpectedModeLabel(selectedStep)}</p>
                 </div>
@@ -12497,7 +13428,7 @@ function AiCapabilityConfigJudgementTab({
           ) : (
             <div className="empty-state">
               <AlertOutlined />
-              <h2>当前SOP没有可配置步骤</h2>
+              <h2>当前实训标准没有可配置步骤</h2>
             </div>
           )}
         </div>
@@ -12512,7 +13443,9 @@ function AiCapabilityConfigTabbedDetail({ setModal, onModeChange }) {
   const { sopId } = useParams();
   const sop = getConfigurableSops(data?.sops).find((item) => item.id === sopId);
   if (!sop)
-    return <MissingState title="可配置的SOP不存在" backTo={AI_CONFIG_PATH} />;
+    return (
+      <MissingState title="可配置的实训标准不存在" backTo={AI_CONFIG_PATH} />
+    );
   return (
     <AiCapabilityConfigTabbedWorkspace
       sop={sop}
@@ -12585,7 +13518,7 @@ function AiCapabilityConfigTabbedWorkspace({
           title: "清空当前AI能力配置",
           content: (
             <p>
-              将删除当前SOP的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师SOP或AI能力库内容。
+              将删除当前实训标准的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师实训标准或AI能力库内容。
             </p>
           ),
           confirmText: "确认清空",
@@ -12603,12 +13536,12 @@ function AiCapabilityConfigTabbedWorkspace({
     <>
       <PageHeader
         title="AI能力配置"
-        subtitle={sop.name || "未命名SOP"}
+        subtitle={sop.name || "未命名实训标准"}
         actions={
           <div className="row-actions ai-config-page-actions">
             <AiConfigDisplayModeSwitch mode="tabs" onChange={onModeChange} />
             {clearAction}
-            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回标准列表</Button>
           </div>
         }
       />
@@ -12662,7 +13595,7 @@ function AiCapabilityConfigTabbedWorkspace({
         (!evaluation.ready || config.status === "configuring" ? (
           <section className="panel empty-state ai-workstation-enablement ai-config-tab-workstation-empty">
             <AlertOutlined />
-            <h2>当前SOP的AI能力配置尚未完成</h2>
+            <h2>当前实训标准的AI能力配置尚未完成</h2>
             <p>请先完成AI判断项和能力引用配置，再进入工位启用与现场验证。</p>
             <Button type="primary" onClick={continueConfiguration}>
               去AI判断配置
@@ -12731,7 +13664,9 @@ function AiCapabilityConfigDetail({ setModal }) {
   const { sopId } = useParams();
   const sop = getConfigurableSops(data?.sops).find((item) => item.id === sopId);
   if (!sop)
-    return <MissingState title="可配置的SOP不存在" backTo={AI_CONFIG_PATH} />;
+    return (
+      <MissingState title="可配置的实训标准不存在" backTo={AI_CONFIG_PATH} />
+    );
   const rawConfig = (data.aiCapabilityConfigs || []).find(
     (item) => item.sopId === sop.id,
   );
@@ -12774,7 +13709,7 @@ function AiCapabilityConfigDetail({ setModal }) {
     <>
       <PageHeader
         title="AI能力配置"
-        subtitle={sop.name || "未命名SOP"}
+        subtitle={sop.name || "未命名实训标准"}
         actions={
           <div className="row-actions">
             {!!rawConfig && (
@@ -12785,7 +13720,7 @@ function AiCapabilityConfigDetail({ setModal }) {
                     title: "清空当前AI能力配置",
                     content: (
                       <p>
-                        将删除当前SOP的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师SOP或AI能力库内容。
+                        将删除当前实训标准的所有步骤配置、AI判断项和逻辑区域，并解除对AI能力的引用。此操作不会修改教师实训标准或AI能力库内容。
                       </p>
                     ),
                     confirmText: "确认清空",
@@ -12799,10 +13734,15 @@ function AiCapabilityConfigDetail({ setModal }) {
                 清空当前配置
               </Button>
             )}
-            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回SOP列表</Button>
+            <Button onClick={() => nav(AI_CONFIG_PATH)}>返回标准列表</Button>
           </div>
         }
       />
+      {config.standardReviewRequired && (
+        <p className="hint">
+          实训标准内容已更新，请核对步骤与评分规则，完成配置后重新进行工位现场验证。
+        </p>
+      )}
       <section className="panel ai-config-overview">
         <PanelTitle
           title="当前配置概览"
@@ -12810,7 +13750,7 @@ function AiCapabilityConfigDetail({ setModal }) {
         />
         <div className="ai-config-summary__grid ai-config-summary__grid--wide">
           <div>
-            <small>SOP名称</small>
+            <small>标准名称</small>
             <strong>{sop.name}</strong>
           </div>
           <div>
@@ -12824,7 +13764,7 @@ function AiCapabilityConfigDetail({ setModal }) {
             </strong>
           </div>
           <div>
-            <small>SOP状态</small>
+            <small>标准状态</small>
             <Status>{sop.status}</Status>
           </div>
           <div>
@@ -13187,7 +14127,7 @@ function AiCapabilityList({ setModal }) {
     <>
       <PageHeader
         title="能力管理"
-        subtitle="管理可跨SOP复用的目标检测和动作识别能力。"
+        subtitle="管理可跨实训标准复用的目标检测和动作识别能力。"
         actions={
           <Button
             type="primary"
@@ -13344,7 +14284,7 @@ function AiCapabilityForm() {
     <>
       <PageHeader
         title={creating ? "新建AI能力" : `编辑AI能力 · ${existing.name}`}
-        subtitle="能力描述平台可重复使用的视觉识别事实，不包含SOP评分和工位规则。"
+        subtitle="能力描述平台可重复使用的视觉识别事实，不包含实训标准的评分和工位规则。"
         actions={
           <Button
             onClick={() =>
@@ -13398,7 +14338,7 @@ function AiCapabilityForm() {
             value={draft.description}
             onChange={setField("description")}
             disabled={!meaningEditable}
-            placeholder="说明该能力识别什么，不填写SOP评分或工位规则。"
+            placeholder="说明该能力识别什么，不填写实训标准的评分或工位规则。"
           />
         </label>
         <label className="field">
@@ -13424,7 +14364,7 @@ function AiCapabilityForm() {
         </label>
         {error && (
           <p className="form-error" role="alert">
-            <ExclamationCircleFilled /> {error}
+            <ExclamationCircleFilled /> {displayBusinessText(error)}
           </p>
         )}
         <div className="ai-capability-form__actions">
@@ -13542,7 +14482,7 @@ function AiCapabilityDetail({ setModal }) {
         </span>
         <span>
           <small>最近更新</small>
-          <strong>{capability.updatedAt || "—"}</strong>
+          <strong>{displayBusinessText(capability.updatedAt || "—")}</strong>
         </span>
       </div>
       <section className="panel ai-capability-detail-section">
@@ -13580,7 +14520,7 @@ function AiCapabilityDetail({ setModal }) {
           ].map(([label, value]) => (
             <span key={label}>
               <small>{label}</small>
-              <strong>{value}</strong>
+              <strong>{displayBusinessText(value)}</strong>
             </span>
           ))}
         </div>
@@ -13693,6 +14633,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
     setForm((current) => ({ ...current, [key]: value }));
   return (
     <div className="form-stack ai-video-upload-form">
+      <SourceMetadataFields value={form} onChange={update} />
       <div className="ai-video-readonly-capability">
         <small>当前AI能力</small>
         <strong>{capability.name}</strong>
@@ -13770,7 +14711,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
             <option value="">未记录</option>
             {(workstations || []).map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {item.code}
+                {workstationOptionLabel(item)}
               </option>
             ))}
           </select>
@@ -13779,7 +14720,7 @@ const AiVideoUploadForm = forwardRef(function AiVideoUploadForm(
           <FieldLabel>拍摄日期</FieldLabel>
           <input
             type="date"
-            value={form.capturedAt}
+            value={displayBusinessText(form.capturedAt).slice(0, 10)}
             onChange={(event) => update("capturedAt", event.target.value)}
           />
         </label>
@@ -13814,6 +14755,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
   ref,
 ) {
   const [form, setForm] = useState({
+    ...video,
     displayName: video.displayName || video.fileName,
     dataCategory: video.dataCategory,
     sourceType: video.sourceType,
@@ -13826,6 +14768,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
     setForm((current) => ({ ...current, [key]: value }));
   return (
     <div className="form-stack">
+      <SourceMetadataFields value={form} onChange={update} />
       <label className="field">
         视频名称
         <input
@@ -13872,7 +14815,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
             <option value="">未记录</option>
             {(workstations || []).map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {item.code}
+                {workstationOptionLabel(item)}
               </option>
             ))}
           </select>
@@ -13881,7 +14824,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
           <FieldLabel>拍摄日期</FieldLabel>
           <input
             type="date"
-            value={form.capturedAt}
+            value={displayBusinessText(form.capturedAt).slice(0, 10)}
             onChange={(event) => update("capturedAt", event.target.value)}
           />
         </label>
@@ -13976,9 +14919,7 @@ function AiVideoPreview({ video, workstation }) {
           ["数据来源", AI_VIDEO_SOURCES[video.sourceType]],
           [
             "拍摄工位",
-            workstation
-              ? `${workstation.name} · ${workstation.code}`
-              : "未记录",
+            workstation ? workstationOptionLabel(workstation) : "未记录",
           ],
           ["拍摄说明", video.note || "—"],
           ["上传时间", video.uploadedAt || "—"],
@@ -14030,10 +14971,7 @@ function AiVideoManagement({ setModal }) {
       (!sourceFilter || item.sourceType === sourceFilter) &&
       (!statusFilter || item.processingStatus === statusFilter),
   );
-  const videoPageCount = Math.max(
-    1,
-    Math.ceil(visible.length / videoPageSize),
-  );
+  const videoPageCount = Math.max(1, Math.ceil(visible.length / videoPageSize));
   const pageVideos = visible.slice(
     (videoPage - 1) * videoPageSize,
     videoPage * videoPageSize,
@@ -14244,6 +15182,7 @@ function AiVideoManagement({ setModal }) {
           </p>
         )}
       </section>
+      {capability && <SampleMetadataPanel capabilityId={capability.id} />}
       {!capability ? (
         <section className="panel empty-state ai-library-empty ai-entry-table">
           <VideoCameraOutlined />
@@ -14272,7 +15211,7 @@ function AiVideoManagement({ setModal }) {
             ].map(([label, value]) => (
               <span key={label}>
                 <small>{label}</small>
-                <strong>{value}</strong>
+                <strong>{displayBusinessText(value)}</strong>
               </span>
             ))}
           </div>
@@ -14430,7 +15369,7 @@ function AiVideoManagement({ setModal }) {
                           </Status>
                         </td>
                         <td>{video.uploadedBy || "—"}</td>
-                        <td>{video.uploadedAt || "—"}</td>
+                        <td>{displayBusinessText(video.uploadedAt || "—")}</td>
                         <td>
                           <div className="ai-capability-row-actions">
                             <button
@@ -14585,7 +15524,7 @@ function DerivedDataPreview({ item, sourceVideo, kind }) {
         ].map(([label, value]) => (
           <span key={label}>
             <small>{label}</small>
-            <strong>{value}</strong>
+            <strong>{displayBusinessText(value)}</strong>
           </span>
         ))}
       </div>
@@ -14662,10 +15601,8 @@ function AiExtractionPage({ setModal }) {
     pageItems: pagedExtractionTasks,
     paginationProps: extractionTaskPagination,
   } = useListPagination(tasks);
-  const {
-    pageItems: pagedResults,
-    paginationProps: resultPagination,
-  } = useListPagination(visibleResults);
+  const { pageItems: pagedResults, paginationProps: resultPagination } =
+    useListPagination(visibleResults);
   const processedVideoCount = videos.filter(
     (item) => item.processingStatus === "derived",
   ).length;
@@ -14899,7 +15836,7 @@ function AiExtractionPage({ setModal }) {
             <p className="form-error" key={failure.sourceVideoId}>
               {sourceVideoById[failure.sourceVideoId]?.displayName ||
                 failure.sourceVideoId}
-              ：{failure.reason}
+              ：{displayBusinessText(failure.reason)}
             </p>
           ))}
         </div>
@@ -15016,7 +15953,7 @@ function AiExtractionPage({ setModal }) {
             ].map(([label, value]) => (
               <span key={label}>
                 <small>{label}</small>
-                <strong>{value}</strong>
+                <strong>{displayBusinessText(value)}</strong>
               </span>
             ))}
           </div>
@@ -15437,7 +16374,8 @@ function AiExtractionPage({ setModal }) {
                           : "视频切片任务"}
                       </strong>
                       <small>
-                        {task.createdAt} · {task.sourceVideoIds.length} 个视频
+                        {displayBusinessText(task.createdAt)} ·{" "}
+                        {task.sourceVideoIds.length} 个视频
                       </small>
                     </div>
                     <Status>
@@ -15468,7 +16406,7 @@ function AiExtractionPage({ setModal }) {
                           <p key={failure.sourceVideoId}>
                             {sourceVideoById[failure.sourceVideoId]
                               ?.displayName || failure.sourceVideoId}
-                            ：{failure.reason}
+                            ：{displayBusinessText(failure.reason)}
                           </p>
                         ))}
                       </div>
@@ -16352,7 +17290,7 @@ function AiAutoCleaningPage({ setModal }) {
                     <div>
                       <strong>自动清洗任务</strong>
                       <small>
-                        {task.createdAt} ·{" "}
+                        {displayBusinessText(task.createdAt)} ·{" "}
                         {task.dataType === "frame" ? "图片" : "片段"}
                       </small>
                     </div>
@@ -16886,7 +17824,7 @@ function ManualCleaningPreview({
       </div>
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {displayBusinessText(error)}
         </p>
       )}
     </div>
@@ -17330,7 +18268,9 @@ function AiManualCleaningPage({ setModal }) {
                         </label>
                         <div className="manual-cleaning-card__actions">
                           <button
-                            className={manualStatus === "kept" ? "is-active" : ""}
+                            className={
+                              manualStatus === "kept" ? "is-active" : ""
+                            }
                             type="button"
                             aria-label={
                               manualStatus === "rejected"
@@ -17607,7 +18547,7 @@ function AnnotationCategoryManager({ capability, categories, items, store }) {
         }
       />
       <p className="annotation-boundary-note">
-        类别只属于当前AI能力，与SOP和步骤无关。已有标注引用的类别不能修改或删除。
+        类别只属于当前AI能力，与具体实训标准和步骤无关。已有标注引用的类别不能修改或删除。
       </p>
       <div className="annotation-category-list">
         {categories.map((category) => {
@@ -17711,7 +18651,7 @@ function AnnotationCategoryManager({ capability, categories, items, store }) {
       </div>
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {displayBusinessText(error)}
         </p>
       )}
     </section>
@@ -17736,11 +18676,13 @@ function ObjectAnnotationWorkbench({
   const [drag, setDrag] = useState(null);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState("");
+  const [suggestionRef, setSuggestionRef] = useState(null);
   useEffect(() => {
     setBoxes(Array.isArray(current?.boxes) ? current.boxes : []);
     setNoTarget(!!current?.noTargetConfirmed);
     setSelectedBoxId("");
     setError("");
+    setSuggestionRef(null);
   }, [current?.id, current?.annotationUpdatedAt]);
   useEffect(() => {
     if (!categories.some((item) => item.id === selectedCategoryId))
@@ -17841,10 +18783,12 @@ function ObjectAnnotationWorkbench({
     try {
       store.saveAiFrameAnnotation({
         capabilityId: current.capabilityId,
+        suggestionRef,
         frameId: current.id,
         boxes,
         noTargetConfirmed: noTarget,
       });
+      setSuggestionRef(null);
       if (andNext && items[currentIndex + 1])
         onSelect(items[currentIndex + 1].id);
     } catch (problem) {
@@ -17861,6 +18805,16 @@ function ObjectAnnotationWorkbench({
   ];
   return (
     <div className="annotation-object-workbench">
+      <SuggestionPanel
+        current={current}
+        categories={categories}
+        source={sourceById[current.sourceVideoId]}
+        onAdopt={(s, ref) => {
+          setBoxes(s.boxes || []);
+          setNoTarget(false);
+          setSuggestionRef(ref);
+        }}
+      />
       <div className="annotation-workbench-toolbar">
         <div>
           <strong>{current.fileName || current.id}</strong>
@@ -17960,7 +18914,10 @@ function ObjectAnnotationWorkbench({
                 className={selectedBoxId === box.id ? "is-selected" : ""}
                 onClick={() => setSelectedBoxId(box.id)}
               >
-                <b aria-label={`目标框 ${index + 1}`} title={`目标框 ${index + 1}`}>
+                <b
+                  aria-label={`目标框 ${index + 1}`}
+                  title={`目标框 ${index + 1}`}
+                >
                   {index + 1}
                 </b>
                 <select
@@ -18003,7 +18960,7 @@ function ObjectAnnotationWorkbench({
       </div>
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {displayBusinessText(error)}
         </p>
       )}
       <div className="annotation-workbench-actions">
@@ -18041,6 +18998,7 @@ function ActionAnnotationWorkbench({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [error, setError] = useState("");
+  const [suggestionRef, setSuggestionRef] = useState(null);
   useEffect(() => {
     setCategoryId(current?.actionCategoryId || categories[0]?.id || "");
     setStart(
@@ -18056,6 +19014,7 @@ function ActionAnnotationWorkbench({
       ),
     );
     setError("");
+    setSuggestionRef(null);
   }, [current?.id, current?.annotationUpdatedAt]);
   if (!current) return null;
   const currentIndex = items.findIndex((item) => item.id === current.id);
@@ -18064,11 +19023,13 @@ function ActionAnnotationWorkbench({
     try {
       store.saveAiClipAnnotation({
         capabilityId: current.capabilityId,
+        suggestionRef,
         clipId: current.id,
         actionCategoryId: categoryId,
         refinedStartMs: parseDerivedTimecode(start) * 1000,
         refinedEndMs: parseDerivedTimecode(end) * 1000,
       });
+      setSuggestionRef(null);
       if (andNext && items[currentIndex + 1])
         onSelect(items[currentIndex + 1].id);
     } catch (problem) {
@@ -18079,6 +19040,17 @@ function ActionAnnotationWorkbench({
   };
   return (
     <div className="annotation-action-workbench">
+      <SuggestionPanel
+        current={current}
+        categories={categories}
+        source={sourceById[current.sourceVideoId]}
+        onAdopt={(s, ref) => {
+          setCategoryId(s.actionCategoryId);
+          setStart(formatDerivedTimecode(s.refinedStartMs / 1000, true));
+          setEnd(formatDerivedTimecode(s.refinedEndMs / 1000, true));
+          setSuggestionRef(ref);
+        }}
+      />
       <div className="annotation-action-preview">
         <DerivedDataPreview
           item={current}
@@ -18129,7 +19101,7 @@ function ActionAnnotationWorkbench({
         </small>
         {error && (
           <p className="form-error" role="alert">
-            {error}
+            {displayBusinessText(error)}
           </p>
         )}
         <div className="annotation-workbench-actions">
@@ -18284,7 +19256,8 @@ function AiAnnotationPage({ setModal }) {
             <option value="">请选择AI能力</option>
             {capabilities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {AI_CAPABILITY_TYPES[item.type]}
+                {item.name} · {AI_CAPABILITY_TYPES[item.type]} ·{" "}
+                {modelSourceLabel(item.currentPublishedModel)}
               </option>
             ))}
           </select>
@@ -18306,6 +19279,7 @@ function AiAnnotationPage({ setModal }) {
           </div>
         )}
       </section>
+      {capability && <PreannotationTasks capabilityId={capability.id} />}
       {!selectedId ? (
         <section className="panel ai-library-workspace">
           <div className="empty-state ai-library-empty">
@@ -18673,8 +19647,7 @@ function AiTrainingDataPage({ setModal }) {
     const updated = run(() =>
       store.autoSplitAiTrainingData({ capabilityId: capability.id, ratios }),
     );
-    if (updated)
-      setPageSuccess("已按来源视频组重新生成当前划分，请检查后保存。");
+    if (updated) setPageSuccess("已按采集组重新生成当前划分，请检查后保存。");
   };
   const requestAutoSplit = () => {
     if (!run(() => validateTrainingRatios(ratios))) return;
@@ -18694,8 +19667,8 @@ function AiTrainingDataPage({ setModal }) {
           capabilityId: capability.id,
           ratios,
         });
-        setPageSuccess("已按来源视频组重新生成当前划分，请检查后保存。");
-        return `已重新划分 ${Object.keys(updated.sourceAssignments || {}).length} 个来源视频组`;
+        setPageSuccess("已按采集组重新生成当前划分，请检查后保存。");
+        return `已重新划分 ${Object.keys(updated.sourceAssignments || {}).length} 个来源视频（同采集组保持一致）`;
       },
     });
   };
@@ -18737,7 +19710,7 @@ function AiTrainingDataPage({ setModal }) {
     <>
       <PageHeader
         title="训练数据"
-        subtitle="整理当前AI能力已清洗、已标注的数据，并按来源视频划分训练集、验证集和测试集。"
+        subtitle="整理当前AI能力已清洗、已标注的数据，并按采集组划分训练集、验证集和测试集。"
       />
       <section className="panel ai-capability-context ai-cleaning-context training-data-context">
         <label className="field">
@@ -18756,7 +19729,8 @@ function AiTrainingDataPage({ setModal }) {
             <option value="">请选择AI能力</option>
             {capabilities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {AI_CAPABILITY_TYPES[item.type]}
+                {item.name} · {AI_CAPABILITY_TYPES[item.type]} ·{" "}
+                {modelSourceLabel(item.currentPublishedModel)}
               </option>
             ))}
           </select>
@@ -18839,7 +19813,11 @@ function AiTrainingDataPage({ setModal }) {
               ["候选数据", summary.candidateCount, "已保留且标注完整"],
               ["已进入训练数据", summary.assignedCount, "三个集合合计"],
               ["不可用数据", summary.unavailableCount, "不在本页处理"],
-              ["来源原始视频", summary.sourceVideoCount, "按视频整体划分"],
+              [
+                "来源采集组",
+                summary.sourceGroupCount,
+                summary.sourceVideoCount + " 个原始视频，按采集组划分",
+              ],
               ["训练集", summary.train, "用于参数学习"],
               ["验证集", summary.validation, "用于训练过程评估"],
               ["测试集", summary.test, "用于独立效果验证"],
@@ -18850,7 +19828,7 @@ function AiTrainingDataPage({ setModal }) {
                 className={label === "未分配" && value ? "is-warning" : ""}
               >
                 <small>{label}</small>
-                <strong>{value}</strong>
+                <strong>{displayBusinessText(value)}</strong>
                 <span>{note}</span>
               </article>
             ))}
@@ -18865,7 +19843,7 @@ function AiTrainingDataPage({ setModal }) {
                     : "当前训练数据已发生变化"}
                 </strong>
                 <p>
-                  新增数据不会自动进入训练集，请重新划分或按来源视频手动分配后保存。
+                  新增数据不会自动进入训练集，请重新划分或按采集组手动分配后保存。
                 </p>
               </div>
             </section>
@@ -18874,7 +19852,7 @@ function AiTrainingDataPage({ setModal }) {
             <section className="panel training-split-panel">
               <PanelTitle title="训练集 / 验证集 / 测试集划分" />
               <p className="training-panel-note">
-                自动划分会尽量兼顾类别分布；同一来源视频产生的所有图片或片段始终在同一个集合。
+                自动划分会尽量兼顾类别分布；同一采集组的全部视角和片段保持在同一个集合，人员跨集合会阻止数据就绪。
               </p>
               <div className="training-ratio-grid">
                 {[
@@ -18932,7 +19910,7 @@ function AiTrainingDataPage({ setModal }) {
               {Object.entries(candidateResult.reasonCounts).map(
                 ([reason, count]) => (
                   <div className="training-unavailable-reason" key={reason}>
-                    <span>{reason}</span>
+                    <span>{displayBusinessText(reason)}</span>
                     <strong>{count}</strong>
                   </div>
                 ),
@@ -18966,13 +19944,13 @@ function AiTrainingDataPage({ setModal }) {
           </section>
           <section className="panel training-source-groups">
             <PanelTitle
-              title="按来源视频管理"
-              extra={<span>{groups.length} 个视频组</span>}
+              title="按采集组管理"
+              extra={<span>{groups.length} 个采集组</span>}
             />
             <div className="training-leakage-note">
               <SafetyCertificateOutlined />
               <span>
-                为防止相邻画面造成数据泄漏，集合归属只能按来源视频整体调整，不能单独移动一张图片或一个片段。
+                同次采集的多段视频、多镜头一起分配；同一操作人跨集合会提示风险。封存测试只用于测试，不能进入训练或调优。
               </span>
             </div>
             <div className="table-wrap">
@@ -18997,7 +19975,9 @@ function AiTrainingDataPage({ setModal }) {
                             group.sourceVideoId}
                         </strong>
                         <small className="table-subline">
-                          {group.sourceVideoId}
+                          {group.sourceGroupId} ·{" "}
+                          {group.sourceVideoIds?.length || 1} 个视频 ·{" "}
+                          {group.sealed ? "封存测试" : "开发/验证"}
                         </small>
                       </td>
                       <td>
@@ -19038,9 +20018,7 @@ function AiTrainingDataPage({ setModal }) {
                               }),
                             );
                             if (updated)
-                              setPageSuccess(
-                                "来源视频组归属已调整，请保存划分。",
-                              );
+                              setPageSuccess("采集组归属已调整，请保存划分。");
                           }}
                         >
                           <option value="unassigned" disabled>
@@ -19156,7 +20134,7 @@ function AiTrainingDataPage({ setModal }) {
               <div className="training-message-list is-blocked">
                 <strong>阻止准备训练</strong>
                 {readiness.blockers.map((message) => (
-                  <p key={message}>{message}</p>
+                  <p key={message}>{displayBusinessText(message)}</p>
                 ))}
               </div>
             )}
@@ -19164,7 +20142,7 @@ function AiTrainingDataPage({ setModal }) {
               <div className="training-message-list is-warning">
                 <strong>数据分布提示</strong>
                 {readiness.warnings.map((message) => (
-                  <p key={message}>{message}</p>
+                  <p key={message}>{displayBusinessText(message)}</p>
                 ))}
               </div>
             )}
@@ -19176,9 +20154,11 @@ function AiTrainingDataPage({ setModal }) {
             {pageSuccess && <p className="form-success">{pageSuccess}</p>}
             <div className="training-footer-actions">
               <span>
-                {config?.lastSavedAt
-                  ? `上次保存：${config.lastSavedAt} · ${config.lastSavedBy || "系统管理员"}`
-                  : "当前划分尚未保存"}
+                {displayBusinessText(
+                  config?.lastSavedAt
+                    ? `上次保存：${config.lastSavedAt} · ${config.lastSavedBy || "系统管理员"}`
+                    : "当前划分尚未保存",
+                )}
               </span>
               <Button onClick={save}>保存划分</Button>
               <Button
@@ -19624,7 +20604,8 @@ function AiModelTrainingPage({ setModal }) {
             <option value="">请选择AI能力</option>
             {capabilities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {AI_CAPABILITY_TYPES[item.type]}
+                {item.name} · {AI_CAPABILITY_TYPES[item.type]} ·{" "}
+                {modelSourceLabel(item.currentPublishedModel)}
               </option>
             ))}
           </select>
@@ -19644,6 +20625,17 @@ function AiModelTrainingPage({ setModal }) {
           </div>
         )}
       </section>
+      {capability && (
+        <>
+          <ExistingModelPanel
+            key={capability.id}
+            capabilityId={capability.id}
+          />
+          <section className="enhancement-card">
+            当前训练、验证与测试为原型模拟；事件级完整视频指标与现场时延尚未实测。手部关键点可按效果选用，不是所有动作必须标注。
+          </section>
+        </>
+      )}
       {!selectedId ? (
         <section className="panel ai-library-workspace">
           <div className="empty-state ai-library-empty">
@@ -19712,7 +20704,8 @@ function AiModelTrainingPage({ setModal }) {
                 <span>当前候选模型</span>
                 <strong>{latestCandidate.modelArtifactId}</strong>
                 <small>
-                  来自任务 {latestCandidate.id} · {latestCandidate.completedAt}
+                  来自任务 {latestCandidate.id} ·{" "}
+                  {displayBusinessText(latestCandidate.completedAt)}
                 </small>
               </div>
               <Status tone="warning">待发布</Status>
@@ -19803,7 +20796,8 @@ function AiModelTrainingPage({ setModal }) {
                   <span>
                     <strong>{task.id}</strong>
                     <small>
-                      {task.createdAt} · {task.createdBy || "系统管理员"}
+                      {displayBusinessText(task.createdAt)} ·{" "}
+                      {task.createdBy || "系统管理员"}
                     </small>
                   </span>
                   <Status>
@@ -19875,8 +20869,10 @@ function AiModelTrainingPage({ setModal }) {
                   <div>
                     <dt>快照时间</dt>
                     <dd>
-                      {selectedTask.dataSnapshot?.capturedAt ||
-                        selectedTask.createdAt}
+                      {displayBusinessText(
+                        selectedTask.dataSnapshot?.capturedAt ||
+                          selectedTask.createdAt,
+                      )}
                     </dd>
                   </div>
                 </dl>
@@ -19915,7 +20911,7 @@ function AiModelTrainingPage({ setModal }) {
                   <h3>运行日志</h3>
                   {(selectedTask.logs || []).map((log, index) => (
                     <div key={`${log.time}-${index}`}>
-                      <time>{log.time}</time>
+                      <time>{displayBusinessText(log.time)}</time>
                       <b>{log.stage}</b>
                       <span>{log.message}</span>
                     </div>
@@ -20151,7 +21147,8 @@ function AiModelPublishingPage({ setModal }) {
             <option value="">请选择AI能力</option>
             {capabilities.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} · {AI_CAPABILITY_TYPES[item.type]}
+                {item.name} · {AI_CAPABILITY_TYPES[item.type]} ·{" "}
+                {modelSourceLabel(item.currentPublishedModel)}
               </option>
             ))}
           </select>
@@ -20170,6 +21167,17 @@ function AiModelPublishingPage({ setModal }) {
           </div>
         )}
       </section>
+      {capability && (
+        <>
+          <ExistingModelPanel
+            key={capability.id}
+            capabilityId={capability.id}
+          />
+          <section className="enhancement-card">
+            发布当前候选用于原型演示。历史结果未核实；真实模型接入与独立现场评测完成后，才可进入真实启用流程。
+          </section>
+        </>
+      )}
       {!selectedId ? (
         <section className="panel ai-library-workspace">
           <div className="empty-state ai-library-empty">
@@ -20203,8 +21211,12 @@ function AiModelPublishingPage({ setModal }) {
                     <span>
                       <strong>{currentModel.modelArtifactId}</strong>
                       <small>
-                        来源任务 {currentModel.trainingTaskId} ·{" "}
-                        {currentModel.publishedAt}
+                        来源{" "}
+                        {currentModel.trainingTaskId ||
+                          currentModel.candidateId ||
+                          "历史未记录"}{" "}
+                        · {modelSourceLabel(currentModel)} ·{" "}
+                        {displayBusinessText(currentModel.publishedAt)}
                       </small>
                     </span>
                   </div>
@@ -20242,7 +21254,9 @@ function AiModelPublishingPage({ setModal }) {
                       <strong>{candidate.modelArtifactId}</strong>
                       <small>
                         来源任务 {candidate.id} ·{" "}
-                        {candidate.completedAt || candidate.updatedAt}
+                        {displayBusinessText(
+                          candidate.completedAt || candidate.updatedAt,
+                        )}
                       </small>
                     </span>
                   </div>
@@ -20317,7 +21331,7 @@ function AiModelPublishingPage({ setModal }) {
                   <div className="training-message-list is-blocked">
                     <strong>发布阻止项</strong>
                     {readiness.blockers.map((message) => (
-                      <p key={message}>{message}</p>
+                      <p key={message}>{displayBusinessText(message)}</p>
                     ))}
                   </div>
                 )}
@@ -20357,14 +21371,15 @@ function AiModelPublishingPage({ setModal }) {
               action={<span>{publicationRecords.length} 条</span>}
             />
             <p className="hint">
-              用于技术追溯发布来源、操作人和指标，不提供模型切换或历史回滚。
+              发布与恢复均记录来源；恢复后，相关工位需重新验证，原有会话快照继续保留。
             </p>
+            <ModelRecoveryPanel capabilityId={capability.id} />
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>发布时间</th>
-                    <th>来源训练任务</th>
+                    <th>来源训练 / 适配候选</th>
                     <th>发布人</th>
                     <th>发布类型</th>
                     <th>影响配置</th>
@@ -20374,13 +21389,20 @@ function AiModelPublishingPage({ setModal }) {
                 <tbody>
                   {pagedPublicationRecords.map((record) => (
                     <tr key={record.id}>
-                      <td>{record.publishedAt}</td>
-                      <td>{record.trainingTaskId}</td>
+                      <td>{displayBusinessText(record.publishedAt)}</td>
+                      <td>
+                        {record.trainingTaskId ||
+                          record.candidateId ||
+                          "历史未记录"}
+                        <small>{modelSourceLabel(record)}</small>
+                      </td>
                       <td>{record.publishedBy}</td>
                       <td>
-                        {record.replacedExistingModel
-                          ? "替换当前模型"
-                          : "首次发布"}
+                        {record.publicationType === "restore"
+                          ? "恢复历史模型"
+                          : record.replacedExistingModel
+                            ? "替换当前模型"
+                            : "首次发布"}
                       </td>
                       <td>{record.affectedConfigCount || 0}</td>
                       <td>
@@ -20522,28 +21544,25 @@ function AiEvaluationList() {
   const visible = entries.filter(
     (entry) =>
       (filter === "全部状态" || entry.status.status === filter) &&
-      `${entry.sop.name} ${entry.sop.version}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+      entry.sop.name.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const count = (matcher) => entries.filter(matcher).length;
   return (
     <>
       <PageHeader
         title="AI评价管理"
-        subtitle="以已发布 SOP 为入口，管理数据生产、Dataset、AI Package 和工位现场验证"
+        subtitle="以已发布 SOP 为入口，管理数据生产、数据集、AI能力包和工位现场验证"
       />
       <section className="sop-boundary-note">
         <SafetyCertificateOutlined />
         <div>
           <strong>AI 只适配教师发布的标准，不生成或改写 SOP</strong>
           <p>
-            Camera-only
-            MVP：视频不能可靠判断时保持默认通过，由教师按需抽查和扣分。
+            当前仅使用摄像头视频；无法可靠判断时默认通过，由教师按需抽查和扣分。
           </p>
         </div>
         <Status tone="success">
-          SOP / Mapping / Dataset / AI Package 独立版本
+          当前实训标准 · AI配置、数据及模型独立管理
         </Status>
       </section>
       <div className="metric-grid ai-evaluation-metrics">
@@ -20566,21 +21585,21 @@ function AiEvaluationList() {
           value={count((item) =>
             ["配置中", "部分可用"].includes(item.status.status),
           )}
-          hint="数据、AI Package 或验证未完成"
+          hint="数据、AI能力包或验证未完成"
           icon={<ReloadOutlined />}
           tone="amber"
         />
         <Metric
           label="未配置"
           value={count((item) => item.status.status === "未配置")}
-          hint="尚未形成可用 AI Package"
+          hint="尚未形成可用 AI能力包"
           icon={<DatabaseOutlined />}
           tone="purple"
         />
       </div>
       <section className="panel panel--table">
         <Toolbar
-          placeholder="搜索 SOP 名称或版本"
+          placeholder="搜索实训标准名称"
           filters={["全部状态", "可用", "部分可用", "配置中", "未配置"]}
           value={query}
           filterValue={filter}
@@ -20594,19 +21613,17 @@ function AiEvaluationList() {
         <DataTable
           pagination
           columns={[
-            "SOP",
-            "版本",
-            "Mapping",
+            "实训标准",
+            "评价映射",
             "自动目标",
-            "Dataset",
-            "AI Package",
+            "数据集",
+            "AI能力包",
             "工位验证",
             "AI能力",
             "更新时间",
           ]}
           rows={visible.map((entry) => [
             entry.sop.name,
-            entry.sop.version,
             entry.status.mappingStatus.status,
             `${entry.status.automaticTargetCount} 步`,
             entry.currentDataset
@@ -20619,7 +21636,7 @@ function AiEvaluationList() {
             entry.status.status,
             entry.updatedAt || "—",
           ])}
-          statusColumns={[2, 4, 5, 7]}
+          statusColumns={[1, 3, 4, 6]}
           onView={(_, index) =>
             nav(`/admin/ai-evaluation/${visible[index].sop.id}`)
           }
@@ -20646,7 +21663,7 @@ const ModelValidationFailureForm = forwardRef(
         <textarea
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="例如：Step 04错工具场景召回率不足。"
+          placeholder="例如：步骤04使用错误工具的识别召回率不足。"
         />
       </label>
     );
@@ -20668,7 +21685,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
     return (
       <section className="panel empty-state">
         <ApartmentOutlined />
-        <h2>尚未建立 Evaluation Mapping</h2>
+        <h2>尚未建立评价映射</h2>
         <p>
           先把教师业务标准拆为评价项，再定义机器可确认的事实；这里不能新增或修改扣分值。
         </p>
@@ -20676,7 +21693,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
           type="primary"
           onClick={() => store.createEvaluationMapping(sop.id)}
         >
-          创建 Mapping 草稿
+          创建评价映射草稿
         </Button>
       </section>
     );
@@ -20760,7 +21777,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
     <div className="mapping-workbench">
       <section className="panel mapping-overview-card">
         <PanelTitle
-          title={`${draft.version} · Evaluation Mapping`}
+          title={`${draft.version} · 评价映射`}
           action={
             <div className="inline-actions">
               <Status>{mappingStatus.status}</Status>
@@ -20782,13 +21799,13 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
         <div className="definition-list">
           <span>
             <small>创作来源</small>
-            <strong>{draft.authoredFor.sopVersion}</strong>
+            <strong>{sop.name}</strong>
           </span>
           <span>
             <small>未来兼容复用</small>
             <strong>
               {draft.compatibleSopVersions.length
-                ? `${draft.compatibleSopVersions.length} 个版本`
+                ? `${draft.compatibleSopVersions.length} 条历史记录`
                 : "尚未判定"}
             </strong>
           </span>
@@ -20802,8 +21819,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
           </span>
         </div>
         <p className="hint">
-          创作来源版本用于本批安全绑定；数据结构保留兼容版本引用，后续可由
-          Compatibility Decision 判定复用，不做永久一对一限制。
+          配置依据当前实训标准内容。标准的步骤或评分要求更新后，需要重新核对配置和现场验证；历史记录保留当时快照。
         </p>
       </section>
 
@@ -20811,7 +21827,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
         className={`panel coverage-gate ${coverage.passed ? "coverage-gate--pass" : "coverage-gate--blocked"}`}
       >
         <PanelTitle
-          title="Completion Scoring Coverage"
+          title="完成条件与评分规则覆盖情况"
           action={
             <Status tone={coverage.passed ? "success" : "warning"}>
               {coverage.passed ? "通过" : "阻断提交"}
@@ -20821,7 +21837,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
         <p>
           {coverage.passed
             ? `需要覆盖的 ${coverage.totalCount} 个完成判断项均已明确评分处置。`
-            : "Incomplete Policy 为“按评分规则计算”的步骤，所有完成判断项都必须引用教师评分规则或明确不扣分。AI实施人员不能自行填写扣分值。"}
+            : "未完成处理规则为“按评分规则计算”的步骤，所有完成判断项都必须引用教师评分规则或明确不扣分。AI实施人员不能自行填写扣分值。"}
         </p>
         {!!coverage.issues.length && (
           <div className="ai-gate-reasons">
@@ -20837,7 +21853,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
 
       <section className="panel mapping-editor-section">
         <PanelTitle
-          title="Evaluation Item"
+          title="评价项"
           action={
             editable && (
               <Button
@@ -20851,7 +21867,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
           }
         />
         <p className="hint">
-          评价项承接教师业务标准；Machine Event
+          评价项承接教师业务标准；机器事实
           只能提供事实，不能直接扣分或形成学生结果。
         </p>
         {!!teacherOnlySteps.length && (
@@ -20937,7 +21953,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                   </label>
                 </div>
                 <div className="mapping-role-picker">
-                  <small>roles</small>
+                  <small>评价用途</small>
                   {Object.entries(EVALUATION_ITEM_ROLES).map(
                     ([role, label]) => (
                       <label key={role}>
@@ -20978,7 +21994,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                 )}
                 {item.roles.includes("scoring") && (
                   <div className="mapping-reference-picker">
-                    <small>引用教师 Score Rule</small>
+                    <small>引用教师评分规则</small>
                     {stepScoreRules.map((rule) => (
                       <label key={rule.id}>
                         <input
@@ -21001,7 +22017,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                 )}
                 {item.roles.includes("safety") && (
                   <div className="mapping-reference-picker">
-                    <small>引用教师 Safety Rule</small>
+                    <small>引用教师安全规则</small>
                     {stepSafetyRules.map((rule) => (
                       <label key={rule.id}>
                         <input
@@ -21023,7 +22039,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
                   </div>
                 )}
                 <div className="mapping-reference-picker">
-                  <small>关联 Machine Event</small>
+                  <small>关联机器事实</small>
                   {draft.machineEvents.map((event) => (
                     <label key={event.id}>
                       <input
@@ -21135,7 +22151,7 @@ function AiMappingPanel({ sop, mappingStatus, store }) {
 
       <section className="panel mapping-editor-section">
         <PanelTitle
-          title="Machine Event"
+          title="机器事实"
           action={
             editable && (
               <Button icon={<PlusOutlined />} onClick={addEvent}>
@@ -21288,7 +22304,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
 
   const uploadSourceVideo = () => {
     setModal({
-      title: "上传 Source Video",
+      title: "上传源视频",
       size: "large",
       content: <SourceVideoForm ref={sourceVideoRef} />,
       confirmText: "保存源视频",
@@ -21323,7 +22339,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
   };
   const annotate = (range) => {
     setModal({
-      title: "完成 Annotation",
+      title: "完成标注",
       size: "large",
       content: <AnnotationForm ref={annotationRef} range={range} />,
       confirmText: "提交审核",
@@ -21335,7 +22351,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
   };
   const review = (annotation) => {
     setModal({
-      title: "审核 Annotation",
+      title: "审核标注",
       content: <AnnotationReviewForm ref={reviewRef} annotation={annotation} />,
       confirmText: "提交审核结论",
       onConfirm: () => {
@@ -21345,13 +22361,13 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
           value.decision === "pass",
           value.note,
         );
-        return `Annotation 已${updated.status}`;
+        return `标注已${updated.status}`;
       },
     });
   };
   const includeInDataset = () => {
     const updated = store.addApprovedAnnotationsToDataset(sop.id, dataset.id);
-    return `${approvedPending.length} 条 Annotation 已纳入 ${updated.version}`;
+    return `${approvedPending.length} 条标注已纳入 ${updated.version}`;
   };
 
   return (
@@ -21359,20 +22375,20 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
       <section className="panel">
         <PanelTitle title="数据需求与实现路径" />
         <p className="hint">
-          数据需求来自已确认 Mapping。Existing Capability 与 Configuration Only
-          不启动训练；只有 Training Required 进入数据生产和训练链路。
+          数据需求来自已确认评价映射。复用已有能力与仅需配置
+          不启动训练；只有需要训练进入数据生产和训练链路。
         </p>
         {!mappingConfirmed && (
           <p className="form-error">
-            当前 Mapping
+            当前评价映射
             尚未完成教师确认，数据需求仅供预览，暂不能新增或推进数据版本。
           </p>
         )}
         <div className="ai-requirement-grid">
           {[
-            ["Existing Capability", requirements.existingCapability],
-            ["Configuration Only", requirements.configurationOnly],
-            ["Training Required", requirements.trainingRequired],
+            ["复用已有能力", requirements.existingCapability],
+            ["仅需配置", requirements.configurationOnly],
+            ["需要训练", requirements.trainingRequired],
           ].map(([label, items]) => (
             <article key={label}>
               <small>{label}</small>
@@ -21389,7 +22405,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
 
       <section className="panel panel--table">
         <PanelTitle
-          title="1. Source Video"
+          title="1. 源视频"
           action={
             <Button
               type="primary"
@@ -21402,11 +22418,11 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
           }
         />
         <p className="hint">
-          保存完整源视频及来源信息；时间片段和标注均追溯到 Source Video。
+          保存完整源视频及来源信息；时间片段和标注均追溯到源视频。
         </p>
         <DataTable
           pagination
-          columns={["文件", "时长", "来源", "Mapping", "状态"]}
+          columns={["文件", "时长", "来源", "评价映射", "状态"]}
           rows={sourceVideos.map((video) => [
             video.fileName,
             video.duration,
@@ -21415,7 +22431,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
             video.status,
           ])}
           statusColumns={[4]}
-          emptyText="尚无 Source Video"
+          emptyText="尚无源视频"
         />
         <div className="pipeline-actions-list">
           {sourceVideos.map((video) => (
@@ -21435,18 +22451,18 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
       </section>
 
       <section className="panel panel--table">
-        <PanelTitle title="2. Time Range Annotation 与 Annotation" />
+        <PanelTitle title="2. 时间片段标注与标注" />
         <p className="hint">
-          先定位动作区间，再完成动作或目标框选标注并审核；Machine Event
+          先定位动作区间，再完成动作或目标框选标注并审核；机器事实
           仅描述机器可确认的事实，不直接产生扣分。
         </p>
         <DataTable
           pagination
           columns={[
-            "Source Video",
+            "源视频",
             "时间片段",
-            "Evaluation Item",
-            "Machine Event",
+            "评价项",
+            "机器事实",
             "标注方式",
             "状态",
           ]}
@@ -21493,7 +22509,7 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
 
       <section className="panel">
         <PanelTitle
-          title={`3. Dataset 组装 · ${dataset.version}`}
+          title={`3. 数据集组装 · ${dataset.version}`}
           action={
             <Button
               type="primary"
@@ -21509,14 +22525,13 @@ function AiDataPipeline({ sop, mapping, dataset, store, setModal }) {
           }
         />
         <p className="hint">
-          集合划分以 Source Video
-          为最小单位；同一源视频产生的帧和动作片段不会跨集合。
+          集合划分以源视频 为最小单位；同一源视频产生的帧和动作片段不会跨集合。
         </p>
         <div className="dataset-split-grid">
           {[
-            ["Train", "train"],
-            ["Validation", "validation"],
-            ["Test", "test"],
+            ["训练集", "train"],
+            ["验证集", "validation"],
+            ["测试集", "test"],
           ].map(([label, key]) => (
             <article key={key}>
               <small>{label}</small>
@@ -21563,9 +22578,7 @@ const CompatibilityDecisionForm = forwardRef(function CompatibilityDecisionForm(
   return (
     <div className="form-stack">
       <div className="alert-block">
-        <strong>
-          {assessment.fromVersion} → {assessment.toVersion}
-        </strong>
+        <strong>历史标准内容变更</strong>
         <p>{assessment.summary}</p>
       </div>
       <div className="compatibility-layer-grid">
@@ -21604,7 +22617,7 @@ const CompatibilityDecisionForm = forwardRef(function CompatibilityDecisionForm(
         />
       </label>
       <p className="hint">
-        确认兼容只允许复用被评估为兼容的层；需要更新或重新验证的层仍保持Gate阻断。
+        确认兼容只允许复用被评估为兼容的层；需要更新或重新验证的层仍不能启用自动评价。
       </p>
     </div>
   );
@@ -21672,7 +22685,7 @@ function AiEvaluationDetail({ setModal }) {
   const selectedValidation = validations.find(
     (record) =>
       record.workstationId === selectedWorkstation?.id &&
-      record.sopVersion === sop.version,
+      standardReferenceMatches(record, sop),
   );
   const selectedGate = selectedWorkstation
     ? store.getWorkstationEvaluationGate(selectedWorkstation.id, sop.id)
@@ -21689,14 +22702,13 @@ function AiEvaluationDetail({ setModal }) {
       title: "开始首次 AI 适配",
       content: (
         <p>
-          将为“{sop.name} {sop.version}”创建独立的 Dataset D1。SOP 内容和 Step
-          ID 不会被修改。
+          将为“{sop.name}”创建独立的数据集 D1。标准内容和步骤编号不会被修改。
         </p>
       ),
       confirmText: "创建 D1",
       onConfirm: () => {
         store.startAiAdaptation(sop.id);
-        return "已创建 Dataset D1，可开始上传和审核样本";
+        return "已创建数据集 D1，可开始上传和审核样本";
       },
     });
   };
@@ -21704,7 +22716,7 @@ function AiEvaluationDetail({ setModal }) {
     if (!dataset) return beginAdaptation();
     if (dataset.status === "已锁定") {
       setModal({
-        title: "创建下一版 Dataset",
+        title: "创建下一版数据集",
         content: (
           <p>
             将基于 {dataset.version} 和已复核候选样本创建{" "}
@@ -21719,11 +22731,11 @@ function AiEvaluationDetail({ setModal }) {
       });
       return;
     }
-    const next = dataset.status === "采集中" ? "提交审核" : "锁定 Dataset";
+    const next = dataset.status === "采集中" ? "提交审核" : "锁定数据集";
     setModal({
       title: next,
       content: (
-        <p>{next}后 Dataset 将进入下一生命周期状态，已发布 SOP 不受影响。</p>
+        <p>{next}后数据集将进入下一生命周期状态，已发布 SOP 不受影响。</p>
       ),
       confirmText: next,
       onConfirm: () => {
@@ -21734,15 +22746,14 @@ function AiEvaluationDetail({ setModal }) {
   };
   const createModel = () => {
     setModal({
-      title: "创建 AI Package 候选版本",
+      title: "创建 AI能力包候选版本",
       content: (
         <div className="form-stack">
           <p>
-            AI Package 将绑定 SOP {sop.version} 与 Mapping{" "}
-            {mapping?.version || "—"}
+            AI能力包将绑定当前标准内容与评价映射 {mapping?.version || "—"}
             {dataRequirements.requiresTraining
-              ? `，训练数据来自 ${packageDataset?.version || "待准备 Dataset"}`
-              : "。当前仅复用已有能力与配置，无需新训练 Dataset"}
+              ? `，训练数据来自 ${packageDataset?.version || "待准备数据集"}`
+              : "。当前仅复用已有能力与配置，无需新训练数据集"}
             。
           </p>
           {!!packageReadiness.issues.length && (
@@ -21750,21 +22761,21 @@ function AiEvaluationDetail({ setModal }) {
           )}
         </div>
       ),
-      confirmText: "创建 AI Package",
+      confirmText: "创建 AI能力包",
       onConfirm: () => {
         const created = store.createModelCandidate(sop.id, packageDataset?.id);
-        return `已创建 AI Package ${created.version}`;
+        return `已创建 AI能力包 ${created.version}`;
       },
     });
   };
   const advanceModel = (item) => {
     const nextLabel = MODEL_LIFECYCLE_ACTIONS[item.status];
     setModal({
-      title: nextLabel || "推进 AI Package 生命周期",
+      title: nextLabel || "推进 AI能力包生命周期",
       content: (
         <p>
-          {item.version} 绑定 SOP {item.sopVersion} / Dataset{" "}
-          {item.datasetVersion}。部署时同一 SOP 只保留一个生产 AI Package。
+          {item.version} 绑定已核定标准内容 / 数据集 {item.datasetVersion}
+          。部署时同一 SOP 只保留一个生产 AI能力包。
         </p>
       ),
       confirmText: nextLabel || "确认",
@@ -21776,7 +22787,7 @@ function AiEvaluationDetail({ setModal }) {
   };
   const validateModel = (item, passed) => {
     setModal({
-      title: passed ? "确认 AI Package 验证通过" : "记录 AI Package 验证未通过",
+      title: passed ? "确认 AI能力包验证通过" : "记录 AI能力包验证未通过",
       content: passed ? (
         <p>确认 {item.version} 已完成验证并进入可部署状态。</p>
       ) : (
@@ -21836,7 +22847,7 @@ function AiEvaluationDetail({ setModal }) {
   };
   const confirmCompatibility = (assessment) => {
     setModal({
-      title: "确认 Compatibility Decision",
+      title: "确认兼容性结论",
       size: "large",
       content: (
         <CompatibilityDecisionForm
@@ -21860,7 +22871,7 @@ function AiEvaluationDetail({ setModal }) {
       <PageHeader
         back
         title={`${sop.name} · AI评价适配`}
-        subtitle="管理员维护数据、AI Package 与工位能力；教师发布的 SOP 标准保持冻结"
+        subtitle="管理员维护数据、AI能力包与工位能力；标准修改后需核对适配并重新验证"
         actions={
           <Button
             onClick={() => window.location.reload()}
@@ -21873,10 +22884,9 @@ function AiEvaluationDetail({ setModal }) {
       <section className="sop-boundary-note">
         <LockOutlined />
         <div>
-          <strong>{sop.version} 已发布冻结</strong>
+          <strong>当前实训标准 · {sop.name}</strong>
           <p>
-            AI能力只能引用当前 Step
-            ID；不确定、遮挡或不可视觉判断时，按既定规则默认通过。
+            AI能力只能引用当前步骤编号；不确定、遮挡或不可视觉判断时，按既定规则默认通过。
           </p>
         </div>
         <Status tone={aiStatus.status === "可用" ? "success" : "warning"}>
@@ -21885,25 +22895,25 @@ function AiEvaluationDetail({ setModal }) {
       </section>
       <div className="ai-adaptation-summary">
         <span>
-          <small>SOP 版本</small>
-          <strong>{sop.version}</strong>
+          <small>实训标准</small>
+          <strong>{sop.name}</strong>
         </span>
         <span>
-          <small>Mapping 状态</small>
+          <small>评价映射状态</small>
           <strong>{mappingStatus.status}</strong>
         </span>
         <span>
-          <small>当前生产 Dataset</small>
+          <small>当前生产数据集</small>
           <strong>{productionDataset ? productionDataset.version : "—"}</strong>
         </span>
         <span>
-          <small>当前生产 AI Package</small>
+          <small>当前生产 AI能力包</small>
           <strong>
             {productionModel ? `${productionModel.version} · 已部署` : "—"}
           </strong>
         </span>
         <span>
-          <small>在研 Dataset</small>
+          <small>在研数据集</small>
           <strong>
             {researchDataset
               ? `${researchDataset.version} · ${researchDataset.status}`
@@ -21915,7 +22925,7 @@ function AiEvaluationDetail({ setModal }) {
           <strong>{aiStatus.status}</strong>
         </span>
         <span>
-          <small>当前 Workstation Profile</small>
+          <small>当前工位配置</small>
           <strong>{selectedProfile?.version || "未配置"}</strong>
         </span>
       </div>
@@ -21931,10 +22941,10 @@ function AiEvaluationDetail({ setModal }) {
         aria-label="AI适配详情"
       >
         {[
-          ["mapping", "Evaluation Mapping"],
+          ["mapping", "评价映射"],
           ["overview", "适配概览"],
-          ["dataset", "数据生产与 Dataset"],
-          ["model", "AI Package"],
+          ["dataset", "数据生产与数据集"],
+          ["model", "AI能力包"],
           ["validation", "工位验证"],
           ["compatibility", "影响与兼容性"],
           ["history", "版本与记录"],
@@ -21973,16 +22983,15 @@ function AiEvaluationDetail({ setModal }) {
               }
             />
             <p className="hint">
-              有效运行方式由教师设定、AI
-              Package能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
+              有效运行方式由教师设定、AI能力包能力和工位现场验证共同决定；自动评价门禁不通过时自动降级，不产生自动扣分。
             </p>
             <DataTable
               pagination
               columns={[
-                "Step",
+                "步骤编号",
                 "教师设定",
-                "Dataset",
-                "AI Package",
+                "数据集",
+                "AI能力包",
                 "工位验证",
                 "有效运行方式",
               ]}
@@ -22009,7 +23018,7 @@ function AiEvaluationDetail({ setModal }) {
                     ? `${matrixDataset.version} · ${labelCount} 条 · ${matrixDataset.status}`
                     : "未创建",
                   modelCompatible
-                    ? `${productionModel.version} · ${productionModel.status}${productionModel.sopVersion !== sop.version ? " · 兼容复用" : ""}`
+                    ? `${productionModel.version} · ${productionModel.status}${!standardReferenceMatches(productionModel, sop) ? " · 兼容复用" : ""}`
                     : "未形成生产基线",
                   fieldState,
                   JUDGEMENT_MODES[effectiveMode]?.shortLabel || "教师评价",
@@ -22019,18 +23028,18 @@ function AiEvaluationDetail({ setModal }) {
             />
           </section>
           <section className="panel ai-gate-reasons">
-            <PanelTitle title="Automatic evaluation gate" />
+            <PanelTitle title="自动评价启用检查" />
             {aiStatus.reasons.length ? (
               aiStatus.reasons.slice(0, 8).map((reason) => (
                 <span key={reason}>
                   <AlertOutlined />
-                  <b>{reason}</b>
+                  <b>{displayBusinessText(reason)}</b>
                 </span>
               ))
             ) : (
               <span className="success">
                 <CheckCircleFilled />
-                <b>Dataset、生产模型与全部目标工位验证均满足自动评价门禁</b>
+                <b>数据集、生产模型与全部目标工位验证均满足自动评价门禁</b>
               </span>
             )}
           </section>
@@ -22044,15 +23053,15 @@ function AiEvaluationDetail({ setModal }) {
               <DatabaseOutlined />
               <h2>
                 {dataRequirements.requiresTraining
-                  ? "Training Required，尚未创建 Dataset"
-                  : "当前 Mapping 无需新训练 Dataset"}
+                  ? "需要训练，尚未创建数据集"
+                  : "当前评价映射无需新训练数据集"}
               </h2>
               <p>
                 {!mappingStatus.confirmed
-                  ? "先完成 Evaluation Mapping 并由教师确认业务口径，再进入数据建设。"
+                  ? "先完成评价映射并由教师确认业务口径，再进入数据建设。"
                   : dataRequirements.requiresTraining
-                    ? "首次数据生产从 D1 开始，Source Video 经时间片段标注、Annotation 和审核后才能纳入。"
-                    : "当前全部 Machine Event 均可复用已有能力或通过配置实现，可直接组装 AI Package。"}
+                    ? "首次数据生产从 D1 开始，源视频经时间片段标注、标注和审核后才能纳入。"
+                    : "当前全部机器事实均可复用已有能力或通过配置实现，可直接组装 AI能力包。"}
               </p>
               {dataRequirements.requiresTraining ? (
                 <Button
@@ -22068,7 +23077,7 @@ function AiEvaluationDetail({ setModal }) {
                   disabled={!packageReadiness.passed}
                   onClick={createModel}
                 >
-                  直接创建 AI Package
+                  直接创建 AI能力包
                 </Button>
               )}
             </section>
@@ -22088,7 +23097,7 @@ function AiEvaluationDetail({ setModal }) {
                           ? `创建 ${dataset.nextVersion || "下一版"}`
                           : dataset.status === "采集中"
                             ? "提交审核"
-                            : "锁定 Dataset"}
+                            : "锁定数据集"}
                       </Button>
                     </div>
                   }
@@ -22135,20 +23144,20 @@ function AiEvaluationDetail({ setModal }) {
         <>
           <section className="panel">
             <PanelTitle
-              title="AI Package 生命周期"
+              title="AI能力包生命周期"
               action={
                 <Button
                   type="primary"
                   disabled={!packageReadiness.passed}
                   onClick={createModel}
                 >
-                  创建 AI Package
+                  创建 AI能力包
                 </Button>
               }
             />
             <p className="hint">
-              AI Package 绑定 SOP 与 Mapping；Existing Capability、Configuration
-              Only 直接组装能力，Training Required 才绑定已锁定 Dataset 并训练。
+              AI能力包绑定 SOP
+              与评价映射；复用已有能力、仅需配置直接组装能力，需要训练才绑定已锁定数据集并训练。
             </p>
             {!packageReadiness.passed && (
               <p className="form-error">
@@ -22160,7 +23169,8 @@ function AiEvaluationDetail({ setModal }) {
                 const rollbackTarget = models.find(
                   (candidate) =>
                     candidate.id !== item.id &&
-                    candidate.sopVersion === item.sopVersion &&
+                    candidate.standardDefinitionKey ===
+                      item.standardDefinitionKey &&
                     candidate.status === "已回滚",
                 );
                 const lastFailedValidation = [...(item.validationHistory || [])]
@@ -22174,8 +23184,8 @@ function AiEvaluationDetail({ setModal }) {
                           {item.name} {item.version}
                         </strong>
                         <small>
-                          SOP {item.sopVersion} · Mapping{" "}
-                          {item.mappingVersion || "历史Mapping"} · Dataset{" "}
+                          标准内容已绑定 · 评价映射{" "}
+                          {item.mappingVersion || "历史评价映射"} · 数据集{" "}
                           {item.datasetVersion || "无需训练"}
                         </small>
                       </span>
@@ -22217,7 +23227,7 @@ function AiEvaluationDetail({ setModal }) {
                         <b>{item.sequenceAccuracy}</b>
                       </span>
                       <span>
-                        <small>Other 召回率</small>
+                        <small>其他动作召回率</small>
                         <b>{item.otherRecall}</b>
                       </span>
                       <span>
@@ -22227,12 +23237,15 @@ function AiEvaluationDetail({ setModal }) {
                     </div>
                     <footer>
                       <span>
-                        <small>更新于 {item.updatedAt}</small>
+                        <small>
+                          更新于 {displayBusinessText(item.updatedAt)}
+                        </small>
                         {lastFailedValidation && (
                           <small className="model-validation-record">
-                            最近未通过：{lastFailedValidation.reason} ·{" "}
+                            最近未通过：
+                            {displayBusinessText(lastFailedValidation.reason)} ·{" "}
                             {lastFailedValidation.operator} ·{" "}
-                            {lastFailedValidation.time}
+                            {displayBusinessText(lastFailedValidation.time)}
                           </small>
                         )}
                       </span>
@@ -22242,19 +23255,19 @@ function AiEvaluationDetail({ setModal }) {
                             <Button
                               onClick={() =>
                                 setModal({
-                                  title: "回滚生产 AI Package",
+                                  title: "回滚生产 AI能力包",
                                   content: (
                                     <p>
                                       将停用 {item.version} 并恢复{" "}
                                       {rollbackTarget.version}
-                                      。AI Package
+                                      。AI能力包
                                       版本变化后，既有工位现场验证会失效并需要重新验证。
                                     </p>
                                   ),
                                   confirmText: `恢复 ${rollbackTarget.version}`,
                                   onConfirm: () => {
                                     const result = store.rollbackModel(item.id);
-                                    return `已恢复生产 AI Package ${result.restored.version}`;
+                                    return `已恢复生产 AI能力包 ${result.restored.version}`;
                                   },
                                 })
                               }
@@ -22293,10 +23306,10 @@ function AiEvaluationDetail({ setModal }) {
               {!models.length && (
                 <div className="empty-inline">
                   <ProductOutlined />
-                  <b>暂无 AI Package</b>
+                  <b>暂无 AI能力包</b>
                   <p>
                     {packageReadiness.passed
-                      ? "数据需求已满足，可以创建首个 AI Package。"
+                      ? "数据需求已满足，可以创建首个 AI能力包。"
                       : packageReadiness.issues.join("；")}
                   </p>
                 </div>
@@ -22308,12 +23321,12 @@ function AiEvaluationDetail({ setModal }) {
               <PanelTitle title="步骤与场景验证" />
               <DataTable
                 pagination
-                columns={["对象", "AI Package能力", "现场结果", "说明"]}
+                columns={["对象", "AI能力包能力", "现场结果", "说明"]}
                 rows={[
                   ...sop.steps.map((step) => [
                     `${step.id} · ${step.name}`,
                     step.judgementMode === "default_pass_manual_deduction"
-                      ? "不进入AI Package"
+                      ? "不进入AI能力包"
                       : model.status === "已部署"
                         ? "已具备"
                         : model.status === "可部署"
@@ -22360,8 +23373,7 @@ function AiEvaluationDetail({ setModal }) {
               >
                 {selectableWorkstations.map((workstation) => (
                   <option key={workstation.id} value={workstation.id}>
-                    {workstation.name} · {workstation.code} ·{" "}
-                    {workstation.status}
+                    {workstationOptionLabel(workstation)} · {workstation.status}
                   </option>
                 ))}
               </select>
@@ -22383,7 +23395,7 @@ function AiEvaluationDetail({ setModal }) {
                 />
                 <div className="definition-list ai-implementation-facts">
                   <span>
-                    <small>Workstation Profile</small>
+                    <small>工位配置</small>
                     <strong>{selectedProfile?.version || "未配置"}</strong>
                   </span>
                   <span>
@@ -22421,7 +23433,7 @@ function AiEvaluationDetail({ setModal }) {
                     </strong>
                   </span>
                   <span>
-                    <small>Primary Camera</small>
+                    <small>主摄像头</small>
                     <strong>
                       {selectedProfile?.cameras?.find(
                         (camera) =>
@@ -22430,7 +23442,7 @@ function AiEvaluationDetail({ setModal }) {
                     </strong>
                   </span>
                   <span>
-                    <small>Fallback Camera</small>
+                    <small>备用摄像头</small>
                     <strong>
                       {selectedProfile?.cameras?.find(
                         (camera) =>
@@ -22442,7 +23454,7 @@ function AiEvaluationDetail({ setModal }) {
               </section>
               <section className="panel">
                 <PanelTitle
-                  title="Automatic evaluation gate"
+                  title="自动评价启用检查"
                   action={
                     <Status
                       tone={selectedGate?.enabled ? "success" : "warning"}
@@ -22456,7 +23468,7 @@ function AiEvaluationDetail({ setModal }) {
                     selectedGate.reasons.map((reason) => (
                       <span key={reason}>
                         <AlertOutlined />
-                        <b>{reason}</b>
+                        <b>{displayBusinessText(reason)}</b>
                       </span>
                     ))
                   ) : (
@@ -22469,14 +23481,14 @@ function AiEvaluationDetail({ setModal }) {
                 <div className="version-binding">
                   <span>
                     <small>SOP</small>
-                    <b>{sop.version}</b>
+                    <b>{sop.name}</b>
                   </span>
                   <span>
-                    <small>AI Package</small>
+                    <small>AI能力包</small>
                     <b>{model?.version || "未部署"}</b>
                   </span>
                   <span>
-                    <small>Workstation Profile</small>
+                    <small>工位配置</small>
                     <b>{selectedProfile?.version || "未配置"}</b>
                   </span>
                   <span>
@@ -22501,8 +23513,8 @@ function AiEvaluationDetail({ setModal }) {
                 "工位",
                 "结果",
                 "SOP",
-                "AI Package",
-                "Workstation Profile",
+                "AI能力包",
+                "工位配置",
                 "Coverage",
                 "验证人",
                 "时间",
@@ -22514,7 +23526,8 @@ function AiEvaluationDetail({ setModal }) {
                 return [
                   workstation?.name || record.workstationId,
                   record.status,
-                  record.sopVersion,
+                  store.data.sops.find((s) => s.id === record.sopId)?.name ||
+                    "历史实训标准",
                   record.modelVersion,
                   record.workstationProfileVersion || "未记录",
                   record.coverage?.passed
@@ -22535,13 +23548,13 @@ function AiEvaluationDetail({ setModal }) {
         <div className="compatibility-page-grid">
           <section className="panel">
             <PanelTitle
-              title="AI Impact Assessment"
-              action={<span>{impactAssessments.length} 条版本影响评估</span>}
+              title="AI适配影响评估"
+              action={
+                <span>{impactAssessments.length} 条历史内容变更记录</span>
+              }
             />
             <p className="hint">
-              新 SOP Version 发布后先判断哪些 AI
-              层可以复用。兼容结论只放行明确兼容的层，不会把 Mapping
-              已确认误当成 AI 能力可用。
+              此处保留历史标准内容变更的兼容核对记录。当前标准更新后需重新核对AI配置和现场验证，旧记录不会自动放行当前配置。
             </p>
             <div className="compatibility-assessment-list">
               {impactAssessments.map((assessment) => {
@@ -22552,9 +23565,7 @@ function AiEvaluationDetail({ setModal }) {
                   <article key={assessment.id}>
                     <header>
                       <span>
-                        <small>
-                          {assessment.fromVersion} → {assessment.toVersion}
-                        </small>
+                        <small>历史标准内容变更</small>
                         <strong>{assessment.summary}</strong>
                       </span>
                       <Status tone={decision ? "success" : "warning"}>
@@ -22581,11 +23592,7 @@ function AiEvaluationDetail({ setModal }) {
                         {assessment.dataRequirement || "保持现有数据基线"}
                       </small>
                       {!decision && (
-                        <Button
-                          onClick={() => confirmCompatibility(assessment)}
-                        >
-                          确认兼容结论
-                        </Button>
+                        <span>历史记录待核对；当前配置请重新适配验证</span>
                       )}
                     </footer>
                   </article>
@@ -22594,29 +23601,28 @@ function AiEvaluationDetail({ setModal }) {
               {!impactAssessments.length && (
                 <div className="empty-inline">
                   <HistoryOutlined />
-                  <b>暂无版本影响评估</b>
+                  <b>暂无历史内容变更记录</b>
                   <p>
-                    创建并发布新的 SOP Version 后，系统会在此生成 AI Impact
-                    Assessment。
+                    当前标准直接覆盖更新；相关AI配置会转入待核对状态，并要求重新现场验证。
                   </p>
                 </div>
               )}
             </div>
           </section>
           <section className="panel panel--table">
-            <PanelTitle title="Compatibility Decision 记录" />
+            <PanelTitle title="兼容性结论记录" />
             <DataTable
               pagination
-              columns={["版本", "结论", "判断依据", "确认人", "时间"]}
+              columns={["依据", "结论", "判断依据", "确认人", "时间"]}
               rows={compatibilityDecisions.map((decision) => [
-                `${decision.fromVersion} → ${decision.toVersion}`,
+                "历史标准内容变更",
                 COMPATIBILITY_DECISIONS[decision.decision] || decision.decision,
                 decision.reason,
                 decision.operator,
                 decision.createdAt,
               ])}
               statusColumns={[1]}
-              emptyText="尚无 Compatibility Decision"
+              emptyText="尚无兼容性结论"
             />
           </section>
         </div>
@@ -22625,7 +23631,7 @@ function AiEvaluationDetail({ setModal }) {
       {tab === "history" && (
         <div className="ai-history-grid">
           <section className="panel panel--table">
-            <PanelTitle title="Dataset 版本" />
+            <PanelTitle title="数据集版本" />
             <DataTable
               pagination
               columns={["版本", "状态", "样本", "基于", "更新时间"]}
@@ -22640,14 +23646,15 @@ function AiEvaluationDetail({ setModal }) {
             />
           </section>
           <section className="panel panel--table">
-            <PanelTitle title="AI Package 版本" />
+            <PanelTitle title="AI能力包版本" />
             <DataTable
               pagination
-              columns={["版本", "状态", "SOP", "Dataset", "更新时间"]}
+              columns={["版本", "状态", "SOP", "数据集", "更新时间"]}
               rows={models.map((item) => [
                 item.version,
                 item.status,
-                item.sopVersion,
+                store.data.sops.find((s) => s.id === item.sopId)?.name ||
+                  "历史实训标准",
                 item.datasetVersion,
                 item.updatedAt,
               ])}
@@ -22695,44 +23702,7 @@ function AdminOverview() {
     (item) =>
       !item.archivedRecord && ["进行中", "已暂停"].includes(item.status),
   );
-  const currentArrangements = (data.arrangements || [])
-    .filter(
-      (item) =>
-        !item.archivedRecord &&
-        (["进行中", "已暂停", "可入场"].includes(item.status) ||
-          (item.sessions || []).some((session) => session.status === "可入场")),
-    )
-    .sort((left, right) =>
-      String(left.scheduleStart || "").localeCompare(
-        String(right.scheduleStart || ""),
-      ),
-    );
-  const demoCurrentArrangements = [
-    {
-      id: "admin-overview-demo-practice",
-      type: "practice",
-      name: "高压电池包断电强化练习",
-      status: "可入场",
-      teacherName: "王伟",
-      workstationCount: 3,
-      demoOnly: true,
-    },
-    {
-      id: "admin-overview-demo-exam",
-      type: "exam",
-      name: "高压作业安全规范阶段考试",
-      status: "已暂停",
-      teacherName: "王伟",
-      workstationCount: 2,
-      demoOnly: true,
-    },
-  ];
-  const displayedCurrentArrangements = [...currentArrangements];
-  demoCurrentArrangements.forEach((item) => {
-    if (displayedCurrentArrangements.length < 4) {
-      displayedCurrentArrangements.push(item);
-    }
-  });
+  const displayedCurrentArrangements = adminCurrentArrangements(data);
   const arrangementPageSize = 3;
   const arrangementPageCount = Math.max(
     1,
@@ -23042,7 +24012,7 @@ function AdminOverview() {
               </span>
             </article>
             <article>
-              <strong>SOP AI能力配置</strong>
+              <strong>实训标准 AI能力配置</strong>
               <span>
                 已启用 <b>{sopStatusCounts.enabled}</b>
               </span>
@@ -23096,7 +24066,8 @@ function AdminOverview() {
                     {item.type === "exam" ? "考试" : "练习"}
                     {item.teacherName || teacher
                       ? ` · ${item.teacherName || teacher?.name}`
-                      : ""} ·{" "}
+                      : ""}{" "}
+                    ·{" "}
                     {item.workstationCount ??
                       (item.workstationIds || []).length}
                     个工位
@@ -23104,14 +24075,6 @@ function AdminOverview() {
                   <Status>{item.status}</Status>
                 </>
               );
-
-              if (item.demoOnly) {
-                return (
-                  <article key={item.id} className="current-sessions__demo">
-                    {content}
-                  </article>
-                );
-              }
 
               return (
                 <button
@@ -23139,8 +24102,8 @@ function AdminOverview() {
             <button key={item.id} onClick={item.onClick}>
               {item.icon}
               <span>
-                <strong>{item.title}</strong>
-                <small>{item.detail}</small>
+                <strong>{displayBusinessText(item.title)}</strong>
+                <small>{displayBusinessText(item.detail)}</small>
               </span>
               <b>{item.action}</b>
             </button>
@@ -23175,10 +24138,7 @@ function AdminOverview() {
         <PanelTitle title="系统服务" />
         <div className="service-list">
           {pagedSystemServices.map((service) => (
-            <span
-              className={service.warning ? "warning" : ""}
-              key={service.id}
-            >
+            <span className={service.warning ? "warning" : ""} key={service.id}>
               {service.icon}
               <div>
                 <b>{service.name}</b>
@@ -23527,7 +24487,7 @@ function ClassDetail({ setModal }) {
         {details.map(([label, value]) => (
           <section className="panel" key={label}>
             <small>{label}</small>
-            <h2>{value}</h2>
+            <h2>{displayBusinessText(value)}</h2>
           </section>
         ))}
       </div>
@@ -23628,7 +24588,7 @@ function FacePhotoPicker({
         )}
         {error && (
           <small className="field-error" role="alert">
-            {error}
+            {displayBusinessText(error)}
           </small>
         )}
       </div>
@@ -23785,7 +24745,8 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         if (!/^[A-Za-z0-9-]{3,50}$/.test(form.serial?.trim()))
           next.serial = "请输入有效设备序列号";
         if (!form.address?.trim()) next.address = "请输入连接地址或接入方式";
-        if (!form.version?.trim()) next.version = "请输入固件或Agent版本";
+        if (!form.version?.trim())
+          next.version = "请输入固件或设备代理程序版本";
       }
       setErrors(next);
       if (Object.keys(next).length)
@@ -24105,7 +25066,7 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             <option value="">未绑定</option>
             {data.workstations.map((item) => (
               <option value={item.id} key={item.id}>
-                {item.name} · {item.code}
+                {workstationOptionLabel(item)}
               </option>
             ))}
           </select>
@@ -24340,7 +25301,7 @@ function AdminList({ type, setModal }) {
         });
         return [
           item.name,
-          `${item.code} · ${item.location}`,
+          workstationCaption(item),
           item.status,
           camera?.name || "未配置",
           camera
@@ -24363,8 +25324,8 @@ function AdminList({ type, setModal }) {
       collection: "devices",
       columns: ["设备", "序列号", "类型", "状态", "所属工位", "版本"],
       row: (item) => [
-        item.name,
-        item.serial,
+        deviceDisplayName(item),
+        deviceSerialLabel(item),
         item.type,
         item.status,
         data.workstations.find((w) => w.id === item.workstationId)?.name ||
@@ -24467,14 +25428,9 @@ function AdminList({ type, setModal }) {
           pagination
           columns={config.columns}
           rows={filtered.map(config.row)}
-          rowKey={(row) => row[1]}
-          onView={(row) => {
-            const target = items.find((item) =>
-              type === "workstations"
-                ? String(row[1]).startsWith(`${item.code} ·`)
-                : String(item[config.key]) ===
-                  String(row[type === "devices" ? 0 : 1]),
-            );
+          rowKey={(_, index) => filtered[index].id}
+          onView={(_, index) => {
+            const target = filtered[index];
             if (target) nav(`/admin/${type}/${target.id}`);
           }}
         />
@@ -24566,7 +25522,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
         </label>
       </div>
       <section className="profile-camera-section">
-        <h3>Camera配置与证据源</h3>
+        <h3>摄像头配置与证据来源</h3>
         <div className="form-row">
           {(form.cameras || []).map((camera) => (
             <label className="field" key={camera.id}>
@@ -24592,7 +25548,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
         </div>
         <div className="form-row">
           <label className="field">
-            默认 Primary Camera
+            默认主摄像头
             <select
               value={form.primaryCameraId || ""}
               onChange={(event) =>
@@ -24607,7 +25563,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
             </select>
           </label>
           <label className="field">
-            默认 Fallback Camera
+            默认备用摄像头
             <select
               value={form.fallbackCameraId || ""}
               onChange={(event) =>
@@ -24642,7 +25598,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
                     {item.id} · {item.name}
                   </strong>
                   <label>
-                    Primary
+                    主摄像头
                     <select
                       value={primary}
                       onChange={(event) =>
@@ -24661,7 +25617,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
                     </select>
                   </label>
                   <label>
-                    Fallback
+                    备用摄像头
                     <select
                       value={fallback}
                       onChange={(event) =>
@@ -24688,7 +25644,7 @@ const ImplementationCheckForm = forwardRef(function ImplementationCheckForm(
           </div>
         )}
         <p className="hint">
-          仅当Primary不可用时才尝试Fallback；一期不做跨摄像头事件融合，避免同一动作重复计数。
+          主摄像头不可用时才尝试备用摄像头；当前不合并多路摄像头的识别结果，避免同一动作重复计数。
         </p>
       </section>
       <div className="form-row implementation-confirm-grid">
@@ -24771,14 +25727,14 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
     <div className="field-validation-form">
       <div className="form-row">
         <label className="field">
-          待验证 SOP 版本
+          待验证实训标准
           <select
             value={sopId}
             onChange={(event) => setSopId(event.target.value)}
           >
             {sops.map((sop) => (
               <option key={sop.id} value={sop.id}>
-                {sop.name} · {sop.version}
+                {sop.name}
               </option>
             ))}
           </select>
@@ -24842,7 +25798,7 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
                 </label>
               ))}
               {!evaluationItems.length && (
-                <span className="hint">当前Mapping无AI Evaluation Item</span>
+                <span className="hint">当前评价映射无AI 评价项</span>
               )}
             </div>
           </article>
@@ -24856,8 +25812,7 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
         />
       </label>
       <p className="hint">
-        一个 Validation Test Case 可以覆盖多个 Evaluation
-        Item，不建立机械笛卡尔积。只有通过Case覆盖全部评价项后，当前工位才允许自动评价。
+        一个现场验证用例可以覆盖多个评价项，无需为每种组合单独建用例。全部评价项均有验证通过的用例覆盖后，当前工位才允许自动评价。
       </p>
     </div>
   );
@@ -24904,20 +25859,38 @@ const WorkstationAiBaseConfigForm = forwardRef(
           form.primaryCameraId === form.fallbackCameraId
         )
           throw new Error("主摄像头和备用摄像头不能选择同一台设备。");
-        return form;
+        return withCameraAliases(form);
       },
     }));
 
     return (
       <div className="workstation-ai-form">
+        <CameraCollectionEditor
+          value={form}
+          onChange={(next) => setForm(withCameraAliases(next))}
+          devices={data.devices}
+          workstation={workstation}
+        />
         <div className="form-row">
           <label className="field">
-            <FieldLabel required>主摄像头</FieldLabel>
+            <FieldLabel required>默认主视角（兼容入口）</FieldLabel>
             <select
               value={form.primaryCameraId}
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
+                  cameras: cameraViews(current).some(
+                    (c) => c.deviceId === event.target.value,
+                  )
+                    ? cameraViews(current).map((c) => ({
+                        ...c,
+                        defaultPreview: c.deviceId === event.target.value,
+                        role:
+                          c.deviceId === event.target.value
+                            ? "primary"
+                            : c.role,
+                      }))
+                    : undefined,
                   primaryCameraId: event.target.value,
                   fallbackCameraId:
                     current.fallbackCameraId === event.target.value
@@ -24935,12 +25908,14 @@ const WorkstationAiBaseConfigForm = forwardRef(
             </select>
           </label>
           <label className="field">
-            <FieldLabel>备用摄像头</FieldLabel>
+            <FieldLabel>第二视角（兼容入口）</FieldLabel>
             <select
+              disabled={cameraViews(form).length > 2}
               value={form.fallbackCameraId}
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
+                  cameras: undefined,
                   fallbackCameraId: event.target.value,
                 }))
               }
@@ -24970,7 +25945,7 @@ const WorkstationAiBaseConfigForm = forwardRef(
             <option value="">请选择已绑定边缘设备</option>
             {edgeDevices.map((device) => (
               <option value={device.id} key={device.id}>
-                {device.name} · {device.status}
+                {deviceDisplayName(device)} · {device.status}
               </option>
             ))}
           </select>
@@ -24988,9 +25963,9 @@ const WorkstationAiBaseConfigForm = forwardRef(
                 </span>
                 <div>
                   <small>{label}</small>
-                  <strong>{device.name}</strong>
+                  <strong>{deviceDisplayName(device)}</strong>
                   <p>
-                    {device.serial} · {device.status}
+                    {deviceSerialLabel(device)} · {device.status}
                     {isCameraDevice(device)
                       ? ` · ${device.streamStatus || "流状态未知"}`
                       : ""}
@@ -25006,7 +25981,7 @@ const WorkstationAiBaseConfigForm = forwardRef(
             <div>
               <strong>本次保存包含关键基础配置变更</strong>
               <p>
-                保存后，相关的已验证或已启用 SOP AI
+                保存后，相关的已验证或已启用实训标准 AI
                 配置将转为待重新验证，现有配置和关联关系继续保留。
               </p>
               <small>预计影响 {affectedCount} 条已有工位验证状态。</small>
@@ -25027,6 +26002,7 @@ function AdminDetail({ type, setModal }) {
   const { id } = useParams();
   const nav = useNavigate();
   const formRef = useRef(null);
+  const workstationRecoveryRef = useRef(null);
   const faceUploadRef = useRef(null);
   const workstationAiRef = useRef(null);
   const store = usePrototypeData();
@@ -25070,7 +26046,7 @@ function AdminDetail({ type, setModal }) {
         ["联系电话", item.phone || "未填写"],
         ["所属院系", item.department],
         ["所属专业", item.major],
-        ["负责SOP", `${item.sopCount} 个`],
+        ["负责标准", `${item.sopCount} 个`],
         ["历史安排", `${item.arrangementCount} 次`],
         ["最近账号重置", item.accountResetAt],
         ["更新时间", item.updatedAt],
@@ -25098,12 +26074,13 @@ function AdminDetail({ type, setModal }) {
       singular: "工位",
       formType: "workstation",
       icon: <DesktopOutlined />,
-      subtitle: `${item.code} · ${item.location}`,
+      subtitle: workstationCaption(item),
       identity: item.supportedProject,
       details: [
-        ["工位标识", item.code],
+        ["工位标识", workstationBusinessCode(item) || "演示工位"],
         ["实训室位置", item.location],
         ["管理状态", item.status],
+        ["使用限制", item.releaseHold?.reasons.join("；") || "无"],
         ["支持项目", item.supportedProject],
         [
           "绑定设备",
@@ -25119,9 +26096,14 @@ function AdminDetail({ type, setModal }) {
       formType: "device",
       icon: <HddOutlined />,
       subtitle: `${item.type} · ${workstation?.name || "未绑定工位"}`,
-      identity: `${item.serial} · ${item.version}`,
+      identity: [
+        hiddenDeviceSerial(item) ? "演示设备" : item.serial,
+        item.version,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       details: [
-        ["设备序列号", item.serial],
+        ["设备序列号", deviceSerialLabel(item)],
         ["设备类型", item.type],
         ["在线状态", item.status],
         ["所属工位", workstation?.name || "未绑定"],
@@ -25226,13 +26208,16 @@ function AdminDetail({ type, setModal }) {
       },
     },
     workstation: {
-      label: "确认复位",
-      title: "确认工位复位",
-      text: "确认现场已清理、上一位学生已离场且设备恢复待命；当前安排占用将被释放。",
-      confirm: "确认复位",
+      label: "处理使用限制",
+      title: "处理异常并解除工位使用限制",
+      text: "请先排除故障或安全隐患，确认现场具备使用条件，并填写处理结果。下次使用仍需完成开放检查。",
+      confirm: "确认处理并解除限制",
       run: () => {
-        store.resetWorkstation(item.id);
-        return "工位已复位并恢复可入场";
+        store.resolveWorkstationRestriction(item.id, {
+          expectedHoldId: item.releaseHold?.id || "",
+          note: workstationRecoveryRef.current?.value || "",
+        });
+        return "工位使用限制已解除，下次使用前请检查并开放";
       },
     },
     device: {
@@ -25351,7 +26336,7 @@ function AdminDetail({ type, setModal }) {
     <>
       <PageHeader
         back
-        title={`${config.singular}详情 · ${item.name}`}
+        title={`${config.singular}详情 · ${type === "device" ? deviceDisplayName(item) : item.name}`}
         subtitle={config.subtitle}
         actions={
           <>
@@ -25363,26 +26348,49 @@ function AdminDetail({ type, setModal }) {
                 配置AI基础设备
               </Button>
             )}
-            {type !== "student" && (
-              <Button
-                onClick={() =>
-                  setModal({
-                    title: secondary.title,
-                    className:
-                      type === "teacher"
-                        ? "teacher-account-reset-modal"
-                        : type === "workstation"
-                          ? "workstation-reset-modal"
-                          : "device-connection-test-modal",
-                    content: <p>{secondary.text}</p>,
-                    confirmText: secondary.confirm,
-                    onConfirm: secondary.run,
-                  })
-                }
-              >
-                {secondary.label}
-              </Button>
-            )}
+            {type !== "student" &&
+              (type !== "workstation" ||
+                item.releaseHold ||
+                item.status === "故障") && (
+                <Button
+                  onClick={() =>
+                    setModal({
+                      title: secondary.title,
+                      className:
+                        type === "teacher"
+                          ? "teacher-account-reset-modal"
+                          : type === "workstation"
+                            ? "workstation-reset-modal"
+                            : "device-connection-test-modal",
+                      content:
+                        type === "workstation" ? (
+                          <div className="form-stack">
+                            <p>{secondary.text}</p>
+                            {item.releaseHold && (
+                              <p className="hint">
+                                {item.releaseHold.reasons.join("；")}
+                              </p>
+                            )}
+                            <label className="field">
+                              异常处理及现场检查结果
+                              <textarea
+                                ref={workstationRecoveryRef}
+                                rows={3}
+                                placeholder="填写故障或安全隐患的处理情况及检查结果"
+                              />
+                            </label>
+                          </div>
+                        ) : (
+                          <p>{secondary.text}</p>
+                        ),
+                      confirmText: secondary.confirm,
+                      onConfirm: secondary.run,
+                    })
+                  }
+                >
+                  {secondary.label}
+                </Button>
+              )}
             <Button onClick={toggleStatus}>{statusConfig.actionLabel}</Button>
             <Button type="primary" onClick={openEdit}>
               编辑资料
@@ -25393,7 +26401,7 @@ function AdminDetail({ type, setModal }) {
       <div className="identity-card">
         <span>{config.icon}</span>
         <div>
-          <h2>{item.name}</h2>
+          <h2>{type === "device" ? deviceDisplayName(item) : item.name}</h2>
           <p>{config.identity}</p>
         </div>
         <Status>{item.status}</Status>
@@ -25402,7 +26410,7 @@ function AdminDetail({ type, setModal }) {
         {config.details.map(([label, value]) => (
           <section className="panel" key={label}>
             <small>{label}</small>
-            <h2>{value}</h2>
+            <h2>{displayBusinessText(value)}</h2>
           </section>
         ))}
         {type === "teacher" && item.notes && (
@@ -25412,6 +26420,7 @@ function AdminDetail({ type, setModal }) {
           </section>
         )}
       </div>
+      <PrototypeResourceIdentifiers item={item} type={type} />
       {type === "student" && (
         <section className="panel student-face-card">
           <PanelTitle
@@ -25447,7 +26456,9 @@ function AdminDetail({ type, setModal }) {
                 </div>
                 <div>
                   <dt>最近采集时间</dt>
-                  <dd>{item.faceUpdatedAt || "尚未采集"}</dd>
+                  <dd>
+                    {displayBusinessText(item.faceUpdatedAt || "尚未采集")}
+                  </dd>
                 </div>
                 <div>
                   <dt>资料用途</dt>
@@ -25480,7 +26491,7 @@ function AdminDetail({ type, setModal }) {
             </div>
           </div>
           <div className="student-face-card__privacy">
-            原型照片仅保存在当前浏览器 LocalStorage
+            原型照片仅保存在当前浏览器本地存储
             中；正式系统需改用受控对象存储与访问审计。
           </div>
         </section>
@@ -25521,22 +26532,49 @@ function AdminDetail({ type, setModal }) {
             <div className="workstation-ai-timestamps">
               <span>
                 <small>最近检查</small>
-                <strong>{workstationAiConfig.lastCheckedAt}</strong>
+                <strong>
+                  {displayBusinessText(workstationAiConfig.lastCheckedAt)}
+                </strong>
               </span>
               <span>
                 <small>配置更新</small>
-                <strong>{workstationAiConfig.updatedAt || "未更新"}</strong>
+                <strong>
+                  {displayBusinessText(
+                    workstationAiConfig.updatedAt || "未更新",
+                  )}
+                </strong>
               </span>
               <span>
                 <small>最近关键变更</small>
-                <strong>{workstationAiConfig.lastAiCriticalChangeAt}</strong>
+                <strong>
+                  {displayBusinessText(
+                    workstationAiConfig.lastAiCriticalChangeAt,
+                  )}
+                </strong>
               </span>
             </div>
           </div>
+          <section className="enhancement-card">
+            <strong>当前视角集合</strong>
+            {workstationCameras(item, data.devices).map((c) => (
+              <p key={c.id}>
+                {c.label} ·{" "}
+                {c.role === "legacy_secondary"
+                  ? "历史第二视角，角色待确认"
+                  : c.role === "primary"
+                    ? "主采集"
+                    : c.role === "backup"
+                      ? "备用"
+                      : "辅助采集"}{" "}
+                · {c.status || "未连接"} ·{" "}
+                {(c.areaIds || []).join("、") || "区域未记录"}
+              </p>
+            ))}
+          </section>
           <div className="workstation-ai-assets">
             {[
               ["主摄像头", primaryCamera, true],
-              ["备用摄像头", fallbackCamera, false],
+              ["第二视角", fallbackCamera, false],
               ["边缘设备", edgeDevice, true],
             ].map(([label, device, required]) => (
               <article key={label} className={!device ? "is-empty" : ""}>
@@ -25550,14 +26588,18 @@ function AdminDetail({ type, setModal }) {
                 <div className="workstation-ai-assets__heading">
                   <small>{label}</small>
                   <strong>
-                    {device?.name || (required ? "未配置" : "未配置（可选）")}
+                    {device
+                      ? deviceDisplayName(device)
+                      : required
+                        ? "未配置"
+                        : "未配置（可选）"}
                   </strong>
                 </div>
                 {device ? (
                   <dl>
                     <div>
                       <dt>序列号</dt>
-                      <dd>{device.serial}</dd>
+                      <dd>{deviceSerialLabel(device)}</dd>
                     </div>
                     <div>
                       <dt>在线状态</dt>
@@ -25583,7 +26625,9 @@ function AdminDetail({ type, setModal }) {
                     )}
                     <div>
                       <dt>最后在线</dt>
-                      <dd>{device.lastHeartbeat || "未记录"}</dd>
+                      <dd>
+                        {displayBusinessText(device.lastHeartbeat || "未记录")}
+                      </dd>
                     </div>
                   </dl>
                 ) : (
@@ -25595,9 +26639,9 @@ function AdminDetail({ type, setModal }) {
           <div className="workstation-ai-boundary-note">
             <CheckCircleOutlined />
             <div>
-              <strong>基础条件与SOP现场验证分开管理</strong>
+              <strong>基础条件与标准现场验证分开管理</strong>
               <p>
-                “可用”仅表示主摄像头、视频流和边缘设备满足基础运行条件；具体SOP能否启用AI判断，仍需在对应AI能力配置中完成工位现场验证。
+                “可用”仅表示主摄像头、视频流和边缘设备满足基础运行条件；具体实训标准能否启用AI判断，仍需在对应AI能力配置中完成工位现场验证。
               </p>
             </div>
           </div>
@@ -25658,8 +26702,8 @@ function AdminDetail({ type, setModal }) {
               "最后在线",
             ]}
             rows={linkedDevices.map((device) => [
-              device.name,
-              device.serial,
+              deviceDisplayName(device),
+              deviceSerialLabel(device),
               device.type,
               device.status,
               isCameraDevice(device)
@@ -25667,10 +26711,9 @@ function AdminDetail({ type, setModal }) {
                 : "--",
               device.lastHeartbeat || "未记录",
             ])}
-            onView={(row) => {
-              const device = linkedDevices.find(
-                (candidate) => candidate.name === row[0],
-              );
+            rowKey={(_, index) => linkedDevices[index].id}
+            onView={(_, index) => {
+              const device = linkedDevices[index];
               if (device) nav(`/admin/devices/${device.id}`);
             }}
             emptyText="当前工位尚未绑定设备，可在设备管理中选择该工位。"
@@ -25682,7 +26725,7 @@ function AdminDetail({ type, setModal }) {
           <PanelTitle title="绑定与健康说明" />
           <p>
             {workstation
-              ? `当前绑定 ${workstation.name}（${workstation.code}），支持项目：${workstation.supportedProject}。`
+              ? `当前绑定 ${workstationOptionLabel(workstation)}，支持项目：${workstation.supportedProject}。`
               : "当前未绑定工位，不会参与任何实训会话。"}
           </p>
           <p className="form-hint">
@@ -25729,7 +26772,7 @@ function AdminRecords({ exam = false, setModal }) {
       `${item.studentIds.length}人`,
       item.status,
       item.scheduleStart
-        ? ensureDateTimeSeconds(item.scheduleStart).replace("T", " ")
+        ? displayBusinessText(item.scheduleStart).replace("T", " ")
         : "待定",
       item.id,
     ];
@@ -25757,7 +26800,7 @@ function AdminRecords({ exam = false, setModal }) {
       onConfirm: () => {
         const fileName = `全校${exam ? "考试" : "练习"}记录-${timestampForFile()}.csv`;
         const content = [
-          ["安排名称", "负责教师", "SOP", "人数", "状态", "日期"],
+          ["安排名称", "负责教师", "实训标准", "人数", "状态", "日期"],
           ...filteredRecords.map((row) => row.slice(0, 6)),
         ]
           .map((row) => row.map(csvCell).join(","))
@@ -25767,7 +26810,7 @@ function AdminRecords({ exam = false, setModal }) {
           targetId: `admin-${exam ? "exams" : "practices"}`,
           fileName,
           format: "CSV",
-          scoreVersion: "只读记录当前状态",
+          dataScope: "导出时当前记录",
         });
         downloadTextFile(
           fileName,
@@ -25802,7 +26845,7 @@ function AdminRecords({ exam = false, setModal }) {
         />
         <DataTable
           pagination
-          columns={["安排名称", "负责教师", "SOP", "人数", "状态", "日期"]}
+          columns={["安排名称", "负责教师", "实训标准", "人数", "状态", "日期"]}
           rows={filteredRecords.map((row) => row.slice(0, 6))}
           onView={(row) => {
             const record = records.find((candidate) => candidate[0] === row[0]);
@@ -25860,7 +26903,7 @@ function SessionDiagnosticPanel({ record, store }) {
     return (
       <section className="panel diagnostic-panel">
         <PanelTitle title="实施诊断" />
-        <p className="hint">当前安排尚未产生可诊断的 Session。</p>
+        <p className="hint">当前安排尚未产生可诊断的实训记录。</p>
       </section>
     );
   const hasFallbackCamera = Boolean(
@@ -25899,7 +26942,7 @@ function SessionDiagnosticPanel({ record, store }) {
       </p>
       <div className="diagnostic-selectors">
         <label className="field">
-          Session / 学生 / 工位
+          实训记录 / 学生 / 工位
           <select
             value={selectedSession.id}
             onChange={(event) => setSessionId(event.target.value)}
@@ -25929,6 +26972,7 @@ function SessionDiagnosticPanel({ record, store }) {
             {selectedSession.steps.map((step) => (
               <option key={step.id} value={step.id}>
                 {step.id} · {step.name} · {step.result}
+                <EvaluationBadge step={step} />
               </option>
             ))}
           </select>
@@ -25936,7 +26980,7 @@ function SessionDiagnosticPanel({ record, store }) {
       </div>
       <div className="recording-health-grid">
         <span>
-          <small>Session录像</small>
+          <small>实训记录录像</small>
           <Status>{selectedSession.recording?.status || "不可用"}</Status>
         </span>
         <span>
@@ -25954,7 +26998,9 @@ function SessionDiagnosticPanel({ record, store }) {
         <span>
           <small>保留策略</small>
           <strong>
-            {selectedSession.recording?.retentionLabel || "未配置"}
+            {displayBusinessText(
+              selectedSession.recording?.retentionLabel || "未配置",
+            )}
           </strong>
         </span>
       </div>
@@ -25978,20 +27024,23 @@ function SessionDiagnosticPanel({ record, store }) {
         <div className="diagnostic-facts">
           <h3>最近观察事实与时间线</h3>
           {(selectedStep.diagnostic?.recentFacts || []).map((fact, index) => (
-            <article key={`${fact}-${index}`}>
+            <article key={`${displayBusinessText(fact)}-${index}`}>
               <time>
-                {index
-                  ? selectedSession.recording?.lastSegmentAt
-                  : selectedStep.timeRange}
+                {displayBusinessText(
+                  index
+                    ? selectedSession.recording?.lastSegmentAt
+                    : selectedStep.timeRange,
+                )}
               </time>
-              <p>{fact}</p>
+              <p>{displayBusinessText(fact)}</p>
             </article>
           ))}
           {(selectedSession.events || []).slice(0, 2).map((event, index) => (
             <article key={`${event.time}-${index}`}>
-              <time>{event.time}</time>
+              <time>{displayBusinessText(event.time)}</time>
               <p>
-                {event.title}：{event.detail}
+                {displayBusinessText(event.title)}：
+                {displayBusinessText(event.detail)}
               </p>
             </article>
           ))}
@@ -26001,7 +27050,11 @@ function SessionDiagnosticPanel({ record, store }) {
         <AlertOutlined />
         <div>
           <small>当前诊断结论</small>
-          <strong>{selectedStep.diagnostic?.noTriggerReason || "未知"}</strong>
+          <strong>
+            {displayBusinessText(
+              selectedStep.diagnostic?.noTriggerReason || "未知",
+            )}
+          </strong>
           <p>
             {selectedStep.evidenceMetadata?.scoringPolicy ||
               "诊断结果只用于定位问题，不直接影响成绩。"}
@@ -26010,7 +27063,7 @@ function SessionDiagnosticPanel({ record, store }) {
       </div>
       <div className="diagnostic-versions">
         {[
-          ["SOP", record.sopId || "随安排锁定"],
+          ["实训标准", record.sopId || "随安排锁定"],
           [
             "AI能力配置",
             selectedStep.evidenceMetadata?.aiCapabilityConfigId || "未配置",
@@ -26043,7 +27096,7 @@ function SessionDiagnosticPanel({ record, store }) {
               <strong>
                 {incident.affectedStepId} · {incident.camera}
               </strong>
-              <p>{incident.detail}</p>
+              <p>{displayBusinessText(incident.detail)}</p>
             </article>
           ))}
         </div>
@@ -26075,17 +27128,17 @@ function SessionDiagnosticPanel({ record, store }) {
       </div>
       {error && (
         <p className="form-error" role="alert">
-          {error}
+          {displayBusinessText(error)}
         </p>
       )}
       {message && (
         <p className="form-success" role="status">
-          {message}
+          {displayBusinessText(message)}
         </p>
       )}
       {selectedStep.diagnostic?.confirmedAt && (
         <small className="diagnostic-confirmed">
-          最近确认：{selectedStep.diagnostic.confirmedAt} ·{" "}
+          最近确认：{displayBusinessText(selectedStep.diagnostic.confirmedAt)} ·{" "}
           {selectedStep.diagnostic.confirmedBy} ·{" "}
           {selectedStep.diagnostic.rootCause}
         </small>
@@ -26124,17 +27177,20 @@ function AdminRecordDetail({ exam = false }) {
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}记录 · ${record.name}`}
-        subtitle={`状态 ${record.status} · 结束时间 ${record.endedAt || "尚未结束"} · 本次SOP快照已锁定`}
+        subtitle={`状态 ${record.status} · 结束时间 ${record.endedAt || "尚未结束"} · 本次标准快照已锁定`}
+        actions={
+          <ArrangementAttendanceEntry arrangement={record} adminReadOnly />
+        }
       />
       <p className="readonly-note readonly-note--prominent">
         <EyeOutlined />{" "}
-        当前页面不提供开始、暂停、改分、发布或复位；管理员仅可查看证据并记录技术根因。
+        当前页面不提供开始、暂停、改分或发布；管理员仅可查看证据并记录技术根因。
       </p>
       <div className="detail-grid admin-record-summary">
         {[
           ["负责教师", record.teacherName || "王老师"],
           [
-            "SOP标准",
+            "实训标准",
             record.snapshot?.sopSnapshot?.name ||
               store.data.sops.find((item) => item.id === record.sopId)?.name ||
               "标准已失效",
@@ -26144,18 +27200,22 @@ function AdminRecordDetail({ exam = false }) {
           [
             "日期",
             record.scheduleStart
-              ? ensureDateTimeSeconds(record.scheduleStart).replace("T", " ")
+              ? displayBusinessText(record.scheduleStart).replace("T", " ")
               : "待定",
           ],
         ].map(([label, value]) => (
           <section className="panel" key={label}>
             <small>{label}</small>
-            <h2>{value}</h2>
+            <h2>{displayBusinessText(value)}</h2>
           </section>
         ))}
       </div>
       <ArrangementResultMetrics arrangement={record} exam={exam} />
-      <WorkstationReleasePanel arrangement={record} store={store} />
+      <WorkstationRestrictionPanel
+        arrangement={record}
+        store={store}
+        adminReadOnly
+      />
       <section className="panel panel--table admin-student-results">
         <PanelTitle title="学生结果（只读）" />
         <DataTable
@@ -26290,7 +27350,8 @@ function SettingsPage({ setModal }) {
           rows={settingRows}
         />
         <p className="hint">
-          最近保存：{settings.updatedAt} · {settings.updatedBy}
+          最近保存：{displayBusinessText(settings.updatedAt)} ·{" "}
+          {settings.updatedBy}
         </p>
       </section>
       <section className="panel settings-form">
@@ -26307,7 +27368,7 @@ function SettingsPage({ setModal }) {
                 change("practiceRecordingDays", event.target.value)
               }
             />
-            <small>范围 30–730 天；影响新增练习 Session。</small>
+            <small>范围 30–730 天；影响新增练习实训记录。</small>
           </label>
           <label className="field">
             考试录像保存期限（天）
@@ -26324,7 +27385,7 @@ function SettingsPage({ setModal }) {
           </label>
         </div>
         <p className="hint">
-          完整录像到期清理后，步骤结果、成绩版本、教师修改和审计记录继续保留。
+          完整录像到期清理后，步骤结果、成绩、教师修改和审计记录继续保留。
         </p>
         <div className="form-row">
           <label className="field">
@@ -26353,7 +27414,7 @@ function SettingsPage({ setModal }) {
               <option>每日 03:00</option>
               <option>每周日 02:00</option>
             </select>
-            <small>时间按 Asia/Shanghai 解释。</small>
+            <small>时间按北京时间解释。</small>
           </label>
           <label className="field">
             备份保留周期（天）
@@ -26446,7 +27507,7 @@ function BackupPage({ setModal }) {
       targetId: backup.id,
       fileName,
       format: "JSON",
-      scoreVersion: backup.checksum,
+      dataScope: backup.checksum,
     });
     downloadTextFile(fileName, content, "application/json;charset=utf-8");
     return `${fileName} 已生成并开始下载`;
@@ -26479,7 +27540,7 @@ function BackupPage({ setModal }) {
           </div>
           <div>
             <small>可用期限</small>
-            <strong>{backup.expiresAt}</strong>
+            <strong>{displayBusinessText(backup.expiresAt)}</strong>
           </div>
           {backup.failureReason && (
             <div className="definition-list__wide">
@@ -26506,7 +27567,8 @@ function BackupPage({ setModal }) {
         <div>
           <strong>最近一次自动备份成功</strong>
           <p>
-            {latest.createdAt} · {latest.scope} · {latest.size}
+            {displayBusinessText(latest.createdAt)} · {latest.scope} ·{" "}
+            {latest.size}
           </p>
         </div>
         <Button
@@ -26553,9 +27615,7 @@ function BackupPage({ setModal }) {
                 item.scope,
                 item.status,
                 item.size,
-                item.status === "失败"
-                  ? item.failureReason
-                  : item.verification,
+                item.status === "失败" ? item.failureReason : item.verification,
               ])}
               statusColumns={[2, 4]}
               rowKey={(_, index) => backups[index].id}
@@ -26577,15 +27637,16 @@ function BackupPage({ setModal }) {
                     <div>
                       <strong>{item.fileName}</strong>
                       <small>
-                        {item.createdAt} · {item.scoreVersion}
+                        {displayBusinessText(item.createdAt)} ·{" "}
+                        {item.dataScope || "导出时当前数据"}
                       </small>
                     </div>
                     <Status>{item.status}</Status>
                   </article>
                 ))}
-              {!exportJobs.some(
-                (item) => item.scope === "备份校验清单",
-              ) && <p className="hint">尚未下载备份校验清单。</p>}
+              {!exportJobs.some((item) => item.scope === "备份校验清单") && (
+                <p className="hint">尚未下载备份校验清单。</p>
+              )}
             </div>
           </div>
         )}
@@ -26638,7 +27699,7 @@ function Logs({ setModal }) {
           targetId: "admin-logs",
           fileName,
           format: "CSV",
-          scoreVersion: "导出时筛选结果",
+          dataScope: "导出时筛选结果",
         });
         downloadTextFile(
           fileName,
@@ -26693,7 +27754,7 @@ function Logs({ setModal }) {
                   <div className="definition-list">
                     <div>
                       <small>时间</small>
-                      <strong>{item.time}</strong>
+                      <strong>{displayBusinessText(item.time)}</strong>
                     </div>
                     <div>
                       <small>操作者 / 角色</small>
@@ -26705,10 +27766,19 @@ function Logs({ setModal }) {
                       <small>业务对象</small>
                       <strong>{item.target}</strong>
                     </div>
-                    <div>
-                      <small>业务版本</small>
-                      <strong>{item.businessVersion || "当前有效版本"}</strong>
-                    </div>
+                    {!(
+                      Object.hasOwn(item, "scoreChanged") ||
+                      /成绩|步骤复核|人工调整步骤分|补证|补测/.test(
+                        item.action || "",
+                      )
+                    ) && (
+                      <div>
+                        <small>业务版本</small>
+                        <strong>
+                          {item.businessVersion || "当前有效版本"}
+                        </strong>
+                      </div>
+                    )}
                     <div>
                       <small>处理结果</small>
                       <Status>{item.result}</Status>
@@ -26874,7 +27944,7 @@ function Issue({ setModal }) {
         </section>
         <section className="panel">
           <small>最后更新</small>
-          <h2>{issue.updatedAt}</h2>
+          <h2>{displayBusinessText(issue.updatedAt)}</h2>
         </section>
       </div>
       <div className="issue-layout">
@@ -26883,13 +27953,13 @@ function Issue({ setModal }) {
           <div className="issue-timeline">
             {issue.timeline.map((event, index) => (
               <article key={`${event.time}-${index}`}>
-                <time>{event.time}</time>
+                <time>{displayBusinessText(event.time)}</time>
                 <span
                   className={`issue-timeline__dot ${event.tone === "danger" ? "issue-timeline__dot--danger" : event.tone === "pending" ? "issue-timeline__dot--pending" : ""}`}
                 />
                 <div>
-                  <strong>{event.title}</strong>
-                  <p>{event.detail}</p>
+                  <strong>{displayBusinessText(event.title)}</strong>
+                  <p>{displayBusinessText(event.detail)}</p>
                   <small>{event.actor}</small>
                 </div>
               </article>
@@ -26902,7 +27972,7 @@ function Issue({ setModal }) {
             <div>
               <Status>{issue.technicalCheck.status}</Status>
               <strong>技术复查</strong>
-              <p>{issue.technicalCheck.detail}</p>
+              <p>{displayBusinessText(issue.technicalCheck.detail)}</p>
               {issue.status !== "已关闭" &&
                 issue.technicalCheck.status !== "已通过" && (
                   <Button
@@ -26929,7 +27999,7 @@ function Issue({ setModal }) {
             <div>
               <Status>{issue.businessCheck.status}</Status>
               <strong>现场业务确认</strong>
-              <p>{issue.businessCheck.detail}</p>
+              <p>{displayBusinessText(issue.businessCheck.detail)}</p>
               {issue.status !== "已关闭" &&
                 !["已确认", "无需确认"].includes(
                   issue.businessCheck.status,
@@ -26983,7 +28053,8 @@ function Issue({ setModal }) {
             <small>当前负责人</small>
             <strong>{issue.owner}</strong>
             <span>
-              {issue.handlingStatus} · 最近更新 {issue.updatedAt}
+              {issue.handlingStatus} · 最近更新{" "}
+              {displayBusinessText(issue.updatedAt)}
             </span>
           </div>
           <div className="issue-related">
@@ -27026,7 +28097,7 @@ function NotFound() {
   );
 }
 
-function RoutedApp() {
+export function RoutedApp() {
   const [modal, setModal] = useState(null),
     [toast, setToast] = useState("");
   return (
@@ -27046,6 +28117,14 @@ function RoutedApp() {
         element={
           <StudentShell>
             <StudentCurrentPage />
+          </StudentShell>
+        }
+      />
+      <Route
+        path="/student/results/:id/:sessionId"
+        element={
+          <StudentShell>
+            <StudentResultPage />
           </StudentShell>
         }
       />
@@ -27076,6 +28155,18 @@ function RoutedApp() {
                 element={<Navigate to="/teacher/dashboard" replace />}
               />
               <Route path="/teacher/dashboard" element={<Dashboard />} />
+              <Route
+                path="/teacher/statistics"
+                element={<TeachingStatisticsPage />}
+              />
+              <Route
+                path="/teacher/support-tasks/:taskId"
+                element={<SupportTaskPage />}
+              />
+              <Route
+                path="/teacher/evidence-tasks/:taskId"
+                element={<EvidenceTaskPage />}
+              />
               <Route path="/teacher/sop" element={<SopList />} />
               <Route
                 path="/teacher/sop/learning"
@@ -27098,7 +28189,10 @@ function RoutedApp() {
                 path="/teacher/sop/:id"
                 element={<SopDetail setModal={setModal} />}
               />
-              <Route path="/teacher/practices" element={<ArrangementList />} />
+              <Route
+                path="/teacher/practices"
+                element={<ArrangementList setModal={setModal} />}
+              />
               <Route
                 path="/teacher/practices/new"
                 element={<ArrangementForm setModal={setModal} />}
@@ -27131,7 +28225,10 @@ function RoutedApp() {
                 path="/teacher/practices/:id/history"
                 element={<HistoryCompare />}
               />
-              <Route path="/teacher/exams" element={<ArrangementList exam />} />
+              <Route
+                path="/teacher/exams"
+                element={<ArrangementList exam setModal={setModal} />}
+              />
               <Route
                 path="/teacher/exams/new"
                 element={<ArrangementForm exam setModal={setModal} />}

@@ -1,3 +1,9 @@
+import { standardDefinitionKey } from "./trainingStandardRules.js";
+import { displayClockTime } from "./dateTimeRules.js";
+import {
+  ingestObservation,
+  eventConditionSatisfied,
+} from "./observationEventRules.js";
 import { evaluateAiCapabilityConfig } from "./aiCapabilityConfigRules.js";
 import {
   activeJudgementItems,
@@ -7,6 +13,7 @@ import {
 import { normalizeWorkstationAiBaseConfig } from "./workstationAiRules.js";
 import {
   calculateScoreEngine,
+  applyDefaultPassPolicy,
   createEvaluationClock,
   setEvaluationClockPaused,
 } from "./domainRules.js";
@@ -49,9 +56,9 @@ export function deriveAiRuntimeGate({
       item?.workstationId === workstationId,
   );
   const reasons = [];
-  if (!sop) reasons.push("SOP不存在或已失效");
+  if (!sop) reasons.push("实训标准不存在或已失效");
   if (!workstation) reasons.push("工位不存在或已失效");
-  if (!aiConfig) reasons.push("当前SOP尚未配置AI能力");
+  if (!aiConfig) reasons.push("当前实训标准尚未配置AI能力");
 
   const evaluation =
     sop && aiConfig
@@ -61,15 +68,25 @@ export function deriveAiRuntimeGate({
           capabilities: aiCapabilities,
         })
       : null;
+  const configurationConfirmed = !aiConfig?.standardReviewRequired;
+  if (!configurationConfirmed) reasons.push("实训标准已更新，AI配置尚待核对");
+  const definitionMatches =
+    !aiConfig?.standardDefinitionKey ||
+    aiConfig.standardDefinitionKey === standardDefinitionKey(sop);
+  if (!definitionMatches)
+    reasons.push("AI配置与当次标准快照的评分依据不一致，需要重新适配");
   if (evaluation && !evaluation.ready) reasons.push(...evaluation.issues);
-  if (aiConfig && !relation) reasons.push("当前SOP尚未配置该工位");
+  if (aiConfig && !relation) reasons.push("当前实训标准尚未配置该工位");
 
   const checks =
     sop && workstation && aiConfig && relation
       ? checkSopWorkstationAiConfig({
           config: relation,
           aiConfig,
-          aiConfigReady: Boolean(evaluation?.ready),
+          aiConfigReady:
+            Boolean(evaluation?.ready) &&
+            definitionMatches &&
+            configurationConfirmed,
           workstation,
           devices,
           capabilities: aiCapabilities,
@@ -227,10 +244,13 @@ export function deriveSopAiCapabilityStatus({
 
 export function createAiEvaluationSnapshot(gate, lockedAt) {
   if (!gate?.sop || !gate?.workstation)
-    throw new Error("缺少SOP或工位，无法创建运行快照。");
+    throw new Error("缺少实训标准或工位，无法创建运行快照。");
   const { workstationValidationStates: _legacyValidationStates, ...aiConfig } =
     gate.aiConfig || {};
   return {
+    executionPurpose:
+      gate.relation?.validationPurpose === "real" ? "real" : "prototype_demo",
+    evidenceSemantics: "observations_v1",
     sopId: gate.sop.id,
     workstationId: gate.workstation.id,
     sopSnapshot: clone(gate.sop),
@@ -250,6 +270,8 @@ export function createAiEvaluationSnapshot(gate, lockedAt) {
     workstationAiBaseConfigSnapshot: clone(
       normalizeWorkstationAiBaseConfig(gate.workstation),
     ),
+    availableJudgementItemIds: gate.checks?.availableJudgementItemIds || [],
+    unavailableJudgementItemIds: gate.checks?.unavailableJudgementItemIds || [],
     runtimeStatus: gate.runtimeStatus,
     runtimeLabel: gate.runtimeLabel,
     aiEnabled: gate.enabled,
@@ -260,6 +282,11 @@ export function createAiEvaluationSnapshot(gate, lockedAt) {
 export function evaluationProfileFromGate(gate) {
   const validationRecords = gate?.relation?.validationRecords || [];
   return {
+    executionPurpose:
+      gate?.relation?.validationPurpose === "real" ? "real" : "prototype_demo",
+    availableJudgementItemIds: gate?.checks?.availableJudgementItemIds || [],
+    unavailableJudgementItemIds:
+      gate?.checks?.unavailableJudgementItemIds || [],
     aiRuntimeEnabled: Boolean(gate?.enabled),
     automaticEvaluationEnabled: Boolean(gate?.enabled),
     enabledStepCount: gate?.enabledStepCount || 0,
@@ -289,7 +316,7 @@ export function createOpenedAiSession({
   recording = {},
 }) {
   if (!id || !workstationId || !studentId)
-    throw new Error("缺少Session、工位或学生ID，无法开放工位。");
+    throw new Error("缺少实训记录、工位或学生ID，无法开放工位。");
   const evaluationSnapshot = createAiEvaluationSnapshot(gate, lockedAt);
   return {
     id,
@@ -326,7 +353,8 @@ export function createOpenedAiSession({
     },
     events: [
       {
-        time: String(lockedAt || "").slice(-5),
+        time: displayClockTime(lockedAt),
+        createdAt: lockedAt,
         level: "blue",
         title: "工位检查通过",
         detail: gate.enabled
@@ -338,9 +366,9 @@ export function createOpenedAiSession({
 }
 
 export function startAiRuntimeSession(session, startedAt) {
-  if (!session?.id) throw new Error("Session不存在或已失效。");
+  if (!session?.id) throw new Error("实训记录不存在或已失效。");
   if (!["待开始", "可入场"].includes(session.status))
-    throw new Error("当前Session已经开始或结束，不能重复开始。");
+    throw new Error("当前实训记录已经开始或结束，不能重复开始。");
   const firstStep = (session.steps || []).find(
     (step) => step.state === "pending",
   );
@@ -403,7 +431,8 @@ export function startAiRuntimeSession(session, startedAt) {
     },
     events: [
       {
-        time: String(startedAt || "").slice(-5),
+        time: displayClockTime(startedAt),
+        createdAt: startedAt,
         level: "green",
         title: "学生确认并开始",
         detail: "身份、任务和工位已确认，会话计时与评价开始",
@@ -498,6 +527,11 @@ function completeCurrentStep(session, runtime, stepId, when) {
         state: "pass",
         executionState: "closed",
         completionResult: "complete",
+        completionSource: "ai",
+        aiEvidenceState: "confirmed",
+        resultSource: "prototype_demo",
+        defaultPassReason: "",
+        aiDecision: "confirmed",
         result: effectiveScore < maxScore ? "通过（含规则扣分）" : "通过",
         rawScore: maxScore,
         effectiveScore,
@@ -621,7 +655,8 @@ export function applyAiJudgementScoring({
         completedAt: "",
       };
     events.push({
-      time: String(when).slice(-5),
+      time: displayClockTime(when),
+      createdAt: when,
       level: requiresReview ? "warning" : "blue",
       title: requiresReview ? "评分证据待教师复核" : "教师评分规则已执行",
       detail: `${rule.name}${requiresReview ? "" : ` · 扣${deduction}分`}`,
@@ -737,7 +772,8 @@ export function updateAiCorrectionContext({
     runtime,
     events: [
       {
-        time: String(when).slice(-5),
+        time: displayClockTime(when),
+        createdAt: when,
         level: "warning",
         title: action === "open" ? "进入纠正上下文" : "纠正动作完成",
         detail: "纠正动作与普通重复操作分开记录",
@@ -752,18 +788,24 @@ export function simulateAiConditionOnSession({
   judgementItemId,
   conditionId,
   sopSnapshot,
+  observationPayload,
   when,
   makeId = (prefix) => `${prefix}-${when}`,
 }) {
+  if (session?.evaluationSnapshot?.executionPurpose === "real")
+    throw new Error(
+      "真实现场会话不接受模拟观察，请通过经过核验的模型服务接入。",
+    );
   const aiConfig = session?.evaluationSnapshot?.aiCapabilityConfigSnapshot;
   const capabilities = session?.evaluationSnapshot?.capabilitySnapshots || [];
   const currentStep = session?.steps?.find(
     (item) => item.id === session.currentStepId,
   );
-  const judgementItems = activeJudgementItems(aiConfig || {}).filter(
+  const allJudgementItems = activeJudgementItems(aiConfig || {});
+  const judgementItems = allJudgementItems.filter(
     (item) => item.stepId === currentStep?.id,
   );
-  const judgementItem = judgementItems.find(
+  const judgementItem = allJudgementItems.find(
     (item) => item.id === judgementItemId,
   );
   const condition = (judgementItem?.conditions || []).find(
@@ -777,38 +819,108 @@ export function simulateAiConditionOnSession({
       session.evaluationProfile?.automaticEvaluationEnabled
     )
   )
-    throw new Error("当前Session未启用AI运行，只能按安全降级流程运行。");
+    throw new Error("当前实训记录未启用AI运行，只能按安全降级流程运行。");
   if (session.status !== "进行中")
     throw new Error("会话未运行，不能产生AI识别观察。");
   const runtime = normalizedRuntime(session);
-  if (runtime.actorBinding.status !== "confirmed")
+  if (runtime.actorBinding.status !== "confirmed" && !observationPayload)
     throw new Error("主操作人未确认，AI观察不能用于当前学生评价。");
   if (currentStep.observationWindow?.status !== "open")
     throw new Error("当前步骤观察窗口未开启。");
   const capability = capabilities.find(
     (item) => item.id === condition.capabilityId,
   );
-  const observation = {
-    id: makeId("ai-observation"),
-    judgementItemId,
-    conditionId,
-    capabilityId: condition.capabilityId,
-    capabilityName: capability?.name || condition.capabilityId,
-    stepId: currentStep.id,
-    actorId: session.studentId,
-    result: "observed",
-    occurrenceCount: 1,
-    observedDurationSeconds: Number(condition.minDurationSeconds || 0),
-    observedAt: when,
+  // Legacy simulator calls explicitly create one complete *demo* observation.
+  // New controls supply actual observation intervals; configuration never supplies measured duration.
+  const simulatedEnd = Date.parse(String(when).replace(" ", "T")) || Date.now();
+  const payload = observationPayload || {
+    startedAtMs:
+      simulatedEnd - Number(condition.minDurationSeconds || 0) * 1000,
+    endedAtMs: simulatedEnd,
+    phase: "complete",
+    visibility: "visible",
+    demoPreset: true,
+    observedTargetCount: Number(condition.minTargetCount || 1),
+    logicalAreaId: condition.logicalAreaId,
   };
-  const aiObservations = [...runtime.aiObservations, observation];
+  const ingestion = ingestObservation({
+    session,
+    runtime,
+    judgementItem,
+    condition,
+    payload,
+    when,
+    makeId,
+  });
+  const observation = ingestion.observation;
+  const aiObservations = ingestion.runtime.aiObservations;
+  if (
+    ingestion.duplicate ||
+    judgementItem.stepId !== currentStep.id ||
+    observation.result === "unknown"
+  ) {
+    const updatedSession = { ...session, runtime: ingestion.runtime };
+    if (
+      observation.result === "unknown" &&
+      !observation.outsideRequirementWindow
+    ) {
+      updatedSession.steps = session.steps.map((step) =>
+        step.id === judgementItem.stepId
+          ? applyDefaultPassPolicy(
+              {
+                ...step,
+                aiEvidenceState: "unknown",
+                aiDecision: "uncertain",
+                unknownReason: observation.unknownReason,
+              },
+              {
+                scoringApplications:
+                  ingestion.runtime.aiScoringApplications || [],
+              },
+            )
+          : step,
+      );
+      updatedSession.scoreEngine = calculateScoreEngine({
+        steps: updatedSession.steps,
+      });
+      updatedSession.score = updatedSession.scoreEngine.effectiveScore;
+      if (runtime.lastNoTriggerReason !== observation.unknownReason)
+        updatedSession.events = [
+          {
+            id: makeId("uncertain-event"),
+            time: displayClockTime(when),
+            createdAt: when,
+            type: "ai_uncertain",
+            level: "warning",
+            title: "操作证据暂无法确认",
+            detail: observation.unknownReason,
+            source: "system",
+            scoreImpact: "none",
+          },
+          ...(session.events || []),
+        ];
+    }
+    return {
+      updatedSession,
+      confirmed: false,
+      completed: false,
+      completionReady: false,
+      safetyBlocked: false,
+      observation,
+      judgementResult: {
+        judgementItemName: judgementItem.name,
+        result: "unknown",
+      },
+      duplicate: ingestion.duplicate,
+    };
+  }
   const conditionSatisfied = (candidate) =>
-    aiObservations.filter(
-      (item) =>
-        item.stepId === currentStep.id &&
-        item.judgementItemId === judgementItem.id &&
-        item.conditionId === candidate.id,
-    ).length >= Math.max(1, Number(candidate.minOccurrences || 1));
+    eventConditionSatisfied(
+      ingestion.runtime,
+      candidate,
+      judgementItem,
+      session,
+    );
   const conditions = judgementItem.conditions || [];
   const allSatisfied = conditions.every(conditionSatisfied);
   const anySatisfied = conditions.some(conditionSatisfied);
@@ -849,6 +961,13 @@ export function simulateAiConditionOnSession({
       .filter(conditionSatisfied)
       .map((item) => item.id),
     observedAt: when,
+    resultSource: "prototype_demo",
+    eventIds: (ingestion.runtime.actionEvents || [])
+      .filter(
+        (e) =>
+          e.judgementItemId === judgementItem.id && e.status === "complete",
+      )
+      .map((e) => e.id),
   };
   const aiJudgementResults = [
     ...runtime.aiJudgementResults.filter(
@@ -860,7 +979,11 @@ export function simulateAiConditionOnSession({
     ),
     judgementResult,
   ];
-  let workingRuntime = { ...runtime, aiObservations, aiJudgementResults };
+  let workingRuntime = {
+    ...ingestion.runtime,
+    aiObservations,
+    aiJudgementResults,
+  };
   let steps = session.steps;
   let scoreEvents = [];
   if (becameConfirmed) {
@@ -928,7 +1051,25 @@ export function simulateAiConditionOnSession({
       currentStep.id,
       when,
     );
-    steps = completion.steps;
+    steps = completion.steps.map((step) =>
+      step.id === currentStep.id
+        ? {
+            ...step,
+            evidenceEventIds: (workingRuntime.actionEvents || [])
+              .filter((e) => e.stepId === step.id && e.status === "complete")
+              .map((e) => e.id),
+            evidenceCameraIds: [
+              ...new Set(
+                (workingRuntime.actionEvents || [])
+                  .filter(
+                    (e) => e.stepId === step.id && e.status === "complete",
+                  )
+                  .map((e) => e.cameraId),
+              ),
+            ],
+          }
+        : step,
+    );
     currentStepId = completion.currentStepId;
     completed = true;
   } else if (safetyBlocked) {
@@ -968,7 +1109,8 @@ export function simulateAiConditionOnSession({
     runtime: workingRuntime,
     events: [
       {
-        time: String(when).slice(-5),
+        time: displayClockTime(when),
+        createdAt: when,
         level: safetyBlocked ? "danger" : confirmed ? "green" : "blue",
         title: confirmed ? "AI判断项成立" : "AI判断条件已观察",
         detail: `${judgementItem.name} · ${capability?.name || "AI能力"}`,
@@ -1126,7 +1268,8 @@ export function resolveAiSafetyCandidate({
     },
     events: [
       {
-        time: String(when).slice(-5),
+        time: displayClockTime(when),
+        createdAt: when,
         level: confirmed ? "danger" : "green",
         title: confirmed ? "安全违规已确认" : "安全候选误报已排除",
         detail: confirmed

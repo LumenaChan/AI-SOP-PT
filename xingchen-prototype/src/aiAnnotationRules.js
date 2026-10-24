@@ -1,3 +1,4 @@
+import { sourceDurationMs } from "./preannotationRules.js";
 export const ANNOTATION_STATUSES = {
   not_started: "待标注",
   completed: "已标注",
@@ -112,6 +113,12 @@ function clamp(value, min, max) {
 function normalizeBox(box, categories, meta) {
   if (!categories.some((item) => item.id === box.categoryId))
     throw new Error("目标框必须选择当前AI能力下的标注类别。");
+  if (
+    ![box.x, box.y, box.width, box.height].every(
+      (value) => value != null && Number.isFinite(Number(value)),
+    )
+  )
+    throw new Error("目标框坐标和尺寸必须是有效数值。");
   const x = clamp(box.x, 0, 1);
   const y = clamp(box.y, 0, 1);
   const width = clamp(box.width, 0, 1 - x);
@@ -181,7 +188,7 @@ export function saveClipAnnotation(item, input, categories, sourceVideo, meta) {
     throw new Error("请选择当前AI能力下的动作类别。");
   const startMs = Number(input.refinedStartMs);
   const endMs = Number(input.refinedEndMs);
-  const durationMs = Number(sourceVideo?.durationMs || 0);
+  const durationMs = sourceDurationMs(sourceVideo);
   if (!Number.isFinite(startMs) || startMs < 0)
     throw new Error("开始时间无效。");
   if (!Number.isFinite(endMs) || endMs <= startMs)

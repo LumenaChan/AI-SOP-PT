@@ -1,25 +1,42 @@
-import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+import { displayClockTime } from "./dateTimeRules.js";
+import { notificationTime } from "./notificationRules.js";
 
 const WAITING_SESSION_STATUSES = new Set(["待开始", "可入场"]);
 
-function displayTime(value) {
-  const text = ensureDateTimeSeconds(String(value || ""));
-  if (!text) return "时间未知";
-  if (text.includes("T")) {
-    const instant = new Date(text);
-    if (!Number.isNaN(instant.getTime()))
-      return new Intl.DateTimeFormat("zh-CN", {
-        timeZone: "Asia/Shanghai",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).format(instant);
+function eventOccurrenceTime(source, session) {
+  if (source.createdAt && displayClockTime(source.createdAt) !== "时间未知")
+    return source.createdAt;
+  if (
+    /^\d{4}-\d{2}-\d{2}[ T]/.test(source.time || "") &&
+    displayClockTime(source.time) !== "时间未知"
+  )
+    return source.time;
+  // These two legacy writers stored only the final MM:ss. Recover the hour only
+  // from a unique matching record in this same session; never use today's clock.
+  const actor = String(source.title || "").match(/^人员绑定：(.+)$/);
+  let candidates;
+  if (actor)
+    candidates = (session.runtime?.actorBinding?.history || [])
+      .filter((item) => item.status === actor[1])
+      .map((item) => item.at);
+  else if (source.title === "协助行为提醒")
+    candidates = (session.runtime?.assistanceWarnings || []).map(
+      (item) => item.occurredAt,
+    );
+  if (candidates && /^(?:\d{2}:\d{2}|\.\d+Z)$/i.test(source.time || "")) {
+    const matching = [
+      ...new Set(
+        candidates.filter(
+          (at) =>
+            /^\d{4}-\d{2}-\d{2}[ T]/.test(at || "") &&
+            String(at).slice(-5) === source.time &&
+            displayClockTime(at) !== "时间未知",
+        ),
+      ),
+    ];
+    return matching.length === 1 ? matching[0] : "";
   }
-  const dateTimeMatch = text.match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/);
-  if (dateTimeMatch) return dateTimeMatch[1];
-  const shortTimeMatch = text.match(/\b(\d{2}:\d{2})\b/);
-  return shortTimeMatch?.[1] || text;
+  return source.createdAt || source.time || "";
 }
 
 export function teacherIdentityView(session = {}) {
@@ -35,7 +52,7 @@ export function teacherIdentityView(session = {}) {
     return {
       state: "missing",
       label: "身份确认信息缺失",
-      detail: "兼容旧 Session，不作为学生违规依据",
+      detail: "",
       tone: "warning",
     };
   }
@@ -47,7 +64,7 @@ export function teacherIdentityView(session = {}) {
     return {
       state: "passed",
       label: "人脸识别通过",
-      detail: `确认时间 ${displayTime(verification.verifiedAt)}`,
+      detail: `确认时间 ${displayClockTime(verification.verifiedAt)}`,
       tone: "success",
     };
   return {
@@ -136,6 +153,7 @@ export function normalizeTeacherSessionEvent(event, session = {}) {
   const meta = EVENT_META[type] || inferredMeta(source);
   const step = (session.steps || []).find((item) => item.id === source.stepId);
   const reason = source.reasonLabel || source.reason || "";
+  const occurredAt = eventOccurrenceTime(source, session);
   const defaultTitle =
     meta.category === "hint"
       ? `学生查看了${step ? ` ${step.id} ${step.name}` : "当前步骤"}操作提示`
@@ -152,18 +170,38 @@ export function normalizeTeacherSessionEvent(event, session = {}) {
     type,
     category: meta.category,
     categoryLabel: meta.categoryLabel,
-    teacherTone: meta.tone,
+    teacherTone:
+      source.helpStatus === "completed"
+        ? "success"
+        : ["cancelled", "closed"].includes(source.helpStatus)
+          ? "info"
+          : meta.tone,
     title: source.title || defaultTitle,
     detail:
       source.detail || (reason ? `原因：${reason}` : "旧事件未记录详细说明"),
     reasonLabel: reason,
     stepName: step?.name || "",
-    displayTime: displayTime(source.createdAt || source.time),
+    displayTime: displayClockTime(occurredAt),
+    eventSortAt: displayClockTime(occurredAt) !== "时间未知" ? occurredAt : "",
     createdAt: source.createdAt || "",
     requiresAttention:
       source.requiresAttention === true ||
-      ["practice_help", "exam_incident"].includes(meta.category),
+      (source.requiresAttention !== false &&
+        !["handling", "completed", "cancelled", "closed"].includes(
+          source.helpStatus,
+        ) &&
+        ["practice_help", "exam_incident"].includes(meta.category)),
   };
+}
+
+export function teacherEventSortTime(event) {
+  const value = String(
+    event.eventSortAt ||
+      event.createdAt ||
+      (event.displayTime === "时间未知" ? "" : event.displayTime || ""),
+  );
+  const normalized = notificationTime(value);
+  return normalized === "时间未知" || normalized === "刚刚" ? "" : normalized;
 }
 
 export function teacherSessionEvents(session = {}) {
@@ -191,9 +229,7 @@ export function teacherSessionEvents(session = {}) {
     );
   }
   return events.sort((left, right) =>
-    String(right.createdAt || right.displayTime).localeCompare(
-      String(left.createdAt || left.displayTime),
-    ),
+    teacherEventSortTime(right).localeCompare(teacherEventSortTime(left)),
   );
 }
 
@@ -212,6 +248,7 @@ export function normalizeStoredStudentEvent(event, session = {}) {
     categoryLabel,
     teacherTone,
     displayTime: _displayTime,
+    eventSortAt: _eventSortAt,
     stepName: _stepName,
     ...stored
   } = normalized;

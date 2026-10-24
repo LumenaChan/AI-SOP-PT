@@ -1,3 +1,8 @@
+import {
+  cameraViews,
+  withCameraAliases,
+  validateCameraCollection,
+} from "./cameraRules.js";
 export const WORKSTATION_AI_READINESS = {
   unconfigured: { label: "未配置", tone: "muted" },
   pending: { label: "待完善", tone: "warning" },
@@ -16,8 +21,9 @@ export function isEdgeDevice(device) {
 }
 
 export function normalizeWorkstationAiBaseConfig(workstation = {}) {
-  const config = workstation.aiBaseConfig || {};
+  const config = withCameraAliases(workstation.aiBaseConfig || {});
   return {
+    ...config,
     workstationId: workstation.id || config.workstationId || "",
     primaryCameraId: config.primaryCameraId || "",
     fallbackCameraId: config.fallbackCameraId || "",
@@ -69,7 +75,9 @@ export function validateWorkstationAiBaseConfig({
     );
     if (issue) throw new Error(issue);
   }
-  return config;
+  return Array.isArray(input?.cameras)
+    ? validateCameraCollection(config, workstation, devices)
+    : withCameraAliases({ ...config, cameras: undefined });
 }
 
 export function deriveWorkstationAiReadiness({
@@ -172,8 +180,14 @@ export function deriveWorkstationAiReadiness({
 export function isCriticalWorkstationAiChange(before, after) {
   const previous = before || {};
   const next = after || {};
-  return ["primaryCameraId", "fallbackCameraId", "edgeDeviceId"].some(
-    (key) => (previous[key] || "") !== (next[key] || ""),
+  return (
+    JSON.stringify(cameraViews(previous)) !==
+      JSON.stringify(cameraViews(next)) ||
+    JSON.stringify(previous.regions || []) !==
+      JSON.stringify(next.regions || []) ||
+    ["primaryCameraId", "fallbackCameraId", "edgeDeviceId"].some(
+      (key) => (previous[key] || "") !== (next[key] || ""),
+    )
   );
 }
 

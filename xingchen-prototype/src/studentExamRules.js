@@ -1,4 +1,4 @@
-import { ensureDateTimeSeconds } from "./dateTimeRules.js";
+import { displayClockTime, displayDateTime } from "./dateTimeRules.js";
 
 export const DEFAULT_EXAM_DURATION_MINUTES = 30;
 export const MIN_EXAM_DURATION_MINUTES = 5;
@@ -12,9 +12,7 @@ export const EXAM_INCIDENT_REASONS = [
 ];
 
 function studentEventTime(value) {
-  const text = ensureDateTimeSeconds(String(value || ""));
-  const match = text.match(/(?:T|\s)(\d{2}:\d{2}:\d{2})/);
-  return match?.[1] || text;
+  return displayClockTime(value);
 }
 
 function timestampMs(value) {
@@ -179,7 +177,7 @@ export function appendExamIncidentHelpRequest(
   payload,
   { id, createdAt },
 ) {
-  if (!session?.studentId) throw new Error("考试 Session 不存在。");
+  if (!session?.studentId) throw new Error("考试实训记录不存在。");
   if (session.examIncidentHelpRequestedAt) return session;
   const detail = [payload?.reasonLabel, payload?.note]
     .filter(Boolean)
@@ -212,10 +210,8 @@ export function appendExamIncidentHelpRequest(
 
 export function formatExamEntryWindow(scheduleStart, entryEnd) {
   if (!scheduleStart) return "以教师现场安排为准";
-  const start = ensureDateTimeSeconds(String(scheduleStart)).replace("T", " ");
-  const end = entryEnd
-    ? ensureDateTimeSeconds(String(entryEnd)).replace("T", " ").slice(11, 19)
-    : "";
+  const start = displayDateTime(String(scheduleStart));
+  const end = entryEnd ? displayDateTime(String(entryEnd)).slice(11, 19) : "";
   return end ? `${start} - ${end}` : start;
 }
 

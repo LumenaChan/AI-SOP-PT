@@ -1,0 +1,17 @@
+{
+  "sops": 7,
+  "aiCapabilities": 8,
+  "aiCapabilityConfigs": 3,
+  "sopWorkstationAiConfigs": 3,
+  "aiSourceVideos": 28,
+  "aiFrames": 98,
+  "aiClips": 51,
+  "aiTrainingDataConfigs": 3,
+  "aiTrainingTasks": 4,
+  "aiModelPublicationRecords": 4,
+  "workstations": 7,
+  "devices": 18,
+  "arrangements": 11,
+  "sessions": 16,
+  "cpdSha256": "f4298388ea452e7bd3dcdc9bfaaaabe79cda41fcc3c6a937c904d85d57f75631"
+}

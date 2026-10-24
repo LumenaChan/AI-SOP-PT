@@ -95,7 +95,7 @@ test("CPD mode starts from an isolated clone of the source-controlled snapshot",
   assert.equal(currentDefault.sops[0].name, "CPD源数据");
 });
 
-test("CPD working data persists only while its source fingerprint is current", () => {
+test("CPD source fingerprint updates preserve the user working copy", () => {
   const currentDefault = snapshot("新版CPD源数据");
   const workingData = snapshot("CPD本地工作副本");
   const currentFingerprint = prototypeDataFingerprint(currentDefault);
@@ -120,8 +120,9 @@ test("CPD working data persists only while its source fingerprint is current", (
     fingerprint: `${currentFingerprint}-changed`,
     currentPrototypeData: currentDefault,
   });
-  assert.equal(refreshed.kind, "cpd-default");
-  assert.equal(refreshed.data.sops[0].name, "新版CPD源数据");
+  assert.equal(refreshed.kind, "cpd-storage");
+  assert.equal(refreshed.sourceChanged, true);
+  assert.equal(refreshed.data.sops[0].name, "CPD本地工作副本");
 });
 
 test("older storage cannot be hidden by a newer store that lacks a user-created SOP", () => {

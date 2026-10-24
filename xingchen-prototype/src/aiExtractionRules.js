@@ -98,7 +98,9 @@ export function estimateFrameExtraction(videos, parameters) {
       Number(video.frameRate || 0) > 0 &&
       sampleValue > Number(video.frameRate)
     )
-      throw new Error(`抽帧帧率不能超过“${video.displayName || video.fileName}”的原始帧率。`);
+      throw new Error(
+        `抽帧帧率不能超过“${video.displayName || video.fileName}”的原始帧率。`,
+      );
     const rawCount =
       parameters.samplingMode === "interval"
         ? Math.floor((range.end - range.start) / sampleValue) + 1
@@ -113,7 +115,10 @@ export function estimateFrameExtraction(videos, parameters) {
   });
   return {
     videos: estimates,
-    totalDuration: estimates.reduce((sum, item) => sum + item.end - item.start, 0),
+    totalDuration: estimates.reduce(
+      (sum, item) => sum + item.end - item.start,
+      0,
+    ),
     estimatedCount: estimates.reduce((sum, item) => sum + item.count, 0),
     reachedLimitCount: estimates.filter((item) => item.reachedLimit).length,
   };
@@ -125,7 +130,9 @@ export function buildFrameExtractionTask(input, meta) {
   const failures = [];
   const completedVideoIds = [];
   for (const estimate of plan.videos) {
-    const video = input.videos.find((item) => item.id === estimate.sourceVideoId);
+    const video = input.videos.find(
+      (item) => item.id === estimate.sourceVideoId,
+    );
     try {
       if (input.failedSourceVideoIds?.includes(video.id))
         throw new Error("视频解码失败，请检查文件完整性后重试。");
@@ -139,6 +146,11 @@ export function buildFrameExtractionTask(input, meta) {
           id: meta.frameId(index, video.id),
           capabilityId: input.capabilityId,
           sourceVideoId: video.id,
+          sourceGroupId: video.sourceGroupId || video.id,
+          participantId: video.participantId || "",
+          sampleType: video.sampleType || "",
+          samplePurpose: video.sampleUse || "development",
+          captureConditions: video.captureConditions || "",
           taskId: meta.taskId,
           sourceTimeMs: Math.round(time * 1000),
           fileName: `${video.id}_${formatTimecode(time, true).replaceAll(":", "m")}.jpg`,
@@ -228,13 +240,19 @@ export function buildVideoSlicingTask(input, meta) {
         validateClipRange(video, start, end);
         for (let cursor = start; cursor + clipLength <= end; cursor += step)
           ranges.push({ start: cursor, end: cursor + clipLength });
-        if (!ranges.length) throw new Error("当前时间范围不足以生成一个完整片段。");
+        if (!ranges.length)
+          throw new Error("当前时间范围不足以生成一个完整片段。");
       }
       for (const range of ranges) {
         clips.push({
           id: meta.clipId(sequence, video.id),
           capabilityId: input.capabilityId,
           sourceVideoId: video.id,
+          sourceGroupId: video.sourceGroupId || video.id,
+          participantId: video.participantId || "",
+          sampleType: video.sampleType || "",
+          samplePurpose: video.sampleUse || "development",
+          captureConditions: video.captureConditions || "",
           taskId: meta.taskId,
           startMs: Math.round(range.start * 1000),
           endMs: Math.round(range.end * 1000),

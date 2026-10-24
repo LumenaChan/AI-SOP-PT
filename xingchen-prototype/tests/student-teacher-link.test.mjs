@@ -7,6 +7,27 @@ import {
   teacherSessionEvents,
 } from "../src/studentTeacherLinkRules.js";
 
+test("历史事件只剩毫秒片段时显示时间未知，不将其伪装为可靠时刻", () => {
+  const session = {
+    id: "legacy-time",
+    events: [
+      { id: "lost", time: ".000Z", title: "历史会话事件" },
+      { id: "valid", createdAt: "2026-10-22T02:00:00.000Z", title: "可靠时刻" },
+    ],
+  };
+  const events = teacherSessionEvents(session);
+  assert.equal(events[0].id, "valid");
+  assert.equal(
+    events.find((event) => event.id === "lost").displayTime,
+    "时间未知",
+  );
+  assert.equal(
+    events.find((event) => event.id === "valid").displayTime,
+    "10:00:00",
+  );
+  assert.equal(session.events[0].time, ".000Z");
+});
+
 test("教师身份状态兼容等待、已确认和旧 Session 缺失信息", () => {
   assert.equal(teacherIdentityView({ status: "待开始" }).state, "waiting");
   assert.equal(teacherIdentityView({ status: "进行中" }).state, "missing");
@@ -89,4 +110,111 @@ test("教师结束安排会冻结运行态并让学生端识别教师结束原�
   assert.match(ending, /type: "teacher_ended_session"/);
   assert.match(ending, /transitionExamTiming/);
   assert.match(ending, /status: "stopped"/);
+});
+
+test("教师事件时间统一HH:mm:ss：完整时刻不截掉秒，UTC转北京时间", async () => {
+  const { displayClockTime } = await import("../src/dateTimeRules.js");
+  for (const [input, expected] of [
+    ["14:18:25", "14:18:25"],
+    ["10:18", "10:18:00"],
+    ["2026-10-24 16:42:35", "16:42:35"],
+    ["2026-10-24T08:42:35.000Z", "16:42:35"],
+    ["2026-10-24T00:00:00+08:00", "00:00:00"],
+    ["42:35", "时间未知"],
+    [".000Z", "时间未知"],
+    ["25:00:00", "时间未知"],
+  ])
+    assert.equal(displayClockTime(input), expected);
+});
+
+test("已有截短的协助和人员绑定事件，从同Session唯一原始记录恢复小时，不修改原事件", () => {
+  const session = {
+    id: "time-recovery",
+    runtime: {
+      assistanceWarnings: [{ occurredAt: "2026-10-23 16:42:35" }],
+      actorBinding: {
+        history: [{ status: "uncertain", at: "2026-10-23 16:42:29" }],
+      },
+    },
+    events: [
+      { id: "assist", title: "协助行为提醒", time: "42:35" },
+      { id: "actor", title: "人员绑定：uncertain", time: "42:29" },
+    ],
+  };
+  const before = structuredClone(session),
+    events = teacherSessionEvents(session);
+  assert.equal(events.find((e) => e.id === "assist").displayTime, "16:42:35");
+  assert.equal(events.find((e) => e.id === "actor").displayTime, "16:42:29");
+  assert.deepEqual(
+    events.map((e) => e.id),
+    ["assist", "actor"],
+  );
+  const stored = normalizeStoredStudentEvent(session.events[0], session);
+  assert.equal(stored.eventSortAt, undefined);
+  assert.equal(stored.time, "42:35");
+  assert.deepEqual(session, before);
+});
+
+test("缺失或有歧义的旧分秒片段不补成当前小时，合法完整createdAt优先", () => {
+  const session = {
+    id: "ambiguous",
+    runtime: {
+      assistanceWarnings: [
+        { occurredAt: "2026-10-23 16:12:35" },
+        { occurredAt: "2026-10-23 17:12:35" },
+      ],
+    },
+    events: [
+      { id: "ambiguous", title: "协助行为提醒", time: "12:35" },
+      { id: "missing", title: "人员绑定：lost", time: "12:35" },
+      {
+        id: "full",
+        title: "协助行为提醒",
+        time: "12:35",
+        createdAt: "2026-10-23T08:12:35Z",
+      },
+    ],
+  };
+  const events = teacherSessionEvents(session);
+  assert.equal(
+    events.find((e) => e.id === "ambiguous").displayTime,
+    "时间未知",
+  );
+  assert.equal(events.find((e) => e.id === "missing").displayTime, "时间未知");
+  assert.equal(events.find((e) => e.id === "full").displayTime, "16:12:35");
+});
+
+test("教师事件排序统一北京时间，ISO和本地时间不会因字符串格式错序", () => {
+  const events = teacherSessionEvents({
+    events: [
+      { id: "old", createdAt: "2026-10-23T08:40:00Z" },
+      { id: "new", createdAt: "2026-10-23 16:42:35" },
+    ],
+  });
+  assert.deepEqual(
+    events.map((e) => e.id),
+    ["new", "old"],
+  );
+});
+
+test("新会话开放和开始事件保留完整日期，并记录正确时分秒", async () => {
+  const {
+    studentRuntimeFixture,
+    createStudentRuntimeStore,
+    createOpenArrangement,
+  } = await import("./student-e2e-fixture.mjs");
+  const data = studentRuntimeFixture(),
+    { store } = createStudentRuntimeStore(data);
+  const a = createOpenArrangement(store, data, "practice");
+  store.startWorkstationSession(a.id, data.workstations[0].id);
+  const session = store.getData().arrangements.find((item) => item.id === a.id)
+    .sessions[0];
+  const events = session.events.filter((e) =>
+    ["工位检查通过", "学生确认并开始"].includes(e.title),
+  );
+  assert.equal(events.length, 2);
+  for (const event of events) {
+    assert.ok(event.createdAt.startsWith("2026-09-28"));
+    assert.equal(event.time, "14:00:00");
+  }
 });

@@ -179,7 +179,7 @@ test("ended and published arrangements enter results", () => {
 test("publishing accepts only formal scores and absences", () => {
   assert.equal(
     getPublishBlockers([
-      { resultStatus: "正式成绩" },
+      { resultStatus: "正式成绩", score: 90, maxScore: 100 },
       { resultStatus: "未参加" },
     ]).length,
     0,
@@ -191,7 +191,7 @@ test("publishing is blocked by pending review or evidence", () => {
     getPublishBlockers([
       { id: "a", resultStatus: "待复核" },
       { id: "b", resultStatus: "待补充证据" },
-      { id: "c", resultStatus: "正式成绩" },
+      { id: "c", resultStatus: "正式成绩", score: 90, maxScore: 100 },
     ]).map((item) => item.id),
     ["a", "b"],
   );
@@ -268,7 +268,9 @@ test("a fully scored default-pass result does not block publishing", () => {
     effectiveScore: 0,
   });
   assert.equal(
-    getPublishBlockers([{ resultStatus: "待复核", steps: [resolved] }]).length,
+    getPublishBlockers([
+      { resultStatus: "正式成绩", score: 20, steps: [resolved] },
+    ]).length,
     0,
   );
 });
@@ -446,7 +448,7 @@ test("automatic evaluation requires a published SOP and a camera configuration v
     validation: passingValidation,
   });
   assert.equal(draftGate.enabled, false);
-  assert.match(draftGate.reasons.join("；"), /SOP 尚未发布/);
+  assert.match(draftGate.reasons.join("；"), /实训标准尚未发布/);
 
   const missingCameraConfigGate = automaticEvaluationGate({
     workstation: {
@@ -981,7 +983,7 @@ test("SOP validation enforces linear required steps and structured teacher rules
     })
       .map((issue) => issue.message)
       .join("；"),
-    /Step ID 不合法/,
+    /步骤编号不合法/,
   );
   assert.match(
     validateSopDefinition({
@@ -1195,7 +1197,7 @@ test("Training Required AI Package needs a locked isolated Source Video Dataset"
   };
   assert.match(
     getAiPackageCreationReadiness({ sop: automaticSop, mapping }).issues[0],
-    /已锁定 Dataset/,
+    /已锁定数据集/,
   );
   assert.equal(
     getAiPackageCreationReadiness({
@@ -1359,7 +1361,7 @@ test("negative automatic evaluation requires confirmed actor and an open observa
     observationWindow: { status: "open" },
   });
   assert.equal(blocked.allowed, false);
-  assert.match(blocked.reasons[0], /Primary Actor/);
+  assert.match(blocked.reasons[0], /主操作人/);
 });
 
 test("evaluation clock excludes approved pause time while wall time continues", () => {
@@ -1450,12 +1452,15 @@ test("exam publish gate blocks pending dispositions, safety candidates and empty
 
 test("exam publish gate passes after all runtime review states are closed", () => {
   const session = {
+    score: 18,
+    maxScore: 20,
     id: "session-1",
     resultStatus: "正式成绩",
     steps: [
       {
         reviewStatus: "复核通过",
         effectiveScore: 18,
+        maxScore: 20,
         scoreDisposition: { status: "teacher_resolved" },
       },
     ],

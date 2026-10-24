@@ -47,6 +47,15 @@ export function buildPublicationReadiness(task) {
     categoryResultsComplete: "主要类别均有测试结果",
   };
   const blockers = [];
+  if (
+    task?.executionPurpose === "real" &&
+    (task.resultSource !== "real" ||
+      task.integrationStatus !== "connected_verified" ||
+      !task.independentReport?.id ||
+      task.independentReport?.modelArtifactId !== task.modelArtifactId ||
+      !task.independentReport?.eventMetrics)
+  )
+    blockers.push("真实模型缺少服务核验或匹配的独立事件评测。");
   if (!checks.taskCompleted) blockers.push("训练任务尚未完成。");
   if (!checks.modelArtifactExists) blockers.push("模型产物不存在或已失效。");
   if (!checks.validationResultExists) blockers.push("当前任务缺少验证结果。");
@@ -121,6 +130,9 @@ export function publishCandidateModel(
   const affectedIds = [...new Set(affectedConfigIds.filter(Boolean))];
   const metricSummary = metricSummaryForTask(task);
   const currentPublishedModel = {
+    source: task.source || "platform_training",
+    resultSource: task.resultSource || "legacy_unverified",
+    executionPurpose: task.executionPurpose || "prototype_demo",
     trainingTaskId: task.id,
     modelArtifactId: task.modelArtifactId,
     publishedBy: actor,
@@ -129,6 +141,7 @@ export function publishCandidateModel(
   };
   const record = {
     id: meta.recordId || `model-publication-${Date.now()}`,
+    resultSource: task.resultSource || "legacy_unverified",
     capabilityId: capability.id,
     trainingTaskId: task.id,
     modelArtifactId: task.modelArtifactId,
@@ -136,6 +149,9 @@ export function publishCandidateModel(
     publishedAt: now,
     metricSummary: clone(metricSummary),
     replacedExistingModel,
+    previousModel: capability.currentPublishedModel
+      ? clone(capability.currentPublishedModel)
+      : null,
     previousTrainingTaskId:
       capability.currentPublishedModel?.trainingTaskId || "",
     affectedConfigCount: affectedIds.length,

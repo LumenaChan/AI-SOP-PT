@@ -1,3 +1,4 @@
+import { standardDefinitionKey } from "./trainingStandardRules.js";
 import { isCapabilityAvailableForConfiguration } from "./aiModelPublishingRules.js";
 
 export const AI_CONFIG_STATUSES = {
@@ -200,6 +201,49 @@ export function validateAiJudgementItem({
     !(item?.safetyRuleIds || []).some((id) => safetyRuleIds.has(id))
   )
     issues.push("安全用途必须关联当前步骤至少一条教师安全规则");
+  const requirement = step?.visualRequirements?.find(
+    (r) => r.id === item?.requirementId,
+  );
+  if (requirement && (item?.purposes || []).includes("completion")) {
+    const conditionTypes = (item.conditions || []).map(
+      (condition) =>
+        (capabilities || []).find((cap) => cap.id === condition.capabilityId)
+          ?.type,
+    );
+    if (
+      ["action", "both"].includes(item.completionBasis) &&
+      !conditionTypes.includes("action_recognition")
+    )
+      issues.push("完整动作证据需要动作识别条件");
+    if (
+      ["state", "both"].includes(item.completionBasis) &&
+      !conditionTypes.includes("object_detection")
+    )
+      issues.push("结果状态证据需要可见目标状态条件");
+    if (item.completionBasis === "both" && item.combination !== "all")
+      issues.push("动作与结果状态需要全部满足");
+
+    if (!["action", "state", "both"].includes(item?.completionBasis))
+      issues.push("请选择完成证据依据");
+    if (
+      ["action", "process"].includes(requirement.target) &&
+      item?.completionBasis === "state"
+    )
+      issues.push("动作或操作过程不能仅以结果状态作为完成依据");
+    if (requirement.assessDonning && item?.completionBasis !== "both")
+      issues.push("考核穿戴过程时需同时确认完整动作和结果状态");
+  }
+  if (
+    item?.requirementId &&
+    !step?.visualRequirements?.some((r) => r.id === item.requirementId)
+  )
+    issues.push("关联可见要求不存在");
+  if (
+    (step?.visualRequirements || []).length &&
+    (item?.purposes || []).includes("completion") &&
+    !item.requirementId
+  )
+    issues.push("请选择教师可见要求");
   const conditions = Array.isArray(item?.conditions) ? item.conditions : [];
   if (!conditions.length) issues.push("至少引用一个已发布AI能力条件");
   if (!AI_CONDITION_COMBINATIONS[item?.combination])
@@ -400,6 +444,8 @@ export function completeAiCapabilityConfig({ sop, config, capabilities, now }) {
   return {
     ...normalizeAiCapabilityConfig(config),
     status: "pending_validation",
+    standardDefinitionKey: standardDefinitionKey(sop),
+    standardReviewRequired: false,
     completedAt: now || "",
     updatedAt: now || "",
   };

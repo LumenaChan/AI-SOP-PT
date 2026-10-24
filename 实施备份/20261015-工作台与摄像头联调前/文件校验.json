@@ -1,0 +1,10 @@
+{
+  "src/App.jsx": "efff113ffc1a8c6e61e96c312966bf4bb8461853422bba3636c900b2a58f94f8",
+  "src/EnhancementPanels.jsx": "7a05aaef02cb3fda00190e8c8ab01178eb63b9ef72eb34fd2cf6df4e20a571cc",
+  "src/cameraRules.js": "4e5f67d8e37b62d515282d504e38a2a9d7883411506dd79c15f98a0374548ee5",
+  "src/prototypeData.jsx": "aa58d391845c6392dd3b2b3a9c5311560aef04c9fdcdf0d10c6f08f25fb7b43a",
+  "src/data/currentPrototypeData.json": "15c3c0edf47ede882e8f0e3a9f19e65a7f615b02c316575e8e3e412c86853f1a",
+  "src/styles.css": "70bb56c7e8716043840525f9b6a9958074e3c84ca228fb3a638b921efdceab73",
+  "AGENTS.md": "c9b0f9ddaa23fc506557cbb5fea529a00dc75c8312c9610c57b7a9a5a14fb40e",
+  "scripts/verify-sop-enhancement.mjs": "7bb75934a3516d7ea5b2b8cf5bab1ed1b8db9d22b7a0b8364137994deac2a50b"
+}

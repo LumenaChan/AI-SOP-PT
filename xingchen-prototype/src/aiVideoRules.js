@@ -1,3 +1,15 @@
+const SAMPLE_FIELDS = [
+  "sourceGroupId",
+  "participantId",
+  "captureBatch",
+  "sampleUse",
+  "sampleType",
+  "captureConditions",
+];
+const sampleMetadata = (input) =>
+  Object.fromEntries(
+    SAMPLE_FIELDS.filter((k) => k in (input || {})).map((k) => [k, input[k]]),
+  );
 export const AI_VIDEO_CATEGORIES = {
   normal: "正常",
   error: "错误",
@@ -59,7 +71,9 @@ export function createAiSourceVideos(input, existingVideos, meta) {
   for (const file of files) {
     required(file?.fileName, "视频文件名不能为空。");
     if (!VIDEO_EXTENSIONS.has(videoExtension(file.fileName)))
-      throw new Error(`不支持 ${file.fileName}，请选择 mp4、mov、avi 或 mkv 文件。`);
+      throw new Error(
+        `不支持 ${file.fileName}，请选择 mp4、mov、avi 或 mkv 文件。`,
+      );
   }
   const duplicates = potentialVideoDuplicates(
     files,
@@ -73,6 +87,9 @@ export function createAiSourceVideos(input, existingVideos, meta) {
   if (!Array.isArray(meta?.ids) || meta.ids.length !== files.length)
     throw new Error("视频ID生成失败，请重试。");
   return files.map((file, index) => ({
+    ...sampleMetadata(input),
+    sourceGroupId: input.sourceGroupId || meta.ids[index],
+    sampleUse: input.sampleUse || "development",
     id: meta.ids[index],
     capabilityId: input.capabilityId,
     fileName: file.fileName,
@@ -101,8 +118,15 @@ export function updateAiSourceVideo(video, input, now) {
   required(input?.displayName, "请填写视频名称。");
   assertOption(input?.dataCategory, AI_VIDEO_CATEGORIES, "请选择数据属性。");
   assertOption(input?.sourceType, AI_VIDEO_SOURCES, "请选择数据来源。");
+  if (
+    video.sampleUse === "sealed_test" &&
+    input.sampleUse &&
+    input.sampleUse !== "sealed_test"
+  )
+    throw new Error("封存测试素材不能改为开发用途。");
   return {
     ...video,
+    ...sampleMetadata(input),
     displayName: input.displayName.trim(),
     dataCategory: input.dataCategory,
     sourceType: input.sourceType,
@@ -143,7 +167,8 @@ export function videoStats(videos) {
     total: list.length,
     normal: list.filter((item) => item.dataCategory === "normal").length,
     error: list.filter((item) => item.dataCategory === "error").length,
-    background: list.filter((item) => item.dataCategory === "background").length,
+    background: list.filter((item) => item.dataCategory === "background")
+      .length,
     unprocessed: list.filter((item) => item.processingStatus === "unprocessed")
       .length,
     derived: list.filter((item) => item.processingStatus === "derived").length,

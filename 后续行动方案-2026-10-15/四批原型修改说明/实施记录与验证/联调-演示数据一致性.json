@@ -1,0 +1,9 @@
+{
+  "changes": [
+    "/aiAnnotationCategories/13/type",
+    "/aiAnnotationCategories/14/type",
+    "/aiAnnotationCategories/15/type"
+  ],
+  "note": "相对联调前CPD，仅补齐3个演示标注类别的type；其他数据逐字段一致。",
+  "sha256": "15c3c0edf47ede882e8f0e3a9f19e65a7f615b02c316575e8e3e412c86853f1a"
+}

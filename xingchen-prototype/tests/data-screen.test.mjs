@@ -72,13 +72,13 @@ test("teacher scope excludes other teachers' arrangements and students", () => {
   assert.equal(screen.metrics[3], 1);
 });
 
-test("SOP families count once and use the latest published version", () => {
+test("independent current standards count by stable ID even when they share a legacy family", () => {
   const data = fixture();
   data.sops[0].publishedAt = "2026-09-01";
   data.sops.push({ ...data.sops[0], id: "sop-new", publishedAt: "2026-10-01", steps: [{ id: "Step 01", name: "新标准" }, { id: "Step 02", name: "新增步骤" }] });
   const screen = buildDataScreenSnapshot(data, { now });
-  assert.equal(screen.metrics[2], 1);
-  assert.equal(screen.modeTotal, 2);
+  assert.equal(screen.metrics[2], 2);
+  assert.equal(screen.modeTotal, 3);
 });
 
 test("public workstation snapshot omits identities and exam step details", () => {

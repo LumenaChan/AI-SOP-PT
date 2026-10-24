@@ -8,7 +8,7 @@ export const MANUAL_REJECTION_REASONS = {
   poor_quality: "画面质量差",
   severe_occlusion: "严重遮挡",
   target_invisible: "目标不可见",
-  incomplete_action: "动作不完整",
+  incomplete_action: "素材裁剪截断（真实未完成请保留为负例）",
   invalid_boundary: "片段边界不合理",
   irrelevant: "内容无关",
   duplicate: "重复数据",

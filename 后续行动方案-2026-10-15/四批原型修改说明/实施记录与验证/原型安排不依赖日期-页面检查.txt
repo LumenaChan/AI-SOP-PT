@@ -1,0 +1,35 @@
+[BABEL] Note: The code generator has deoptimised the styling of /Users/chenxuguang/Documents/ChatGPT/AI SOP 实训评价/xingchen-prototype/src/App.jsx as it exceeds the max of 500KB.
+[BABEL] Note: The code generator has deoptimised the styling of /var/folders/56/9lkgtj8j5q35xy7sl7nwybf00000gn/T/sop-page-verification-lPICHm/deps/react-dom_client.js?v=262a0b10 as it exceeds the max of 500KB.
+PASS 标注类别无重复追加、刷新保留有效扣分与锁定快照
+PASS 长步骤名、长观察及长标准的完整详情与默认折叠
+PASS 学生单、双、五镜头预览组件及考试信息边界
+PASS /admin/practices/p1/students/s1
+PASS /admin/exams/e1/students/s1
+PASS /teacher/dashboard
+PASS /teacher/practices
+PASS /teacher/exams
+PASS /teacher/practices/p1/live
+PASS /teacher/practices/p1/stations/w1
+PASS /teacher/exams/e-demo-exam/stations/w5
+PASS /teacher/practices/practice-demo-protection-20261015/results
+PASS /teacher/practices/practice-demo-protection-20261015/stations/w1
+PASS /teacher/exams/exam-demo-meter-exam-20261015/results
+PASS /teacher/exams/exam-demo-meter-exam-20261015/stations/w2
+PASS /teacher/practices/practice-demo-bench-afternoon-20261015/prep
+PASS /teacher/exams/exam-demo-bench-exam-20261015/prep
+PASS /teacher/practices/practice-demo-variation-20261015/prep
+PASS /teacher/practices/practice-demo-20261015/stations/ws-demo-20261015
+PASS /teacher/practices/practice-demo-20261015/students/student-demo-20261015
+PASS /teacher/practices/practice-demo-20261015/results
+PASS /admin/ai-capability-config/sop-demo-bench-20261015
+PASS /admin/ai-capability-library/annotation?capabilityId=cap-demo-meter-20261015
+PASS /admin/ai-capability-library/annotation?capabilityId=cap-demo-glove-20261015
+PASS /admin/ai-capability-library/videos?capabilityId=cap-demo-meter-20261015
+PASS /admin/ai-capability-library/training-data?capabilityId=cap-demo-meter-20261015
+PASS /admin/ai-capability-library/training?capabilityId=cap-demo-meter-20261015
+PASS /admin/ai-capability-library/publishing?capabilityId=cap-demo-meter-20261015
+PASS /admin/workstations/ws-demo-20261015
+PASS /teacher/sop/sop-demo-bench-20261015
+PASS /teacher/sop/edit/sop-demo-large-20261015
+PASS /teacher/sop/edit/sop-demo-large-20261015 [操作步骤]
+29 个页面/阶段渲染通过；此检查不执行浏览器视觉验收。

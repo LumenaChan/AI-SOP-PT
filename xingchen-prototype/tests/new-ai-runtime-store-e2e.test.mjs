@@ -1,3 +1,4 @@
+import { confirmOpeningCheck } from "./opening-check-fixture.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAiRuntimeStore } from "../src/aiRuntimeStore.js";
@@ -184,11 +185,11 @@ function createAndStart(store, data, workstationCount = 1) {
     true,
   );
   for (const workstation of data.workstations.slice(0, workstationCount))
-    store.openArrangementWorkstation(arrangement.id, workstation.id, {
-      node: true,
-      mainCamera: true,
-      cache: true,
-    });
+    store.openArrangementWorkstation(
+      arrangement.id,
+      workstation.id,
+      confirmOpeningCheck(store, arrangement.id, workstation.id),
+    );
   store.startArrangement(arrangement.id);
   for (const workstation of data.workstations.slice(0, workstationCount))
     store.startWorkstationSession(arrangement.id, workstation.id);
@@ -443,6 +444,98 @@ test("workstation without fallback camera requires no assist checklist and recor
   assert.deepEqual(
     store.getWorkstationReadiness(arrangement.id, data.workstations[0].id)
       .checks,
-    ["node", "mainCamera", "cache"],
+    ["mainCamera"],
   );
+});
+
+test("带有效扣分的未完成步骤经历遮挡、交卷后，评分和关闭状态保持一致", () => {
+  const scoreRule = {
+    id: "score-rule-submit",
+    stepId: "step-e2e",
+    name: "工具使用错误",
+    deductionMode: "fixed_deduction",
+    deductionValue: 5,
+    maxTriggerCount: 1,
+    correctionTreatment: "keep_deduction",
+  };
+  const data = runtimeData({
+      purposes: ["scoring"],
+      actualEvaluationMode: "visual_assist_default_pass",
+      scoreRule,
+    }),
+    store = createStore(data),
+    arrangement = createAndStart(store, data);
+  store.simulateAiCondition(
+    arrangement.id,
+    data.workstations[0].id,
+    "item-e2e",
+    "condition-e2e",
+  );
+  const unknown = store.simulateAiCondition(
+    arrangement.id,
+    data.workstations[0].id,
+    "item-e2e",
+    "condition-e2e",
+    {
+      id: "unknown-submit",
+      phase: "unknown",
+      visibility: "occluded",
+      startedAtMs: 0,
+      endedAtMs: 1000,
+    },
+  );
+  assert.equal(unknown.updatedSession.score, 95);
+  const result = store.finishWorkstationSession(
+    arrangement.id,
+    data.workstations[0].id,
+  );
+  assert.equal(result.session.steps[0].completionSource, "student");
+  assert.equal(result.session.steps[0].executionState, "closed");
+  assert.equal(result.session.score, 95);
+  assert.equal(result.session.scoreEngine.effectiveScore, 95);
+});
+test("没有AI完成证据的步骤提交后按规则保分，独立store不回写提交前状态", () => {
+  const data = runtimeData({ purposes: ["completion"] }),
+    store = createStore(data),
+    arrangement = createAndStart(store, data);
+  const result = store.finishWorkstationSession(
+    arrangement.id,
+    data.workstations[0].id,
+  );
+  assert.equal(result.session.steps[0].completionResult, "uncertain");
+  assert.equal(result.session.steps[0].completionSource, "student");
+  assert.equal(result.session.steps[0].executionState, "closed");
+  assert.equal(result.session.score, 100);
+  assert.equal(result.session.scoreEngine.effectiveScore, 100);
+});
+test("待教师确认的评分事实交卷后仍标记待复核，不能变为正式成绩", () => {
+  const scoreRule = {
+    id: "review-score",
+    stepId: "step-e2e",
+    name: "需复核的规则",
+    deductionMode: "fixed_deduction",
+    deductionValue: 5,
+    maxTriggerCount: 1,
+    correctionTreatment: "teacher_review",
+  };
+  const data = runtimeData({
+      purposes: ["scoring"],
+      actualEvaluationMode: "visual_assist_default_pass",
+      scoreRule,
+    }),
+    store = createStore(data),
+    arrangement = createAndStart(store, data);
+  store.simulateAiCondition(
+    arrangement.id,
+    data.workstations[0].id,
+    "item-e2e",
+    "condition-e2e",
+  );
+  const result = store.finishWorkstationSession(
+    arrangement.id,
+    data.workstations[0].id,
+  );
+  assert.equal(result.session.steps[0].reviewStatus, "待复核");
+  assert.equal(result.session.scoreEngine.scoreStatus, "pending");
+  assert.equal(result.session.resultStatus, "待复核");
 });

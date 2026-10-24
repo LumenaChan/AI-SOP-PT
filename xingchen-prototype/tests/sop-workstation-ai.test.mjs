@@ -144,7 +144,7 @@ test("判断项只能绑定本工位主备摄像头且修改后验证失效", ()
         workstation,
         now: "2026-09-27 11:00",
       }),
-    /主摄像头或备用摄像头/,
+    /当前工位/,
   );
   const updated = setJudgementCameraBinding({
     config: { ...configured(), validationStatus: "passed" },
@@ -167,14 +167,22 @@ test("不同工位实际区域独立并且区域修改触发重新验证", () =>
     now: "2026-09-27 11:00",
   });
   assert.equal(updated.validationStatus, "pending_revalidation");
-  assert.deepEqual(updated.logicalAreaMappings[0], {
-    logicalAreaId: "area-1",
-    cameraId: "cam-2",
-    x: 20,
-    y: 20,
-    width: 25,
-    height: 30,
-  });
+  assert.equal(updated.logicalAreaMappings.length, 2);
+  assert.equal(
+    updated.logicalAreaMappings.find((m) => m.cameraId === "cam-1").x,
+    10,
+  );
+  assert.deepEqual(
+    updated.logicalAreaMappings.find((m) => m.cameraId === "cam-2"),
+    {
+      logicalAreaId: "area-1",
+      cameraId: "cam-2",
+      x: 20,
+      y: 20,
+      width: 25,
+      height: 30,
+    },
+  );
 });
 
 test("八类验证案例通过并覆盖全部判断项后才能形成验证通过", () => {

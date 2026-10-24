@@ -1,3 +1,4 @@
+import { confirmOpeningCheck } from "./opening-check-fixture.mjs";
 import { createAiRuntimeStore } from "../src/aiRuntimeStore.js";
 
 export function studentRuntimeFixture() {
@@ -167,11 +168,11 @@ export function createOpenArrangement(store, data, type) {
     },
     true,
   );
-  store.openArrangementWorkstation(arrangement.id, data.workstations[0].id, {
-    node: true,
-    mainCamera: true,
-    cache: true,
-  });
+  store.openArrangementWorkstation(
+    arrangement.id,
+    data.workstations[0].id,
+    confirmOpeningCheck(store, arrangement.id, data.workstations[0].id),
+  );
   store.startArrangement(arrangement.id);
   return arrangement;
 }

@@ -1,3 +1,4 @@
+import { withCameraAliases, workstationCameras } from "./cameraRules.js";
 import { ACTIVE_STUDENT_SESSION_STATUSES } from "./studentIdentityRules.js";
 
 function studentEventTime(value) {
@@ -18,20 +19,39 @@ export function getStudentSessionAccess(
   studentId,
   arrangementId,
   workstationId,
+  sessionId = "",
 ) {
   if (!studentId) return { allowed: false, reason: "请先完成学生身份确认。" };
   const arrangement = (data?.arrangements || []).find(
     (item) => item?.id === arrangementId,
   );
   const session = arrangement?.sessions?.find(
-    (item) => item?.workstationId === workstationId,
+    (item) =>
+      item?.workstationId === workstationId &&
+      item.studentId === studentId &&
+      (!sessionId || item.id === sessionId),
   );
   if (!arrangement || !session)
-    return { allowed: false, reason: "当前任务不存在或工位尚未开放。" };
+    return {
+      allowed: false,
+      reason: arrangement?.sessions?.some(
+        (s) => s.workstationId === workstationId && s.studentId !== studentId,
+      )
+        ? "当前任务与登录学生不匹配。"
+        : "当前任务不存在或工位尚未开放。",
+    };
+  if (
+    ["草稿", "已取消"].includes(arrangement.status) ||
+    session.status === "已取消"
+  )
+    return {
+      allowed: false,
+      reason: "该安排或工位准备已取消，请返回当前任务。",
+    };
   if (session.studentId !== studentId)
     return { allowed: false, reason: "当前任务与登录学生不匹配。" };
   const justCompleted =
-    ["已完成", "待复位"].includes(session.status) &&
+    ["已完成", "待复位", "已复位"].includes(session.status) &&
     session.identityVerification?.status === "passed" &&
     session.identityVerification?.studentId === studentId;
   if (
@@ -65,16 +85,63 @@ export function getStudentTaskDetails(data, task) {
 }
 
 export function studentTaskActionLabel(type, status) {
+  if (status === "故障") return "查看异常与求助";
   const noun = type === "exam" ? "考试" : "练习";
   return ["进行中", "已暂停"].includes(status) ? `继续${noun}` : `进入${noun}`;
 }
 
+export function resolveStudentCameraViews(data, session, workstation) {
+  const devices = data?.devices || [];
+  const snapshot = session?.evaluationSnapshot?.workstationAiBaseConfigSnapshot;
+  const locked = snapshot
+    ? workstationCameras(workstation, devices, snapshot)
+    : [];
+  const current = workstationCameras(workstation, devices);
+  const byId = new Map();
+  for (const camera of [...locked, ...current]) {
+    const device = devices.find((d) => d.id === camera.id);
+    if (device && device.workstationId !== workstation?.id) continue;
+    if (byId.has(camera.id)) continue;
+    const isLocked = locked.some((view) => view.id === camera.id);
+    const detailView = /细节|特写/.test(
+      `${device?.type || ""} ${camera.name || ""}`,
+    );
+    byId.set(camera.id, {
+      ...camera,
+      detailView,
+      label:
+        camera.role === "primary"
+          ? "主视角"
+          : detailView
+            ? "细节视角"
+            : camera.name || "辅助视角",
+      previewOnly: Boolean(snapshot && !isLocked),
+      reason: !device
+        ? "摄像头设备信息不可用"
+        : camera.available
+          ? ""
+          : "该摄像头当前离线或视频不可用，请联系教师。",
+    });
+  }
+  return [...byId.values()];
+}
+
+export function selectStudentCamera(views, selectedId) {
+  return (
+    views.find((camera) => camera.id === selectedId) ||
+    views.find((camera) => camera.defaultPreview) ||
+    views.find((camera) => camera.role === "primary") ||
+    views[0] ||
+    null
+  );
+}
+
 export function resolveStudentPrimaryCamera(data, session, workstation) {
-  const primaryCameraId =
-    session?.evaluationSnapshot?.workstationAiBaseConfigSnapshot
-      ?.primaryCameraId ||
-    workstation?.aiBaseConfig?.primaryCameraId ||
-    "";
+  const primaryCameraId = withCameraAliases(
+    session?.evaluationSnapshot?.workstationAiBaseConfigSnapshot ||
+      workstation?.aiBaseConfig ||
+      {},
+  ).primaryCameraId;
   const camera = (data?.devices || []).find(
     (item) => item?.id === primaryCameraId,
   );
@@ -144,7 +211,7 @@ export function buildStudentPracticeFeedback({
         result?.judgementItemId === item.id && result?.result === "confirmed",
     ),
   );
-  if (confirmed)
+  if (confirmed && currentStep?.aiEvidenceState !== "unknown")
     return {
       type: "success",
       title: "操作进展",
@@ -257,7 +324,7 @@ export function appendStudentHintRequestToSession(
     time: studentEventTime(createdAt),
     level: "blue",
     title: "学生查看了当前步骤操作提示",
-    detail: "已向学生展示当前SOP步骤中的教学内容，不影响评分。",
+    detail: "已向学生展示当前实训标准步骤中的教学内容，不影响评分。",
     scoreImpact: "none",
   };
   return {

@@ -5,9 +5,12 @@ export const ACTIVE_STUDENT_SESSION_STATUSES = [
   "可入场",
   "进行中",
   "已暂停",
+  "故障",
 ];
 
 const HISTORICAL_ARRANGEMENT_STATUSES = new Set([
+  "草稿",
+  "已取消",
   "已结束",
   "待发布",
   "已发布",
@@ -17,9 +20,7 @@ const HISTORICAL_ARRANGEMENT_STATUSES = new Set([
 export function getStudentFaceStatus(student) {
   const status = student?.faceStatus || student?.face || "未采集";
   if (status === "待更新") return "待重采";
-  return ["已采集", "未采集", "待重采"].includes(status)
-    ? status
-    : "未采集";
+  return ["已采集", "未采集", "待重采"].includes(status) ? status : "未采集";
 }
 
 export function getStudentIdentityError(student) {
@@ -110,14 +111,16 @@ export function getStudentCurrentSessions(data, studentId) {
       (arrangement) =>
         arrangement &&
         !arrangement.archivedRecord &&
-        !HISTORICAL_ARRANGEMENT_STATUSES.has(arrangement.status),
+        !["草稿", "已取消"].includes(arrangement.status),
     )
     .flatMap((arrangement) =>
       (Array.isArray(arrangement.sessions) ? arrangement.sessions : [])
         .filter(
           (session) =>
             session?.studentId === studentId &&
-            ACTIVE_STUDENT_SESSION_STATUSES.includes(session.status),
+            ACTIVE_STUDENT_SESSION_STATUSES.includes(session.status) &&
+            (!HISTORICAL_ARRANGEMENT_STATUSES.has(arrangement.status) ||
+              session.status === "故障"),
         )
         .map((session) => ({
           arrangementId: arrangement.id,

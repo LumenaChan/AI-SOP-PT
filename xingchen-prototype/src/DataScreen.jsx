@@ -216,7 +216,7 @@ export default function DataScreen() {
   const heatPages = Math.max(1, Math.ceil(snapshot.heat.length / 3));
   const heat = snapshot.heat.slice((rotation % heatPages) * 3, (rotation % heatPages) * 3 + 3);
   const metrics = [
-    ["覆盖班级", "个", <ApartmentOutlined />], ["覆盖学生", "人", <TeamOutlined />], ["SOP标准", "项", <BookOutlined />],
+    ["覆盖班级", "个", <ApartmentOutlined />], ["覆盖学生", "人", <TeamOutlined />], ["实训标准", "项", <BookOutlined />],
     ["累计实训", "人次", <ExperimentOutlined />], ["完成练习", "场", <CheckCircleOutlined />], ["发布考试", "场", <FileDoneOutlined />],
   ];
   const stepCount = Math.max(1, ...heat.map((r) => r.cells.length));
@@ -255,8 +255,8 @@ export default function DataScreen() {
             <div className="ds-scene-caption"><span>点击工位可暂停轮播</span><nav aria-label="工位区域切换">{Array.from({ length: stationPageCount }, (_, i) => <button type="button" key={i} aria-label={`第${i + 1}组工位`} aria-pressed={page === i} className={page === i ? "active" : ""} onClick={() => selectStation(snapshot.workstations[i * 6]?.id)} />)}</nav><span>第 {page + 1} / {stationPageCount} 组</span></div>
           </Panel>
           <Panel title="操作流程智能评测" meta={<span className="ds-process-meta"><span>{focused ? `${focused.name} · ${focused.isExam ? "考试过程保密" : focused.steps.length ? `步骤 ${processOffset + 1}–${Math.min(processOffset + 3, focused.steps.length)} / ${focused.steps.length}` : focused.status}` : "等待实训"}</span>{processPages > 1 && <span className="ds-step-pager"><button type="button" aria-label="上一组操作步骤" onClick={() => moveSteps(-1)}>‹</button><button type="button" aria-label="下一组操作步骤" onClick={() => moveSteps(1)}>›</button></span>}</span>} className="ds-process-panel">
-            <div className="ds-process-label"><strong title={focused?.project}>{focused?.project || "等待实训开始"}</strong><span><VideoCameraOutlined /> {focused?.steps.length ? `已完成 ${focused.steps.filter((s) => s.complete).length}/${focused.steps.length} · 证据归档 ${focused.steps.filter((s) => s.evidence).length}/${focused.steps.length}` : "过程证据可追溯"}</span></div>
-            {focused?.steps.length ? <div className="ds-steps">{focused.steps.slice(processOffset, processOffset + 3).map((s, i) => <div key={s.id} className={s.current ? "is-current" : s.complete ? "is-complete" : ""}><span>{s.complete ? <CheckCircleOutlined /> : String(processOffset + i + 1).padStart(2, "0")}</span><strong title={s.name}>{s.name}</strong><small>{s.complete ? "已完成" : s.current ? "当前步骤" : "待进行"}</small></div>)}</div>
+            <div className="ds-process-label"><strong title={focused?.project}>{focused?.project || "等待实训开始"}</strong><span><VideoCameraOutlined /> {focused?.steps.length ? `流程记录 ${focused.steps.filter((s) => s.complete).length}/${focused.steps.length} · 真实AI确认 ${focused.steps.filter((s) => s.aiConfirmed).length} · 证据归档 ${focused.steps.filter((s) => s.evidence).length}/${focused.steps.length}` : "过程证据可追溯"}</span></div>
+            {focused?.steps.length ? <div className="ds-steps">{focused.steps.slice(processOffset, processOffset + 3).map((s, i) => <div key={s.id} className={s.current ? "is-current" : s.complete ? "is-complete" : ""}><span>{s.complete ? <CheckCircleOutlined /> : String(processOffset + i + 1).padStart(2, "0")}</span><strong title={s.name}>{s.name}</strong><small>{s.evaluationMeaning || (s.complete ? "流程已结束" : s.current ? "当前步骤" : "待进行")}</small></div>)}</div>
               : <div className="ds-process-empty">{focused?.isExam ? "考试运行状态可见 · 实时成绩与操作结果保护" : "工位准备就绪后，展示实训操作流程"}</div>}
           </Panel>
         </div>
@@ -279,12 +279,12 @@ export default function DataScreen() {
       <div className="ds-bottom-grid">
         <Panel title="操作薄弱点分析" label="已发布考试 · 扣分发生率" className="ds-heat-panel">
           <div className="ds-heat-legend"><span>低</span><i style={{ background: heatGradient }} /><span>高</span><b>— 无样本</b></div>
-          {heat.length ? <div className="ds-heat" style={{ "--ds-heat-cols": stepCount }}><span>课程 / 步骤</span>{Array.from({ length: stepCount }, (_, i) => <span key={i}>Step {String(i + 1).padStart(2, "0")}</span>)}
+          {heat.length ? <div className="ds-heat" style={{ "--ds-heat-cols": stepCount }}><span>课程 / 步骤</span>{Array.from({ length: stepCount }, (_, i) => <span key={i}>步骤 {String(i + 1).padStart(2, "0")}</span>)}
             {heat.map((row) => <div className="ds-heat-row" key={row.id}><strong>{row.name}</strong>{Array.from({ length: stepCount }, (_, i) => { const cell = row.cells[i]; return <span key={i} title={cell ? `${cell.name} · ${cell.samples}个样本` : "不适用"} style={{ background: heatColor(cell?.rate), color: cell?.rate == null ? "#7291a5" : undefined }}>{cell?.rate == null ? "—" : `${cell.rate}%`}</span>; })}</div>)}
           </div> : empty}
         </Panel>
         <Panel title="标准与能力建设" label="校级能力沉淀" className="ds-construction-panel">
-          <div className="ds-construction">{[["SOP标准", "项", <BookOutlined />], ["AI能力", "项", <ExperimentOutlined />], ["验证通过", "组", <SafetyCertificateOutlined />], ["可运行配置", "组", <DesktopOutlined />]].map(([label, unit, icon], i) => <div key={label}>{icon}<strong>{number(snapshot.construction[i])}<small>{unit}</small></strong><span>{label}</span>{i < 3 && <b>›</b>}</div>)}</div>
+          <div className="ds-construction">{[["实训标准", "项", <BookOutlined />], ["AI能力", "项", <ExperimentOutlined />], ["验证通过", "组", <SafetyCertificateOutlined />], ["可运行配置", "组", <DesktopOutlined />]].map(([label, unit, icon], i) => <div key={label}>{icon}<strong>{number(snapshot.construction[i])}<small>{unit}</small></strong><span>{label}</span>{i < 3 && <b>›</b>}</div>)}</div>
           <p>标准 <i>→</i> 操作 <i>→</i> 评价 <i>→</i> 证据</p>
         </Panel>
       </div>

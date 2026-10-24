@@ -114,6 +114,10 @@ function snapshotItem(item, capability) {
     sourceVideoId: item.sourceVideoId,
     storageRef: item.storageRef || "",
     annotationStatus: item.annotationStatus,
+    sampleType: item.sampleType || "",
+    visibility: item.visibility || "unknown",
+    sourceGroupId: item.sourceGroupId || "",
+    participantId: item.participantId || "",
   };
   return capability.type === "object_detection"
     ? {
@@ -176,6 +180,16 @@ export function createTrainingTask(
       type: capability.type,
       targetName: capability.targetName || "",
     },
+    sourceGroups: clone(
+      (groups || []).map((g) => ({
+        sourceGroupId: g.sourceGroupId || g.sourceVideoId,
+        sourceVideoIds: g.sourceVideoIds || [g.sourceVideoId],
+        participantIds: g.participantIds || [],
+        split: g.split,
+        sealed: !!g.sealed,
+        itemIds: g.itemIds,
+      })),
+    ),
     trainItemIds: splitIds("train"),
     validationItemIds: splitIds("validation"),
     testItemIds: splitIds("test"),
@@ -191,6 +205,10 @@ export function createTrainingTask(
   };
   return {
     id,
+    source: "platform_training",
+    resultSource: "prototype_demo",
+    executionPurpose: "prototype_demo",
+    inputFormat: params?.inputFormat || "RGB",
     capabilityId: capability.id,
     capabilityName: capability.name,
     capabilityType: capability.type,
@@ -285,6 +303,8 @@ function resultFor(task) {
 
 export function advanceTrainingTask(task, meta = {}) {
   if (!task?.id) throw new Error("训练任务不存在或已失效。");
+  if (task.executionPurpose === "real")
+    throw new Error("真实训练服务尚未接入，不能推进模拟任务。");
   if (!ACTIVE_TRAINING_STATUSES.includes(task.status))
     throw new Error("当前任务状态不能继续推进。");
   const now = meta.now || new Date().toISOString();

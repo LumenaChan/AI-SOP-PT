@@ -1,0 +1,74 @@
+[
+  {
+    "path": "MANIFEST.sha256",
+    "status": 200,
+    "sha256": "c3ad5e9831704d679816192249ea1b8b1ac957d535dd5c3e36d951393a5e4038",
+    "contentType": "application/octet-stream"
+  },
+  {
+    "path": "assets/ai-brain.svg",
+    "status": 200,
+    "sha256": "bee7714689561a289d206722b30110ff7a7def9abd9440a786a8ed8e1f1bba34",
+    "contentType": "image/svg+xml"
+  },
+  {
+    "path": "assets/index-BQ_QUbEa.js",
+    "status": 200,
+    "sha256": "8ff334bf670ff89661fc1887ff0cb1c62e45a37ab127875e521d3c79a9ab418f",
+    "contentType": "application/javascript"
+  },
+  {
+    "path": "assets/index-RBqURgkg.css",
+    "status": 200,
+    "sha256": "5feb3e5af56ab22069407f68c9ee2c576d0b564e4a94be03bbc7e49f4db20417",
+    "contentType": "text/css"
+  },
+  {
+    "path": "assets/login-ai-vision-training.png",
+    "status": 200,
+    "sha256": "5a2ac639743159360c17f4e9b4a38ac4303601d3eb8f03933781533404ed2a48",
+    "contentType": "image/png"
+  },
+  {
+    "path": "assets/lucide-icons.LICENSE.txt",
+    "status": 200,
+    "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+    "contentType": "text/plain"
+  },
+  {
+    "path": "assets/student-monitor-hand-tracking.png",
+    "status": 200,
+    "sha256": "96e0ab498fba80269aed26a115b1b14aec0464aeb9cfb18031fbf0fcac168412",
+    "contentType": "image/png"
+  },
+  {
+    "path": "assets/workstation-empty.png",
+    "status": 200,
+    "sha256": "6aa1e8ca5267cdd630a27baf369d89f2cee6874af081a95f9ae0de72bfd7f3c4",
+    "contentType": "image/png"
+  },
+  {
+    "path": "assets/workstation-female.png",
+    "status": 200,
+    "sha256": "92d77e33bde39b1ff2a43840d0f0a33b92251644920ba6e64bbf3893d49b7552",
+    "contentType": "image/png"
+  },
+  {
+    "path": "assets/workstation-male.png",
+    "status": 200,
+    "sha256": "6b9736c43ebffb3ca58ef0b0bc00584b57a66c8ba2e595f1439726f1c01492df",
+    "contentType": "image/png"
+  },
+  {
+    "path": "deployment-version.json",
+    "status": 200,
+    "sha256": "6e68a010aa811c512f0f9306947e3795c9c1f8caee8bf914d00e513102ecbbbb",
+    "contentType": "application/json"
+  },
+  {
+    "path": "index.html",
+    "status": 200,
+    "sha256": "45cc6e8ff893b6853ca9b1011e6e6be2892b88a0b20ccb5e1647afc880dfbc41",
+    "contentType": "text/html"
+  }
+]

@@ -118,7 +118,8 @@ function duplicateIndexes(items, signals, mode, enabled) {
       .slice()
       .sort((a, b) =>
         mode === "frames"
-          ? Number(items[a].sourceTimeMs || 0) - Number(items[b].sourceTimeMs || 0)
+          ? Number(items[a].sourceTimeMs || 0) -
+            Number(items[b].sourceTimeMs || 0)
           : Number(items[a].startMs || 0) - Number(items[b].startMs || 0),
       )
       .forEach((index, position, sorted) => {
@@ -150,7 +151,8 @@ function imageReasons(item, signal, rules, duplicate) {
     reasons.push("black_screen");
   if (
     rules.blur?.enabled &&
-    Number(signal.clarity ?? 1) < IMAGE_LIMITS[sensitivity(rules.blur.sensitivity)].blur
+    Number(signal.clarity ?? 1) <
+      IMAGE_LIMITS[sensitivity(rules.blur.sensitivity)].blur
   )
     reasons.push("blur");
   if (
@@ -185,7 +187,8 @@ function clipReasons(item, signal, rules, duplicate) {
     reasons.push("black_screen");
   if (
     rules.blur?.enabled &&
-    Number(signal.blurRatio || 0) >= CLIP_LIMITS[sensitivity(rules.blur.sensitivity)].blur
+    Number(signal.blurRatio || 0) >=
+      CLIP_LIMITS[sensitivity(rules.blur.sensitivity)].blur
   )
     reasons.push("severe_blur");
   if (
@@ -217,7 +220,8 @@ export function buildAutoCleaningTask(input, meta) {
     throw new Error("当前AI能力类型不支持自动清洗。");
   if (items.some((item) => item.capabilityId !== input.capabilityId))
     throw new Error("清洗数据必须属于同一个AI能力。");
-  const rules = input.rules ||
+  const rules =
+    input.rules ||
     (input.mode === "frames"
       ? DEFAULT_IMAGE_CLEANING_RULES
       : DEFAULT_CLIP_CLEANING_RULES);
@@ -242,11 +246,14 @@ export function buildAutoCleaningTask(input, meta) {
     if (
       input.mode === "clips" &&
       rules.duration?.enabled &&
-      Number(item.durationMs || 0) > Number(rules.duration.maxSeconds || 0) * 1000
+      Number(item.durationMs || 0) >
+        Number(rules.duration.maxSeconds || 0) * 1000
     )
       warnings.push("too_long");
     const recommendation = reasons.length ? "auto_reject" : "keep";
-    const protectedKeep = item.manualOverride === "keep";
+    const protectedKeep =
+      item.manualOverride === "keep" ||
+      ["incomplete", "lookalike", "uncertain"].includes(item.sampleType);
     return {
       ...item,
       cleaningStatus: "auto_cleaned",
@@ -319,9 +326,11 @@ export function summarizeCleaning(items) {
   });
   return {
     total: list.length,
-    uncleaned: list.filter((item) => item.cleaningStatus !== "auto_cleaned").length,
+    uncleaned: list.filter((item) => item.cleaningStatus !== "auto_cleaned")
+      .length,
     keep: list.filter((item) => item.autoCleaningResult === "keep").length,
-    rejected: list.filter((item) => item.autoCleaningResult === "auto_reject").length,
+    rejected: list.filter((item) => item.autoCleaningResult === "auto_reject")
+      .length,
     restored: list.filter((item) => item.manualOverride === "keep").length,
     reasonCounts,
     warningCounts,

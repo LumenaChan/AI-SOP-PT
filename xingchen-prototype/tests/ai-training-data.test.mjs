@@ -315,6 +315,7 @@ test("readiness passes when all splits contain the main category and saved data 
     candidateCount: 3,
     assignedCount: 3,
     unavailableCount: 2,
+    sourceGroupCount: 3,
     sourceVideoCount: 3,
     train: 1,
     validation: 1,
