@@ -414,7 +414,11 @@ test("target detection and action recognition complete the same new architecture
     (scenario, index) => `case-${scenario}-${index}`,
   ).map((item) => ({
     ...item,
-    actualResult: "现场结果与预期一致",
+    actualResult: "系统已按该场景输出正确的完成或异常状态",
+    reviewNote: "逐项核对系统输出，均符合本用例期望结果",
+    executor: "现场工程师",
+    evidenceUrl: "https://evidence.example.test/validation.mp4",
+    judgementItemIds: aiConfig.judgementItems.map((i) => i.id),
     result: "passed",
   }));
   assert.equal(
@@ -430,5 +434,6 @@ test("target detection and action recognition complete the same new architecture
     checks,
     readiness: checks.readiness,
   });
-  assert.equal(runtime.runnable, true);
+  assert.equal(runtime.runnable, false);
+  assert.equal(runtime.label, "待现场验收");
 });

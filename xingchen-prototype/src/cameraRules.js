@@ -38,9 +38,7 @@ export function cameraViews(config = {}) {
 export function withCameraAliases(config = {}) {
   const cameras = cameraViews(config),
     enabled = cameras.filter((c) => c.enabled),
-    primary =
-      enabled.find((c) => c.defaultPreview) ||
-      enabled.find((c) => c.role === "primary");
+    primary = enabled.find((c) => c.role === "primary");
   return {
     ...config,
     cameras,
@@ -104,7 +102,7 @@ export function validateCameraCollection(config, workstation, devices = []) {
   if (
     enabled.length &&
     (enabled.filter((c) => c.defaultPreview).length !== 1 ||
-      !enabled.some((c) => c.role === "primary"))
+      enabled.filter((c) => c.role === "primary").length !== 1)
   )
     throw new Error("请选择一个主采集视角，并且只能有一个默认预览。");
   for (const view of views) {
@@ -120,6 +118,36 @@ export function validateCameraCollection(config, workstation, devices = []) {
       throw new Error("请填写视角名称并选择角色。");
   }
   return withCameraAliases({ ...config, cameras: views });
+}
+
+// Editing a collection never rebuilds it from the legacy two-camera aliases.
+export function editCameraView(config, deviceId, patch) {
+  let cameras = cameraViews(config).map((view) => {
+    if (view.deviceId === deviceId) {
+      const next = { ...view, ...patch };
+      if (patch.role === "primary") next.enabled = true;
+      if (patch.role === "backup") next.enabled = false;
+      if (!next.enabled) next.defaultPreview = false;
+      return next;
+    }
+    return {
+      ...view,
+      ...(patch.defaultPreview ? { defaultPreview: false } : {}),
+      ...(patch.role === "primary" && view.role === "primary"
+        ? { role: "auxiliary" }
+        : {}),
+    };
+  });
+  if (!cameras.some((c) => c.enabled && c.defaultPreview)) {
+    const preview =
+      cameras.find((c) => c.enabled && c.role === "primary") ||
+      cameras.find((c) => c.enabled);
+    cameras = cameras.map((c) => ({
+      ...c,
+      defaultPreview: c.deviceId === preview?.deviceId,
+    }));
+  }
+  return withCameraAliases({ ...config, cameras });
 }
 export function effectiveCameraIds(binding, workstation) {
   const allowed = new Set(

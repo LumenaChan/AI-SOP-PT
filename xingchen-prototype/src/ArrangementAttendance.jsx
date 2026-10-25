@@ -37,7 +37,7 @@ export function ArrangementAttendanceEntry({
   arrangement,
   adminReadOnly = false,
 }) {
-  const { data, dataSource } = usePrototypeData(),
+  const { data, dataSource, teacherId } = usePrototypeData(),
     loc = useLocation(),
     nav = useNavigate(),
     [params, setParams] = useSearchParams(),
@@ -45,7 +45,7 @@ export function ArrangementAttendanceEntry({
   const model = arrangementAttendance(
     data,
     arrangement.id,
-    adminReadOnly ? null : "t1",
+    adminReadOnly ? null : teacherId,
   );
   if (!model) return null;
   const patch = (changes) => {

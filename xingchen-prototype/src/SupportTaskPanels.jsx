@@ -194,14 +194,14 @@ function SupportTaskDetails({ task }) {
     [message, setMessage] = useState("");
   const [guidance, setGuidance] = useState({
     performedAt: "",
-    performer: "王老师",
+    performer: store.teacherName,
     process: "",
     outcome: "",
   });
   const [review, setReview] = useState({
     verificationMode: "manual",
     performedAt: "",
-    performer: "王老师",
+    performer: store.teacherName,
     basis: "",
     studentConclusion: "",
   });
@@ -215,7 +215,7 @@ function SupportTaskDetails({ task }) {
   const chosen = references.find(
     (r) => `${r.arrangementId}/${r.sessionId}` === refId,
   );
-  const mutable = task.teacherId === "t1" && source.available;
+  const mutable = task.teacherId === store.teacherId && source.available;
   const open = ["pending", "coaching", "awaiting_review"].includes(task.status);
   const act = (action) => {
     if (busy.current || !context) return;
@@ -576,14 +576,14 @@ export function SupportTaskSourcePanel({
     nav = useNavigate();
   const tasks = supportTasksForSession(store.data, session.id, arrangement.id);
   const source = formalResultRows(store.data, {
-    teacherId: "t1",
+    teacherId: store.teacherId,
     studentId: session.studentId,
   }).find(
     (r) => r.arrangementId === arrangement.id && r.sessionId === session.id,
   );
   const candidate = source
     ? latestStudentResultRows(store.data, {
-        teacherId: "t1",
+        teacherId: store.teacherId,
         studentId: source.studentId,
         sopId: source.sopId,
         standardBasisKey: source.standardBasisKey,

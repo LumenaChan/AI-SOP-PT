@@ -1,6 +1,11 @@
+import { studentReviewPreviewPlayback } from "./studentReviewPreviewData.js";
+import { examReviewVisibility } from "./studentReviewAccessRules.js";
+import { studentStepPlayback, studentStandardMedia } from "./studentPlaybackRules.js";
+import { studentPracticeStep } from "./studentReviewRules.js";
+import { maximumFor } from "./gradeScoreValidityRules.js";
 import { strictMetricNumber } from "./teacherDashboardMetrics.js";
 import { stepFlowLabel, sessionHelpRequests } from "./sessionClosureRules.js";
-export function studentResult(data, studentId, arrangementId, sessionId) {
+export function studentResult(data, studentId, arrangementId, sessionId, now = Date.now()) {
   if (!studentId || !sessionId) return null;
   const arrangement = (data.arrangements || []).find(
     (a) => a.id === arrangementId,
@@ -24,6 +29,8 @@ export function studentResult(data, studentId, arrangementId, sessionId) {
   const published = session.resultStatus === "已发布";
   const absent = session.resultStatus === "未参加";
   const visible = !absent && (!exam || published);
+  const preview = visible && studentReviewPreviewPlayback(arrangementId, sessionId, "preview");
+  const access = exam ? { ...examReviewVisibility(arrangement), ...(preview ? { recording: true } : {}) } : { feedback: true, recording: true, standard: true };
   const recordedScore = strictMetricNumber(
     Object.prototype.hasOwnProperty.call(session, "score")
       ? session.score
@@ -61,6 +68,8 @@ export function studentResult(data, studentId, arrangementId, sessionId) {
       ? {
           score:
             recordedScore !== null && recordedScore >= 0 ? recordedScore : null,
+          maxScore: maximumFor(session, session.evaluationSnapshot?.sopSnapshot || session.snapshot?.sopSnapshot || arrangement.snapshot?.sopSnapshot || {}),
+          reviewAccess: access,
           steps: (session.steps || []).map((s) => ({
             id: s.id,
             name: s.name,
@@ -75,11 +84,14 @@ export function studentResult(data, studentId, arrangementId, sessionId) {
                   ? "本人"
                   : "",
             flowAt: s.flowCompletion?.at || "",
+            review: studentPracticeStep(s, session, arrangement, access),
+            ...(access.recording ? { playback: preview ? studentReviewPreviewPlayback(arrangementId, sessionId, s.id) : studentStepPlayback(s, session, now) } : {}),
+            ...(access.standard ? { standardMedia: studentStandardMedia(s, session, arrangement) } : {}),
             evidence:
               s.aiEvidenceState === "confirmed"
                 ? s.resultSource === "real"
                   ? "AI证据支持"
-                  : "演示证据支持"
+                  : "历史证据来源待核对"
                 : "未自动确认（按规则保分或教师复核）",
           })),
         }

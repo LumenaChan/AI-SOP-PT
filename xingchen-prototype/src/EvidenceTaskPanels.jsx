@@ -39,7 +39,7 @@ export function EvidenceTaskDetails({ task, readOnly = false }) {
   const [registration, setRegistration] = useState(() => ({
     ...task.registration,
     performedAt: task.registration?.performedAt || "",
-    performer: task.registration?.performer || "王老师",
+    performer: task.registration?.performer || store.teacherName,
     verificationMode: task.registration?.verificationMode || "manual",
   }));
   const [score, setScore] = useState(""),
@@ -61,7 +61,8 @@ export function EvidenceTaskDetails({ task, readOnly = false }) {
     arrangement?.status === "已发布" ||
     session?.resultStatus === "已发布" ||
     session?.scoreFrozen;
-  const mutable = !readOnly && task.teacherId === "t1" && Boolean(step);
+  const mutable =
+    !readOnly && task.teacherId === store.teacherId && Boolean(step);
   const references = store.data.arrangements.flatMap((a) =>
     (a.sessions || [])
       .filter((s) => s.studentId === task.studentId)
@@ -78,7 +79,7 @@ export function EvidenceTaskDetails({ task, readOnly = false }) {
         taskId: task.id,
         ...context,
         operationId: operationIds.current[action],
-        actorId: "t1",
+        actorId: store.teacherId,
         reason,
         studentConclusion,
         score: score === "" ? undefined : score,
@@ -525,7 +526,7 @@ export function EvidenceTaskPage() {
     store = usePrototypeData(),
     nav = useNavigate();
   const task = store.data.evidenceTasks?.find(
-    (t) => t.id === taskId && t.teacherId === "t1",
+    (t) => t.id === taskId && t.teacherId === store.teacherId,
   );
   return (
     <>

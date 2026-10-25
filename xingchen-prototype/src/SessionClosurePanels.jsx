@@ -43,7 +43,7 @@ export function HelpLifecycle({
         requestId: r.id,
         action,
         actor: studentMode ? "student" : "teacher",
-        actorId: studentMode ? session.studentId : "t1",
+        actorId: studentMode ? session.studentId : store.teacherId,
         note: notes[r.id] || "",
       });
       setError("");
@@ -174,7 +174,7 @@ export function StepProgression({ arrangement, session, studentMode = false }) {
         stepId: step.id,
         action: studentMode ? "submit_step" : "confirm_step",
         actor: studentMode ? "student" : "teacher",
-        actorId: studentMode ? session.studentId : "t1",
+        actorId: studentMode ? session.studentId : store.teacherId,
         note,
       });
       setNote("");

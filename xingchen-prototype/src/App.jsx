@@ -1,3 +1,49 @@
+import { ExamReviewVisibilityPanel } from "./ExamReviewVisibilityPanel.jsx";
+import { StudentResultReview } from "./StudentResultReview.jsx";
+import { RecordExportHistory } from "./RecordExportHistory.jsx";
+import { escapeReportText } from "./exportFileRules.js";
+import { getArrangementResultStats, sessionResultPresentation, arrangementAbnormalWorkstations, arrangementRecordContext } from "./recordResultRules.js";
+import { stepDiagnostic, diagnosticCheckLabel, diagnosticLinks } from "./sessionDiagnosticRules.js";
+import {
+  ValidationEnvironmentEditor,
+  ValidationRunDetails,
+  ValidationCasePreviewList,
+  ValidationCaseTabs,
+} from "./FieldValidationPanels.jsx";
+import {
+  validationResult,
+  assertFieldEnablement,
+} from "./workstationValidationActions.js";
+import {
+  workstationLinkedStandards,
+  standardWorkstationIds,
+} from "./workstationStandardRules.js";
+import {
+  WorkstationAiBaseConfigForm,
+  WorkstationEquipmentPanel,
+  WorkstationStandardsPanel,
+  openWorkstationInspection,
+} from "./WorkstationEquipmentPanels.jsx";
+import {
+  workstationUsageRestriction,
+  activeWorkstationUse,
+  workstationArrangementState,
+} from "./workstationReleaseRules.js";
+import {
+  TeacherChangePasswordPage,
+  teacherPasswordReceiptModal,
+  openTeacherPasswordReset,
+  teacherImportReceiptModal,
+} from "./TeacherPasswordPanels.jsx";
+import {
+  teacherImportPreview,
+  TEACHER_IMPORT_TEMPLATE,
+  ACCOUNT_IMPORT_LIMIT,
+} from "./teacherImportRules.js";
+import {
+  teacherPasswordStatus,
+  teacherAccountRedirect,
+} from "./teacherAccountRules.js";
 import { displayBusinessText, displayStepLabel } from "./businessTextRules.js";
 import {
   historicalStandardBasis,
@@ -24,7 +70,6 @@ import {
   deviceSerialLabel,
   deviceDisplayName,
 } from "./resourceDisplayRules.js";
-import { PrototypeResourceIdentifiers } from "./PrototypeResourceIdentifiers.jsx";
 import { standardMediaWorkingBackup } from "./standardMediaBackup.js";
 import {
   StandardMediaEditor,
@@ -91,7 +136,6 @@ import {
   SampleMetadataPanel,
   PreannotationTasks,
   SuggestionPanel,
-  CameraCollectionEditor,
   ViewBindingEditor,
   ValidationPurposePanel,
   ExistingModelPanel,
@@ -132,6 +176,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   BrowserRouter,
+  Link,
   Navigate,
   Route,
   Routes,
@@ -186,6 +231,7 @@ import {
   departments,
   deviceTypes,
   PrototypeDataProvider,
+  TeacherDataScope,
   usePrototypeData,
 } from "./prototypeData.jsx";
 import { dateTimeInputValue } from "./dateTimeRules.js";
@@ -326,7 +372,6 @@ import {
 import {
   deriveWorkstationAiReadiness,
   isCameraDevice,
-  isCriticalWorkstationAiChange,
   isEdgeDevice,
   normalizeWorkstationAiBaseConfig,
 } from "./workstationAiRules.js";
@@ -341,6 +386,7 @@ import {
   VALIDATION_SCENARIOS,
   WORKSTATION_ENABLE_STATUSES,
   WORKSTATION_VALIDATION_STATUSES,
+  workstationValidationLabel,
 } from "./sopWorkstationAiRules.js";
 import {
   automaticEvaluationGate,
@@ -893,6 +939,10 @@ function Modal({ data, close, done }) {
     setError("");
     try {
       const message = await data.onConfirm();
+      if (data.onSuccess) {
+        data.onSuccess(message);
+        return;
+      }
       done(message || data.success || "操作已完成");
     } catch (reason) {
       setError(
@@ -907,7 +957,7 @@ function Modal({ data, close, done }) {
   return (
     <div
       className="overlay"
-      onMouseDown={(e) => e.target === e.currentTarget && close()}
+      onMouseDown={(e) => !busy && e.target === e.currentTarget && close()}
     >
       <section
         ref={dialogRef}
@@ -928,7 +978,7 @@ function Modal({ data, close, done }) {
           if (event.key === "Tab") {
             const focusable = [
               ...dialogRef.current.querySelectorAll(
-                'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
               ),
             ];
             if (!focusable.length) return;
@@ -949,7 +999,12 @@ function Modal({ data, close, done }) {
             <span className="eyebrow">{data.eyebrow || "操作确认"}</span>
             <h2 id="modal-title">{displayBusinessText(data.title)}</h2>
           </div>
-          <button className="icon-button" onClick={close} aria-label="关闭弹窗">
+          <button
+            className="icon-button"
+            disabled={busy}
+            onClick={close}
+            aria-label="关闭弹窗"
+          >
             ×
           </button>
         </header>
@@ -1218,7 +1273,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             <div className="role-menu-wrap">
               <button
                 className="user-menu"
-                aria-label={`打开身份菜单，当前为${admin ? "系统管理员" : "王老师"}`}
+                aria-label={`打开身份菜单，当前为${admin ? "系统管理员" : store.teacherName}`}
                 aria-haspopup="menu"
                 aria-expanded={roleMenuOpen}
                 onClick={() => {
@@ -1230,8 +1285,12 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   <UserOutlined aria-hidden="true" />
                 </span>
                 <span>
-                  <strong>{admin ? "系统管理员" : "王老师"}</strong>
-                  <small>{admin ? "管理员端" : "新能源车辆学院"}</small>
+                  <strong>{admin ? "系统管理员" : store.teacherName}</strong>
+                  <small>
+                    {admin
+                      ? "管理员端"
+                      : store.currentTeacher?.department || "教师端"}
+                  </small>
                 </span>
                 <span className="role-menu__chevron" aria-hidden="true">
                   ⌄
@@ -1240,7 +1299,9 @@ function Shell({ children, modal, setModal, toast, setToast }) {
               {roleMenuOpen && (
                 <div className="role-popover" role="menu">
                   <span className="eyebrow">当前工作身份</span>
-                  <strong>{admin ? "系统管理员" : "王老师 · 教师"}</strong>
+                  <strong>
+                    {admin ? "系统管理员" : `${store.teacherName} · 教师`}
+                  </strong>
                   <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>
                   <details className="role-data-source">
                     <summary className="role-data-source__heading">
@@ -1364,7 +1425,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                     教师端{!admin ? " · 当前" : ""}
                   </Button>
                   <Button
-                    disabled={admin}
+                    disabled={admin || store.accountSession?.role === "teacher"}
                     onClick={() => {
                       nav("/admin/overview");
                       setRoleMenuOpen(false);
@@ -1381,8 +1442,19 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   >
                     学生端
                   </Button>
+                  {!admin && (
+                    <Button
+                      onClick={() => {
+                        setRoleMenuOpen(false);
+                        nav("/account/password");
+                      }}
+                    >
+                      修改密码
+                    </Button>
+                  )}
                   <Button
                     onClick={() => {
+                      store.logout();
                       setRoleMenuOpen(false);
                       nav("/login");
                     }}
@@ -1397,7 +1469,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
         <main className="content">
           <AttendanceReturnLink />
           <StatisticsReturnLink />
-          {children}
+          {admin ? children : <TeacherDataScope>{children}</TeacherDataScope>}
         </main>
       </section>
       {toast && (
@@ -1411,17 +1483,36 @@ function Shell({ children, modal, setModal, toast, setToast }) {
   );
 }
 function LoginPage() {
-  const nav = useNavigate();
+  const nav = useNavigate(),
+    location = useLocation(),
+    store = usePrototypeData();
+  const [signingIn, setSigningIn] = useState(false);
   const [remembered] = useState(() => {
     try {
-      return readRememberedLogin(window.localStorage);
+      const saved = readRememberedLogin(window.localStorage);
+      const demoTeacher = store.data.teachers.find((t) => t.id === "t1");
+      return saved?.account === "wanglaoshi" && demoTeacher?.passwordCredential
+        ? { account: demoTeacher.account, accountOnly: true }
+        : saved;
     } catch {
       return null;
     }
   });
-  const [account, setAccount] = useState(remembered?.account || "wanglaoshi");
-  const [password, setPassword] = useState(remembered?.password || "12345678");
+  const [account, setAccount] = useState(
+    location.state?.account || remembered?.account || "wanglaoshi",
+  );
+  const [password, setPassword] = useState(
+    location.state?.account || remembered?.accountOnly
+      ? ""
+      : remembered?.password || "12345678",
+  );
   const [rememberPassword, setRememberPassword] = useState(Boolean(remembered));
+  const rememberAccountOnly =
+    account.trim().toLowerCase() !== "admin" &&
+    (account.trim().toLowerCase() !== "wanglaoshi" ||
+      Boolean(
+        store.data.teachers.find((t) => t.id === "t1")?.passwordCredential,
+      ));
   const [captcha, setCaptcha] = useState(createLoginCaptcha);
   const [captchaInput, setCaptchaInput] = useState("");
   const [error, setError] = useState("");
@@ -1478,8 +1569,9 @@ function LoginPage() {
       </section>
       <section className="login-panel">
         <form
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
+            if (signingIn) return;
             if (!captchaInput.trim()) {
               setError("请输入验证码。");
               captchaField.current.focus();
@@ -1491,39 +1583,48 @@ function LoginPage() {
               captchaField.current.focus();
               return;
             }
-            if (account.trim() === "disabled-demo") {
-              setError("该演示账号已停用，请联系系统管理员。");
-              return;
-            }
-            const normalizedAccount = account.trim();
-            const accountRole =
-              normalizedAccount === "wanglaoshi"
-                ? "teacher"
-                : normalizedAccount === "admin"
-                  ? "admin"
-                  : "";
-            if (!accountRole || password !== "12345678") {
-              setError("账号或密码错误，请检查后重试。");
-              refreshCaptcha();
-              return;
-            }
+            setSigningIn(true);
             try {
-              saveRememberedLogin(window.localStorage, {
-                account: normalizedAccount,
-                password,
-                remember: rememberPassword,
-              });
-            } catch {
-              /* Storage restrictions must not prevent prototype login. */
+              const result = await store.login(account, password);
+              try {
+                saveRememberedLogin(window.localStorage, {
+                  account:
+                    result.role === "teacher" &&
+                    result.credentialId !== "legacy-demo"
+                      ? result.account
+                      : account.trim().toLowerCase(),
+                  password,
+                  accountOnly:
+                    result.role === "teacher" &&
+                    (result.credentialId !== "legacy-demo" ||
+                      account.trim().toLowerCase() !== "wanglaoshi"),
+                  remember: rememberPassword && !result.mustChange,
+                });
+              } catch {
+                /* Optional remembered login never blocks a valid session. */
+              }
+              nav(
+                result.role === "admin"
+                  ? "/admin/overview"
+                  : result.mustChange
+                    ? "/account/password"
+                    : "/teacher/dashboard",
+                { replace: true },
+              );
+            } catch (failure) {
+              setError(failure.message || "登录失败，请重试。");
+              refreshCaptcha();
+            } finally {
+              setSigningIn(false);
             }
-            nav(
-              accountRole === "teacher"
-                ? "/teacher/dashboard"
-                : "/admin/overview",
-            );
           }}
         >
           <h2>欢迎登录</h2>
+          {location.state?.message && (
+            <p className="login-account-note" role="status">
+              {location.state.message}
+            </p>
+          )}
           <label>
             账号
             <input
@@ -1603,16 +1704,19 @@ function LoginPage() {
                 }
               }}
             />
-            <span>记住密码</span>
+            <span>{rememberAccountOnly ? "记住账号" : "记住密码"}</span>
           </label>
           {error && (
             <p className="form-error" id="login-error" role="alert">
               <ExclamationCircleFilled /> {displayBusinessText(error)}
             </p>
           )}
-          <Button htmlType="submit" type="primary">
-            登录系统
+          <Button htmlType="submit" type="primary" disabled={signingIn}>
+            {signingIn ? "正在登录…" : "登录系统"}
           </Button>
+          <p className="login-account-note">
+            忘记教师密码？请联系管理员在教师管理中重置密码。
+          </p>
           <div className="login-secondary-links">
             <button
               type="button"
@@ -2170,8 +2274,10 @@ function StudentResultPage() {
   const { id, sessionId } = useParams();
   const store = usePrototypeData();
   const identity = resolveStudentIdentity(store.data.students);
+  const [resultClock, setResultClock] = useState(Date.now);
+  useEffect(() => { const timer = setInterval(() => setResultClock(Date.now()), 60000); return () => clearInterval(timer); }, []);
   if (!identity) return <Navigate to="/student/login" replace />;
-  const result = studentResult(store.data, identity.student.id, id, sessionId);
+  const result = studentResult(store.data, identity.student.id, id, sessionId, resultClock);
   return (
     <section className="student-current-page student-result-page">
       <Button onClick={() => nav("/student/current")}>返回任务与结果</Button>
@@ -2192,35 +2298,7 @@ function StudentResultPage() {
                 : "本次提交已保存，请等待教师统一发布成绩。"}
             </p>
           ) : (
-            <>
-              <h2>
-                {result.score == null
-                  ? "成绩待核对"
-                  : `有效得分 ${result.score} 分`}
-              </h2>
-              <p>流程、证据与成绩分别记录</p>
-              <div className="student-result-steps">
-                {result.steps.map((step) => (
-                  <article key={step.id}>
-                    <h3>
-                      {step.id} · {step.name}
-                    </h3>
-                    <p>
-                      {step.score}/{step.maxScore} 分 · {step.result}
-                    </p>
-                    <p>
-                      {step.flow}
-                      {displayBusinessText(
-                        step.flowActor
-                          ? ` · ${step.flowActor} · ${step.flowAt}`
-                          : "",
-                      )}
-                    </p>
-                    <p>{step.evidence}</p>
-                  </article>
-                ))}
-              </div>
-            </>
+            <StudentResultReview key={result.sessionId} result={result} />
           )}
           <StudentEvidenceTaskList
             studentId={identity.student.id}
@@ -2261,7 +2339,7 @@ function Dashboard() {
   const [todoPage, setTodoPage] = useState(0);
   const activeArrangements = data.arrangements.filter(
     (item) =>
-      item.teacherId === "t1" &&
+      item.teacherId === store.teacherId &&
       !item.archivedRecord &&
       item.status !== "已取消",
   );
@@ -2280,7 +2358,7 @@ function Dashboard() {
   const runningArrangements = activeArrangements.filter((item) =>
     ["进行中", "已暂停"].includes(item.status),
   );
-  const displayedTeacherTodos = teacherDashboardTasks(data, "t1");
+  const displayedTeacherTodos = teacherDashboardTasks(data, store.teacherId);
   const pendingCount = displayedTeacherTodos.length;
   const pendingPublishTasks = displayedTeacherTodos.filter(
     (item) => item.type === "publish",
@@ -5508,7 +5586,9 @@ function SopList() {
   const visible = data.sops.filter((sop) => {
     const aiStatus = getSopAiConfigurationSummary(data, sop).status;
     return (
-      (tab === "school" || sop.owner === "王老师") &&
+      (tab === "school" ||
+        sop.owner ===
+          (store.teacherId === "t1" ? "王老师" : store.teacherName)) &&
       (statusFilter === "全部" || sop.status === statusFilter) &&
       (aiFilter === "全部" || aiStatus === aiFilter) &&
       `${sop.name} ${sop.major || ""} ${sop.course || ""} ${sop.owner}`
@@ -6167,7 +6247,14 @@ function SopEditor({ setModal }) {
     store = usePrototypeData();
   const source = id ? store.data.sops.find((item) => item.id === id) : null;
   const [draft, setDraft] = useState(() =>
-    JSON.parse(JSON.stringify(source || emptySopDraft())),
+    JSON.parse(
+      JSON.stringify(
+        source || {
+          ...emptySopDraft(),
+          owner: store.teacherId === "t1" ? "王老师" : store.teacherName,
+        },
+      ),
+    ),
   );
   const [stage, setStage] = useState(() =>
       Math.min(3, Math.max(0, Number(location.state?.stage || 0))),
@@ -9099,71 +9186,41 @@ const ScoreDispositionForm = forwardRef(function ScoreDispositionForm(
   );
 });
 
-function getArrangementResultStats(arrangement, sops = []) {
-  const sessions = arrangement.sessions || [];
-  const resultSessions = sessions.filter(
-    (item) => item.resultStatus !== "未参加",
-  );
-  const average = resultSessions.length
-    ? (
-        resultSessions.reduce((sum, item) => sum + Number(item.score || 0), 0) /
-        resultSessions.length
-      ).toFixed(1)
-    : "--";
-  const publishGate = getExamPublishGate(
-    sessions,
-    arrangement.snapshot?.sopSnapshot ||
-      sops.find((s) => s.id === arrangement.sopId),
-  );
-  const blockerIds = new Set(publishGate.details.map((item) => item.sessionId));
-  const blockers = sessions.filter((session) => blockerIds.has(session.id));
-  return { sessions, average, blockers, publishGate };
-}
-
 function ArrangementResultMetrics({ arrangement, exam = false }) {
   const { data } = usePrototypeData();
-  const { sessions, average, blockers } = getArrangementResultStats(
+  const { sessions, average, averageHint, reviews } = getArrangementResultStats(
     arrangement,
     data.sops,
   );
-  const restrictedCount = data.workstations.filter(
-    (station) => station.releaseHold?.arrangementId === arrangement.id,
-  ).length;
+  const abnormal = arrangementAbnormalWorkstations(data, arrangement);
   return (
     <div className="metric-grid">
       <Metric
         label="当前平均分"
         value={average}
-        hint="按已有会话计算"
+        hint={averageHint}
         icon={<BarChartOutlined />}
         tone="blue"
       />
       <Metric
         label="会话记录"
         value={`${sessions.length}/${arrangement.studentIds.length}`}
-        hint={`${sessions.filter((item) => item.resultStatus === "未参加").length} 人未参加`}
+        hint={`${sessions.filter((item) => ["待开始", "可入场"].includes(item.status) && item.resultStatus !== "未参加").length} 人未开始 · ${sessions.filter((item) => item.resultStatus === "未参加").length} 人未参加`}
         icon={<CheckCircleOutlined />}
         tone="green"
       />
       <Metric
         label="待复核成绩"
-        value={blockers.length}
-        hint={
-          blockers.length
-            ? exam
-              ? "清零后才可正式发布"
-              : "完成后形成正式练习结果"
-            : exam
-              ? "发布门槛已满足"
-              : "评价记录已闭环"
-        }
+        value={reviews.length}
+        hint={reviews.length ? "存在待复核、成绩处置或安全确认事项" : "暂无待复核事项"}
         icon={<DesktopOutlined />}
         tone="amber"
       />
       <Metric
-        label="异常工位"
-        value={restrictedCount}
-        hint={restrictedCount ? "处理异常后可重新开放" : "无使用限制"}
+        label="当前异常工位"
+        value={abnormal.length}
+        hint={abnormal.length ? "关联工位存在设备异常或使用限制，见下方明细" : "关联工位暂无已知运行异常"}
+        onClick={abnormal.length ? () => document.getElementById(`record-workstation-issues-${arrangement.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }) : undefined}
         icon={<SafetyCertificateOutlined />}
         tone="purple"
       />
@@ -9177,29 +9234,27 @@ function WorkstationRestrictionPanel({
   adminReadOnly = false,
 }) {
   const nav = useNavigate();
-  const restricted = store.data.workstations.filter(
-    (station) => station.releaseHold?.arrangementId === arrangement.id,
-  );
+  const restricted = arrangementAbnormalWorkstations(store.data, arrangement);
   if (!restricted.length) return null;
   return (
-    <section className="panel workstation-release-panel">
+    <section className="panel workstation-release-panel" id={`record-workstation-issues-${arrangement.id}`}>
       <PanelTitle
-        title="待处理工位异常"
+        title="关联工位当前异常"
         action={
           <span className="panel-title__meta">{restricted.length} 个工位</span>
         }
       />
       <p className="hint">
-        以下工位保留使用限制，请联系管理员处理异常后再开放。
+        以下为关联工位当前的设备异常或使用限制，请进入工位详情核对处理。
       </p>
       <div className="reset-grid">
-        {restricted.map((station) => (
+        {restricted.map(({ workstation: station, reasons }) => (
           <article key={station.id}>
             <div>
               <strong>{station.name}</strong>
-              <small>{station.releaseHold.reasons.join("；")}</small>
+              <small>{reasons.join("；")}</small>
             </div>
-            <Status tone="danger">暂不可用</Status>
+            <Status tone="danger">存在异常</Status>
             <Button
               onClick={() =>
                 nav(
@@ -9228,20 +9283,24 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
   const store = usePrototypeData();
   const arrangement = store.data.arrangements.find((item) => item.id === id);
   const base = exam ? "exams" : "practices";
-  const accessLogged = useRef(false);
+  const accessLogged = useRef("");
   useEffect(() => {
-    if (!adminReadOnly || !arrangement || accessLogged.current) return;
-    accessLogged.current = true;
-    store.recordAuditAccess(
-      "查看教学记录",
-      `${arrangement.name} / ${arrangement.id}`,
-      {
-        reason: "管理员跨教师只读查看",
-        sopId: arrangement.snapshot?.sopId || arrangement.sopId,
-        snapshotLockedAt: arrangement.snapshot?.lockedAt || "尚未锁定快照",
-      },
-    );
-  }, [adminReadOnly, arrangement?.id]);
+    if (!adminReadOnly || !arrangement || !store.dataWriteReady) return;
+    const key = `${store.dataSource}:${arrangement.id}`;
+    if (accessLogged.current === key) return;
+    if (
+      store.recordAuditAccess(
+        "查看教学记录",
+        `${arrangement.name} / ${arrangement.id}`,
+        {
+          reason: "管理员跨教师只读查看",
+          sopId: arrangement.snapshot?.sopId || arrangement.sopId,
+          snapshotLockedAt: arrangement.snapshot?.lockedAt || "尚未锁定快照",
+        },
+      )
+    )
+      accessLogged.current = key;
+  }, [adminReadOnly, arrangement?.id, store.dataWriteReady, store.dataSource]);
   if (!arrangement)
     return (
       <MissingState
@@ -9263,6 +9322,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
     arrangement,
     store.data.sops,
   );
+  const recordContext = arrangementRecordContext(store.data, arrangement);
   const resultsPublished = arrangement.status === "已发布";
   if (arrangement.status === "已取消")
     return (
@@ -9306,8 +9366,9 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       classItem?.name || "—",
       store.data.workstations.find((w) => w.id === session.workstationId)
         ?.name || "未分配工位",
-      session.resultStatus === "未参加" ? "—" : `${session.score}分`,
-      session.resultStatus || "已有记录",
+      sessionResultPresentation(session).score,
+      sessionResultPresentation(session).status,
+      sessionResultPresentation(session).gradeStatus,
       sessionPrimaryIssue(session),
     ];
   });
@@ -9337,13 +9398,12 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
         student?.name || "学生已失效",
         student?.no || "—",
         classItem?.name || "—",
-        session.resultStatus === "未参加" ? "—" : session.score,
-        session.resultStatus,
-        store.data.sops.find((item) => item.id === arrangement.sopId)?.name ||
-          "历史标准",
+        sessionResultPresentation(session).score,
+        sessionResultPresentation(session).gradeStatus,
+        arrangementRecordContext(store.data, arrangement, session).standardName,
         session.evaluationSnapshot?.executionPurpose === "real"
-          ? "真实用途待核实"
-          : "原型演示/历史未核实",
+          ? "现场用途，来源见个人报告"
+          : "历史来源未核实",
         evaluationCoverage(session.steps).confirmed,
         evaluationCoverage(session.steps).unknown,
       ];
@@ -9377,7 +9437,8 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           targetId: arrangement.id,
           fileName,
           format: "CSV",
-          dataScope: "当前成绩",
+          dataScope: "导出时当前成绩",
+          content: `\uFEFF${buildCsv()}`,
         });
         downloadTextFile(
           fileName,
@@ -9444,7 +9505,7 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
       <PageHeader
         back
         title={`${exam ? "考试" : "练习"}${adminReadOnly ? "记录" : "结果"}：${arrangement.name}`}
-        subtitle={`状态 ${arrangement.status} · 结束时间 ${arrangement.endedAt || "历史安排"} · 实训标准 ${store.data.sops.find((item) => item.id === arrangement.sopId)?.name || "历史标准"}`}
+        subtitle={`状态 ${arrangement.status} · ${recordContext.standardBasis}`}
         actions={
           <>
             <ArrangementAttendanceEntry
@@ -9472,6 +9533,12 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           <EyeOutlined />{" "}
           管理员只读查看同一份教学结果；技术诊断位于页面底部，不提供发布、复核或改分操作。
         </p>
+      )}
+      <dl className="record-context">
+        {[["负责教师", recordContext.teacher], ["开始时间", recordContext.startedAt], ["结束时间", recordContext.endedAt], ["本次实训标准", recordContext.standardName]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{displayBusinessText(value)}</dd></div>)}
+      </dl>
+      {!adminReadOnly && exam && ["待发布", "已发布", "已归档"].includes(arrangement.status) && arrangement.teacherId === store.teacherId && (
+        <ExamReviewVisibilityPanel key={arrangement.id} arrangement={arrangement} store={store} />
       )}
       <ArrangementResultMetrics arrangement={arrangement} exam={exam} />
       {/* 考试发布卡片展示三种业务状态：暂不可发布（列出待处理人数及原因）、
@@ -9562,10 +9629,11 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
             "班级",
             "工位",
             "当前得分",
-            "结果状态",
+            "会话状态",
+            "成绩状态",
             "主要问题",
           ]}
-          statusColumns={[5]}
+          statusColumns={[5, 6]}
           rows={rows}
           rowKey={(_, index) => sessions[index].id}
           selectedRowKey={selectedResult}
@@ -9580,40 +9648,11 @@ function ResultsPage({ exam = false, setModal, adminReadOnly = false }) {
           }
         />
       </section>
-      {exportRows.length > 0 && (
-        <section className="panel">
-          <PanelTitle
-            title="导出记录"
-            action={<span>下载有效期：生成后 7 天</span>}
-          />
-          <div className="export-list">
-            {exportRows.map((job) => (
-              <article key={job.id}>
-                <FileTextOutlined />
-                <div>
-                  <strong>{job.fileName}</strong>
-                  <small>
-                    {displayBusinessText(job.createdAt)} · {job.scope} ·{" "}
-                    {job.dataScope || "导出时当前数据"}
-                  </small>
-                </div>
-                <Status tone="success">{job.status}</Status>
-                <Button
-                  onClick={() =>
-                    downloadTextFile(
-                      job.fileName,
-                      `\uFEFF${buildCsv()}`,
-                      "text/csv;charset=utf-8",
-                    )
-                  }
-                >
-                  重新下载
-                </Button>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
+      <RecordExportHistory
+        jobs={exportRows}
+        onExport={exportResults}
+        onDownload={({ fileName, content, mime }) => downloadBlobFile(fileName, new Blob([content], { type: mime }))}
+      />
       {adminReadOnly && (
         <SessionDiagnosticPanel record={arrangement} store={store} />
       )}
@@ -9796,18 +9835,22 @@ function Report({ exam = false, setModal, adminReadOnly = false }) {
       confirmText: "生成并下载报告",
       onConfirm: () => {
         const fileName = `${student.name}-${arrangement.name}-评价报告.html`;
+        const text = escapeReportText;
+        const reportContext = arrangementRecordContext(store.data, arrangement, session);
         const rows = steps
           .map(
             (step) =>
-              `<tr><td>${step.id}</td><td>${step.name}</td><td>${step.effectiveScore}/${step.maxScore}</td><td>${step.result} · ${stepEvaluationMeaning(step).label}</td><td>${step.reviewStatus}</td><td>${step.timeRange}</td></tr>`,
+              `<tr><td>${text(step.id)}</td><td>${text(step.name)}</td><td>${text(step.effectiveScore)}/${text(step.maxScore)}</td><td>${text(step.result)} · ${text(stepEvaluationMeaning(step).label)}</td><td>${text(step.reviewStatus)}</td><td>${text(step.timeRange)}</td></tr>`,
           )
           .join("");
-        const html = `<!doctype html><meta charset="utf-8"><title>${student.name}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${arrangement.name} · ${student.name}</h1><p>学号 ${student.no}｜实训标准 ${sop?.name || "历史标准"}｜有效成绩 ${session.score}/${totalMax}｜状态 ${session.resultStatus}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>成绩修改记录</h2><pre>${(session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${displayGradeText(item.reason)}`).join("\n") || "无修订"}</pre>`;
+        const html = `<!doctype html><meta charset="utf-8"><title>${text(student.name)}评价报告</title><style>body{font:14px sans-serif;max-width:900px;margin:40px auto;color:#172033}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dfe6ef;padding:8px;text-align:left}</style><h1>${text(arrangement.name)} · ${text(student.name)}</h1><p>学号 ${text(student.no)}｜实训标准 ${text(reportContext.standardName)}｜有效成绩 ${text(session.score)}/${text(totalMax)}｜状态 ${text(session.resultStatus)}</p><table><thead><tr><th>步骤</th><th>名称</th><th>得分</th><th>结果</th><th>复核</th><th>证据时间</th></tr></thead><tbody>${rows}</tbody></table><h2>成绩修改记录</h2><pre>${text((session.reviewHistory || []).map((item) => `${item.time} ${item.operator} ${item.stepId} ${item.before}→${item.after} ${displayGradeText(item.reason)}`).join("\n") || "无修订")}</pre>`;
         store.createExportJob({
           scope: "个人报告",
           targetId: arrangement.id,
           fileName,
           format: "HTML",
+          sessionId: session.id,
+          content: html,
           dataScope: "当前成绩",
         });
         downloadTextFile(fileName, html, "text/html;charset=utf-8");
@@ -12192,152 +12235,7 @@ function AiAreaMappingEditor({ area, mapping, cameras, relationId, store }) {
   );
 }
 
-function AiValidationCaseCard({
-  validationCase,
-  judgementItems,
-  relationId,
-  store,
-}) {
-  const [draft, setDraft] = useState(validationCase);
-  useEffect(() => setDraft(validationCase), [validationCase]);
-  const toggleItem = (id) =>
-    setDraft((current) => ({
-      ...current,
-      judgementItemIds: current.judgementItemIds.includes(id)
-        ? current.judgementItemIds.filter((item) => item !== id)
-        : [...current.judgementItemIds, id],
-    }));
-  return (
-    <article className="ai-validation-case">
-      <header>
-        <div>
-          <small>
-            {VALIDATION_SCENARIOS.find(
-              (scenario) => scenario.key === validationCase.scenarioType,
-            )?.label || validationCase.scenarioType}
-          </small>
-          <strong>{validationCase.name}</strong>
-        </div>
-        <Status>
-          {validationCase.result === "passed"
-            ? "通过"
-            : validationCase.result === "failed"
-              ? "不通过"
-              : "待执行"}
-        </Status>
-      </header>
-      <div className="ai-validation-case__instructions">
-        <span>
-          <small>操作说明</small>
-          {validationCase.instruction}
-        </span>
-        <span>
-          <small>期望结果</small>
-          {validationCase.expectedResult}
-        </span>
-      </div>
-      <fieldset className="ai-validation-case__coverage">
-        <legend>涉及AI判断项</legend>
-        {judgementItems.map((item) => (
-          <label key={item.id}>
-            <input
-              type="checkbox"
-              checked={draft.judgementItemIds.includes(item.id)}
-              onChange={() => toggleItem(item.id)}
-            />
-            {item.name}
-          </label>
-        ))}
-      </fieldset>
-      <label className="field">
-        系统实际结果
-        <textarea
-          value={draft.actualResult}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              actualResult: event.target.value,
-            }))
-          }
-          placeholder="记录模拟AI结果以及是否符合期望"
-        />
-      </label>
-      <div className="form-row">
-        <label className="field">
-          案例结果
-          <select
-            value={draft.result}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                result: event.target.value,
-              }))
-            }
-          >
-            <option value="pending">待执行</option>
-            <option value="passed">通过</option>
-            <option value="failed">不通过</option>
-          </select>
-        </label>
-        <label className="field">
-          备注
-          <input
-            value={draft.note}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, note: event.target.value }))
-            }
-          />
-        </label>
-      </div>
-      <div className="form-row">
-        <label className="field">
-          执行结果来源
-          <select
-            value={draft.resultSource || "legacy_unverified"}
-            onChange={(e) =>
-              setDraft({ ...draft, resultSource: e.target.value })
-            }
-          >
-            <option value="legacy_unverified">历史未核实</option>
-            <option value="prototype_demo">原型模拟</option>
-            <option value="manual">人工录入</option>
-            <option value="real">真实模型执行</option>
-          </select>
-        </label>
-        <label className="field">
-          证据记录
-          <input
-            value={draft.evidenceRef || ""}
-            onChange={(e) =>
-              setDraft({ ...draft, evidenceRef: e.target.value })
-            }
-          />
-        </label>
-        <label className="field">
-          执行人
-          <input
-            value={draft.executor || ""}
-            onChange={(e) => setDraft({ ...draft, executor: e.target.value })}
-          />
-        </label>
-      </div>
-      <Button
-        disabled={draft.result === "pending" || !draft.actualResult.trim()}
-        onClick={() =>
-          store.saveSopWorkstationValidationCase(
-            relationId,
-            validationCase.id,
-            draft,
-          )
-        }
-      >
-        保存案例结果
-      </Button>
-    </article>
-  );
-}
-
-function AiWorkstationConfigWorkspace({
+export function AiWorkstationConfigWorkspace({
   relation,
   aiConfig,
   evaluation,
@@ -12373,18 +12271,64 @@ function AiWorkstationConfigWorkspace({
   });
   const areas = requiredLogicalAreas(aiConfig);
   const coverage = buildSopWorkstationValidationCoverage(
-    aiConfig,
+    { ...aiConfig, validationScenarioSet: normalized.validationScenarioSet },
     normalized.validationCases,
+    normalized,
   );
+  const validationContext = {
+    relation: normalized,
+    aiConfig,
+    checks,
+    workstation,
+    data,
+  };
+  const validationCheck = validationResult(validationContext);
+  let enableIssue = "";
+  try {
+    assertFieldEnablement(validationContext);
+  } catch (error) {
+    enableIssue = error.message;
+  }
+  const [validationMessage, setValidationMessage] = useState("");
+  const restartEnvironmentRef = useRef(null);
   const [environment, setEnvironment] = useState(
     normalized.validationEnvironment,
   );
-  useEffect(
-    () => setEnvironment(normalized.validationEnvironment),
-    [normalized.id, normalized.validationStartedAt],
-  );
-  const startValidation = () =>
-    store.startSopWorkstationValidation(normalized.id, environment);
+  useEffect(() => {
+    setEnvironment(normalized.validationEnvironment);
+    setValidationMessage("");
+  }, [normalized.id, normalized.validationStartedAt]);
+  const startValidation = () => {
+    try {
+      store.startSopWorkstationValidation(normalized.id, environment);
+      setValidationMessage("");
+    } catch (error) {
+      setValidationMessage(error.message);
+    }
+  };
+  const restartValidation = () =>
+    setModal({
+      title: "重新开始现场验证",
+      size: "large",
+      content: (
+        <div className="form-stack">
+          <p>
+            本轮已保存结果将保留到验证记录。确认现场环境后，重新生成验证用例。
+          </p>
+          <ValidationEnvironmentEditor
+            ref={restartEnvironmentRef}
+            environment={normalized.validationEnvironment}
+          />
+        </div>
+      ),
+      confirmText: "保存过程并重新开始",
+      onConfirm: () =>
+        store.startSopWorkstationValidation(
+          normalized.id,
+          restartEnvironmentRef.current.getValue(),
+          { restart: true },
+        ),
+    });
   const confirmEnable = () =>
     setModal({
       title:
@@ -12409,6 +12353,7 @@ function AiWorkstationConfigWorkspace({
         key={normalized.id}
         relation={normalized}
         store={store}
+        setModal={setModal}
       />
       <section className="ai-workstation-block">
         <PanelTitle
@@ -12516,13 +12461,10 @@ function AiWorkstationConfigWorkspace({
       <section className="ai-workstation-block">
         <PanelTitle
           title="现场验证"
-          action={
-            <Status>
-              {WORKSTATION_VALIDATION_STATUSES[normalized.validationStatus]}
-            </Status>
-          }
+          action={<Status>{workstationValidationLabel(normalized)}</Status>}
         />
         {normalized.validationStatus !== "validating" ? (
+          <>
           <div className="ai-validation-start">
             <div className="form-row">
               <label className="field">
@@ -12611,85 +12553,156 @@ function AiWorkstationConfigWorkspace({
                 disabled={!checks.ready}
                 onClick={startValidation}
               >
-                开始现场验证
+                {normalized.validationPurpose === "real"
+                  ? "开始现场验证"
+                  : "开始配置检查"}
               </Button>
             </div>
           </div>
+          <ValidationCasePreviewList
+            relation={normalized}
+            aiConfig={aiConfig}
+            judgementItems={checks.activeJudgementItems}
+            data={data}
+            setModal={setModal}
+            store={store}
+          />
+          </>
         ) : (
           <>
-            <div className="ai-validation-summary-strip">
-              <span>
-                <small>验证场景</small>
-                <strong>
-                  {normalized.validationCases.length} 类（基础8类，可扩展）
-                </strong>
-              </span>
-              <span>
-                <small>判断项覆盖</small>
-                <strong>
-                  {coverage.covered}/{coverage.total}
-                </strong>
-              </span>
-              <span>
-                <small>已执行</small>
-                <strong>
-                  {
-                    normalized.validationCases.filter(
-                      (item) => item.result !== "pending",
-                    ).length
-                  }
-                </strong>
-              </span>
+            <div className="validation-environment-summary">
+              <details>
+                <summary>
+                  <strong>本轮现场环境</strong>
+                  <span>验证人：{normalized.validationEnvironment.tester || "未记录"}</span>
+                  <span>查看详情</span>
+                </summary>
+                <dl>
+                  <div><dt>使用工具</dt><dd>{normalized.validationEnvironment.tools || "未记录"}</dd></div>
+                  <div><dt>光照情况</dt><dd>{normalized.validationEnvironment.lighting || "未记录"}</dd></div>
+                  <div><dt>遮挡情况</dt><dd>{normalized.validationEnvironment.occlusion || "未记录"}</dd></div>
+                  <div><dt>现场说明</dt><dd>{normalized.validationEnvironment.note || "未填写"}</dd></div>
+                </dl>
+              </details>
+              <button
+                type="button"
+                className="button button--default"
+                onClick={restartValidation}
+              >
+                {normalized.validationRunId ? "修改环境并重新开始" : "重新开始验证"}
+              </button>
+              {!normalized.validationRunId && (
+                <p className="validation-environment-warning" role="status">
+                  本轮执行信息不完整，请重新开始验证；已保存的过程会保留。
+                </p>
+              )}
             </div>
-            <div className="ai-validation-case-list">
-              {normalized.validationCases.map((validationCase) => (
-                <AiValidationCaseCard
-                  key={validationCase.id}
-                  validationCase={validationCase}
-                  judgementItems={checks.activeJudgementItems}
-                  relationId={normalized.id}
-                  store={store}
-                />
-              ))}
-            </div>
-            <section className="ai-validation-coverage">
-              <h3>AI判断项覆盖</h3>
+            <ValidationCaseTabs relation={normalized} aiConfig={aiConfig} judgementItems={checks.activeJudgementItems} data={data} setModal={setModal} store={store} />
+            <details className="validation-acceptance-details">
+              <summary>验收覆盖 · {coverage.covered}/{coverage.total} 个判断项已满足要求</summary>
+              <section className="ai-validation-coverage">
               {coverage.rows.map((row) => (
                 <span key={row.judgementItemId}>
                   <strong>{row.judgementItemName}</strong>
                   <small>
-                    {row.caseNames.join("、") || "尚无通过案例覆盖"}
+                    {row.covered
+                      ? "适用场景均已覆盖"
+                      : `待补齐：${row.missingScenarios.join("、") || "错误或无效动作测试"}`}
+                    {row.cells.filter((c) => c.status === "not_applicable")
+                      .length > 0 &&
+                      `；已说明不适用 ${row.cells.filter((c) => c.status === "not_applicable").length} 类`}
                   </small>
                   <Status>{row.result}</Status>
                 </span>
               ))}
-            </section>
+              </section>
+            </details>
             <Button
               type="primary"
-              disabled={normalized.validationCases.some(
-                (item) => item.result === "pending",
-              )}
-              onClick={() =>
-                store.completeSopWorkstationValidation(normalized.id)
+              disabled={
+                !normalized.validationCases.length || normalized.validationCases.some((item) => item.executionState === "running")
               }
+              onClick={() => {
+                try {
+                  const { result } = store.completeSopWorkstationValidation(
+                    normalized.id,
+                  );
+                  setValidationMessage(
+                    result.passed
+                      ? normalized.validationPurpose === "real"
+                        ? "现场验收通过，可继续启用AI评价。"
+                        : "配置检查已完成；启用前仍需完成现场验证。"
+                      : `验证未通过：${result.issues.join("；")}`,
+                  );
+                } catch (error) {
+                  setValidationMessage(error.message);
+                }
+              }}
             >
               完成验证并生成结论
             </Button>
+            {!validationCheck.passed && (
+              <details className="validation-blockers">
+                <summary>
+                  查看待处理项（{validationCheck.issues.length}项）
+                </summary>
+                <ul>
+                  {validationCheck.issues.map((issue, index) => (
+                    <li key={index}>{issue}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </>
+        )}
+        {validationMessage && (
+          <p role="status" className="field-validation-message">
+            {validationMessage}
+          </p>
         )}
         {!!normalized.validationRecords.length && (
           <div className="ai-validation-records">
             <h3>验证记录</h3>
             <DataTable
               pagination
-              columns={["验证时间", "验证人", "案例", "通过", "失败", "结论"]}
+              columns={[
+                "验证时间",
+                "验证人",
+                "用例",
+                "通过",
+                "失败",
+                "结论",
+                "操作",
+              ]}
               rows={normalized.validationRecords.map((record) => [
                 record.completedAt,
                 record.validatedBy,
                 `${record.summary?.caseCount || 0} 个`,
                 `${record.summary?.passedCount || 0} 个`,
                 `${record.summary?.failedCount || 0} 个`,
-                record.overallResult === "passed" ? "验证通过" : "验证不通过",
+                record.overallResult === "interrupted"
+                  ? "已保存过程"
+                  : record.overallResult === "passed"
+                    ? record.scope === "configuration"
+                      ? "配置检查通过"
+                      : "验证通过"
+                    : "验证不通过",
+                <button
+                  type="button"
+                  className="table-action"
+                  onClick={() =>
+                    setModal({
+                      title: "验证记录详情",
+                      size: "large",
+                      dismissOnly: true,
+                      hideCancel: true,
+                      confirmText: "关闭",
+                      content: <ValidationRunDetails record={record} />,
+                    })
+                  }
+                >
+                  查看记录
+                </button>,
               ])}
               statusColumns={[5]}
             />
@@ -12711,9 +12724,7 @@ function AiWorkstationConfigWorkspace({
           </span>
           <span>
             <small>验证状态</small>
-            <strong>
-              {WORKSTATION_VALIDATION_STATUSES[normalized.validationStatus]}
-            </strong>
+            <strong>{workstationValidationLabel(normalized)}</strong>
           </span>
           <span>
             <small>当前运行状态</small>
@@ -12726,6 +12737,7 @@ function AiWorkstationConfigWorkspace({
             </strong>
           </span>
         </div>
+        {enableIssue && <p className="hint">{enableIssue}</p>}
         <div className="row-actions">
           {normalized.enableStatus === "enabled" ? (
             <Button
@@ -12751,9 +12763,7 @@ function AiWorkstationConfigWorkspace({
           ) : (
             <Button
               type="primary"
-              disabled={
-                normalized.validationStatus !== "passed" || !checks.ready
-              }
+              disabled={Boolean(enableIssue)}
               onClick={confirmEnable}
             >
               {normalized.enableStatus === "disabled"
@@ -12779,11 +12789,24 @@ function SopWorkstationEnablementSection({
   const relations = (data.sopWorkstationAiConfigs || []).filter(
     (item) => item.sopAiConfigId === aiConfig.id,
   );
-  const [selectedId, setSelectedId] = useState(relations[0]?.id || "");
+  const location = useLocation();
+  const targetWorkstationId = new URLSearchParams(location.search).get(
+    "workstationId",
+  );
+  const [selectedId, setSelectedId] = useState(
+    () =>
+      (targetWorkstationId
+        ? relations.find((r) => r.workstationId === targetWorkstationId)?.id
+        : relations[0]?.id) || "",
+  );
   useEffect(() => {
     if (!relations.some((item) => item.id === selectedId))
-      setSelectedId(relations[0]?.id || "");
-  }, [relations, selectedId]);
+      setSelectedId(
+        (targetWorkstationId
+          ? relations.find((r) => r.workstationId === targetWorkstationId)?.id
+          : relations[0]?.id) || "",
+      );
+  }, [relations, selectedId, targetWorkstationId]);
   const selected = relations.find((item) => item.id === selectedId);
   const available = data.workstations.filter(
     (workstation) =>
@@ -12838,6 +12861,12 @@ function SopWorkstationEnablementSection({
       <p className="hint">
         每个工位独立维护当前摄像头选择、实际区域、验证状态和启用状态，不创建工位配置版本。
       </p>
+      {targetWorkstationId &&
+        !relations.some((r) => r.workstationId === targetWorkstationId) && (
+          <p className="hint" role="status">
+            目标工位的关联已失效或不在当前数据来源中，请手动选择工位；不会自动改为其他工位。
+          </p>
+        )}
       {!relations.length ? (
         <div className="empty-state ai-workstation-empty">
           <DesktopOutlined />
@@ -13465,7 +13494,12 @@ function AiCapabilityConfigTabbedWorkspace({
   onModeChange,
 }) {
   const nav = useNavigate();
-  const [activeTab, setActiveTab] = useState("overview");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(() =>
+    new URLSearchParams(location.search).get("tab") === "workstation"
+      ? "workstation"
+      : "overview",
+  );
   const rawConfig = (data.aiCapabilityConfigs || []).find(
     (item) => item.sopId === sop.id,
   );
@@ -13541,6 +13575,21 @@ function AiCapabilityConfigTabbedWorkspace({
           <div className="row-actions ai-config-page-actions">
             <AiConfigDisplayModeSwitch mode="tabs" onChange={onModeChange} />
             {clearAction}
+            {data.workstations.some(
+              (w) =>
+                w.id ===
+                new URLSearchParams(location.search).get("workstationId"),
+            ) && (
+              <Button
+                onClick={() =>
+                  nav(
+                    `/admin/workstations/${encodeURIComponent(new URLSearchParams(location.search).get("workstationId"))}`,
+                  )
+                }
+              >
+                返回工位详情
+              </Button>
+            )}
             <Button onClick={() => nav(AI_CONFIG_PATH)}>返回标准列表</Button>
           </div>
         }
@@ -13659,6 +13708,7 @@ function AiCapabilityConfigDetailModes({ setModal }) {
 
 function AiCapabilityConfigDetail({ setModal }) {
   const nav = useNavigate();
+  const location = useLocation();
   const store = usePrototypeData();
   const { data } = store;
   const { sopId } = useParams();
@@ -13732,6 +13782,21 @@ function AiCapabilityConfigDetail({ setModal }) {
                 }
               >
                 清空当前配置
+              </Button>
+            )}
+            {data.workstations.some(
+              (w) =>
+                w.id ===
+                new URLSearchParams(location.search).get("workstationId"),
+            ) && (
+              <Button
+                onClick={() =>
+                  nav(
+                    `/admin/workstations/${encodeURIComponent(new URLSearchParams(location.search).get("workstationId"))}`,
+                  )
+                }
+              >
+                返回工位详情
               </Button>
             )}
             <Button onClick={() => nav(AI_CONFIG_PATH)}>返回标准列表</Button>
@@ -22662,13 +22727,11 @@ function AiEvaluationDetail({ setModal }) {
   const productionModel = aiStatus.model;
   const model = productionModel || models[0];
   const matrixDataset = productionDataset || dataset;
-  const targetWorkstations = store.data.workstations.filter(
-    (workstation) =>
-      workstation.supportedProject === sop.name ||
-      store.data.fieldValidations.some(
-        (record) =>
-          record.sopId === sop.id && record.workstationId === workstation.id,
-      ),
+  const linkedWorkstationIds = new Set(
+    standardWorkstationIds(store.data, sop.id),
+  );
+  const targetWorkstations = store.data.workstations.filter((workstation) =>
+    linkedWorkstationIds.has(workstation.id),
   );
   const selectableWorkstations = targetWorkstations.length
     ? targetWorkstations
@@ -23243,8 +23306,9 @@ function AiEvaluationDetail({ setModal }) {
                         {lastFailedValidation && (
                           <small className="model-validation-record">
                             最近未通过：
-                            {displayBusinessText(lastFailedValidation.reason)} ·{" "}
-                            {lastFailedValidation.operator} ·{" "}
+                            {displayBusinessText(
+                              lastFailedValidation.reason,
+                            )} · {lastFailedValidation.operator} ·{" "}
                             {displayBusinessText(lastFailedValidation.time)}
                           </small>
                         )}
@@ -24634,6 +24698,10 @@ const MasterDataForm = forwardRef(function MasterDataForm(
   ref,
 ) {
   const { data } = usePrototypeData();
+  const location = useLocation();
+  const requestedWorkstation = new URLSearchParams(location.search).get(
+    "workstationId",
+  );
   const defaults = {
     teacher: {
       name: "",
@@ -24661,14 +24729,17 @@ const MasterDataForm = forwardRef(function MasterDataForm(
       name: "",
       code: "",
       location: "",
-      supportedProject: "新能源汽车高压安全操作",
       notes: "",
     },
     device: {
       name: "",
       serial: "",
       type: deviceTypes[0],
-      workstationId: "",
+      workstationId: data.workstations.some(
+        (w) => w.id === requestedWorkstation,
+      )
+        ? requestedWorkstation
+        : "",
       address: "",
       version: "",
       notes: "",
@@ -24736,8 +24807,6 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         if (!/^[A-Za-z0-9-]{3,30}$/.test(form.code?.trim()))
           next.code = "使用3—30位字母、数字或连字符";
         if (!form.location?.trim()) next.location = "请输入实训室位置";
-        if (!form.supportedProject?.trim())
-          next.supportedProject = "请输入支持项目";
       }
       if (type === "device") {
         if (!/^[A-Za-z0-9-]{3,40}$/.test(form.name?.trim()))
@@ -24861,7 +24930,9 @@ const MasterDataForm = forwardRef(function MasterDataForm(
           />
         </label>
         <p className="form-hint">
-          账号初始状态为启用，不展示或保存明文密码；账号重置通过详情页生成任务。
+          {initial
+            ? "编辑资料不会修改密码；忘记密码时请使用教师列表或详情中的“重置密码”。"
+            : "保存后系统生成临时密码，在成功窗口显示一次。教师首次登录须先修改密码。"}
         </p>
       </div>
     );
@@ -24999,16 +25070,6 @@ const MasterDataForm = forwardRef(function MasterDataForm(
             />
             {error("location")}
           </label>
-          <label
-            className={`field ${errors.supportedProject ? "field--error" : ""}`}
-          >
-            <FieldLabel required>支持项目</FieldLabel>
-            <input
-              value={form.supportedProject}
-              onChange={(e) => setField("supportedProject", e.target.value)}
-            />
-            {error("supportedProject")}
-          </label>
         </div>
         <label className="field">
           <FieldLabel>备注</FieldLabel>
@@ -25107,7 +25168,151 @@ const MasterDataForm = forwardRef(function MasterDataForm(
         />
       </label>
       <p className="form-hint">
-        同一工位同一类型仅允许绑定一台启用设备；保存后需执行连接测试。
+        摄像头和边缘工作站可绑定多台备用设备；运行配置只选一台边缘设备。其他设备类型每工位仅一台启用设备。保存后需执行连接测试。
+      </p>
+    </div>
+  );
+});
+
+export const TeacherImportForm = forwardRef(function TeacherImportForm(
+  { initialRaw = "" },
+  ref,
+) {
+  const { data } = usePrototypeData();
+  const [raw, setRaw] = useState(initialRaw);
+  const [fileError, setFileError] = useState("");
+  const [reading, setReading] = useState(false);
+  const fileReadId = useRef(0);
+  let rows = [],
+    parseError = "";
+  try {
+    rows = teacherImportPreview(raw, data.teachers);
+  } catch (error) {
+    parseError = error.message;
+  }
+  const errors = rows.filter((row) => row.result !== "可导入").length;
+  useImperativeHandle(ref, () => ({
+    validate() {
+      if (reading) throw new Error("文件仍在读取，请稍后再导入。");
+      if (fileError || parseError) throw new Error(fileError || parseError);
+      if (!rows.length)
+        throw new Error("请选择CSV文件或粘贴至少一条教师数据。");
+      if (errors)
+        throw new Error("预览中存在错误行，请修正后重新导入；整批未导入。");
+      return rows;
+    },
+  }));
+  return (
+    <div className="import-form teacher-import-form">
+      <p className="form-hint">
+        请按模板填写，每次最多导入{ACCOUNT_IMPORT_LIMIT}
+        位教师。工号和登录账号不能重复，前五列必填，联系电话和备注可留空。导入只新增教师，不覆盖已有资料。
+      </p>
+      <div className="import-actions">
+        <a
+          className="button button--default"
+          download="教师导入模板.csv"
+          href={`data:text/csv;charset=utf-8,${encodeURIComponent("\uFEFF" + TEACHER_IMPORT_TEMPLATE)}`}
+        >
+          下载CSV模板
+        </a>
+        <label className="button button--default import-file">
+          {reading ? "正在读取…" : "选择CSV文件"}
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              const readId = ++fileReadId.current;
+              setReading(true);
+              setFileError("");
+              try {
+                if (file.size > 2 * 1024 * 1024)
+                  throw new Error("文件过大，请使用2MB以内的UTF-8 CSV文件。");
+                const text = await file.text();
+                if (text.includes("\uFFFD"))
+                  throw new Error("文件编码无法识别，请另存为CSV UTF-8格式。");
+                if (readId === fileReadId.current) setRaw(text);
+              } catch (error) {
+                if (readId === fileReadId.current) {
+                  setRaw("");
+                  setFileError(error.message || "文件读取失败，请重新选择。");
+                }
+              } finally {
+                if (readId === fileReadId.current) setReading(false);
+              }
+            }}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span className="field__label">
+          导入内容
+          <small className="field__label-hint">
+            姓名,工号,登录账号,所属院系,所属专业,联系电话,备注
+          </small>
+        </span>
+        <textarea
+          rows={6}
+          value={raw}
+          placeholder={TEACHER_IMPORT_TEMPLATE}
+          onChange={(event) => {
+            fileReadId.current++;
+            setReading(false);
+            setFileError("");
+            setRaw(event.target.value);
+          }}
+        />
+      </label>
+      {(fileError || parseError) && (
+        <p className="form-error" role="alert">
+          {fileError || parseError}
+        </p>
+      )}
+      <section className="import-preview">
+        <PanelTitle
+          title={
+            <>
+              导入预览{" "}
+              <span className="import-preview__count">· {rows.length} 行</span>
+            </>
+          }
+        />
+        <p className="form-hint">
+          可导入 {rows.length - errors} 行 · 待修正 {errors}{" "}
+          行。确认后将整批保存，并显示每位教师的初始登录信息。
+        </p>
+        <DataTable
+          pagination
+          statusColumns={[8]}
+          columns={[
+            "行号",
+            "姓名",
+            "工号",
+            "登录账号",
+            "所属院系",
+            "所属专业",
+            "联系电话",
+            "备注",
+            "校验结果",
+          ]}
+          rows={rows.map((row) => [
+            row.index,
+            row.name || "—",
+            row.employeeNo || "—",
+            row.account || "—",
+            row.department || "—",
+            row.major || "—",
+            row.phone || "—",
+            row.notes || "—",
+            row.result,
+          ])}
+        />
+      </section>
+      <p className="form-hint">
+        每位教师自动分配独立临时密码，首次登录须修改；成功后可一次性下载或复制登录信息。
       </p>
     </div>
   );
@@ -25203,7 +25408,14 @@ const StudentImportForm = forwardRef(function StudentImportForm(_, ref) {
         />
       </label>
       <section className="import-preview">
-        <PanelTitle title={`导入预览 · ${rows.length} 行`} />
+        <PanelTitle
+          title={
+            <>
+              导入预览{" "}
+              <span className="import-preview__count">· {rows.length} 行</span>
+            </>
+          }
+        />
         <DataTable
           pagination
           columns={["姓名", "学号", "班级标识", "校验结果"]}
@@ -25226,6 +25438,11 @@ const StudentImportForm = forwardRef(function StudentImportForm(_, ref) {
 
 function AdminList({ type, setModal }) {
   const nav = useNavigate();
+  const location = useLocation();
+  const workstationFilter =
+    type === "devices"
+      ? new URLSearchParams(location.search).get("workstationId")
+      : "";
   const formRef = useRef(null);
   const importRef = useRef(null);
   const store = usePrototypeData();
@@ -25241,12 +25458,21 @@ function AdminList({ type, setModal }) {
       createText: "新建教师",
       formType: "teacher",
       collection: "teachers",
-      columns: ["教师", "工号", "登录账号", "状态", "院系 / 专业", "更新时间"],
+      columns: [
+        "教师",
+        "工号",
+        "登录账号",
+        "状态",
+        "密码状态",
+        "院系 / 专业",
+        "更新时间",
+      ],
       row: (item) => [
         item.name,
         item.employeeNo,
         item.account,
         item.status,
+        teacherPasswordStatus(item),
         `${item.department} / ${item.major}`,
         item.updatedAt,
       ],
@@ -25346,6 +25572,7 @@ function AdminList({ type, setModal }) {
         .join(" ")
         .toLowerCase()
         .includes(query.trim().toLowerCase()) &&
+      (!workstationFilter || item.workstationId === workstationFilter) &&
       (statusFilter === "全部状态" || item.status === statusFilter) &&
       (type !== "students" ||
         faceFilter === "全部人脸状态" ||
@@ -25358,38 +25585,53 @@ function AdminList({ type, setModal }) {
       size: "large",
       confirmText: `保存${config.singular}`,
       content: <MasterDataForm ref={formRef} type={config.formType} />,
-      onConfirm: () => {
-        const created = config.create(formRef.current.validate());
+      onSuccess:
+        type === "teachers"
+          ? (receipt) => setModal(teacherPasswordReceiptModal(receipt, true))
+          : undefined,
+      onConfirm: async () => {
+        const created = await config.create(formRef.current.validate());
+        if (type === "teachers") return created;
         return `已${config.createText}：${created.name}`;
       },
     });
   const openImport = () =>
     setModal({
       eyebrow: "批量导入",
-      title: "导入学生",
+      title: type === "teachers" ? "导入教师" : "导入学生",
       size: "large",
       confirmText: "确认导入",
-      content: <StudentImportForm ref={importRef} />,
+      content:
+        type === "teachers" ? (
+          <TeacherImportForm ref={importRef} />
+        ) : (
+          <StudentImportForm ref={importRef} />
+        ),
+      onSuccess:
+        type === "teachers"
+          ? (receipts) => setModal(teacherImportReceiptModal(receipts))
+          : undefined,
       onConfirm: () => {
+        if (type === "teachers")
+          return store.importTeachers(importRef.current.validate());
         const created = store.importStudents(importRef.current.validate());
         return `已导入 ${created.length} 名学生`;
       },
     });
-  const actions =
-    type === "students" ? (
-      <>
-        <Button icon={<UploadOutlined />} onClick={openImport}>
-          导入学生
-        </Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-          新增学生
-        </Button>
-      </>
-    ) : (
+  const actions = ["students", "teachers"].includes(type) ? (
+    <>
+      <Button icon={<UploadOutlined />} onClick={openImport}>
+        {type === "teachers" ? "导入教师" : "导入学生"}
+      </Button>
       <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
         {config.createText}
       </Button>
-    );
+    </>
+  ) : (
+    <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+      {config.createText}
+    </Button>
+  );
   return (
     <>
       <PageHeader
@@ -25411,6 +25653,18 @@ function AdminList({ type, setModal }) {
             setFaceFilter("全部人脸状态");
           }}
         >
+          {workstationFilter && (
+            <>
+              <span>
+                当前工位：
+                {data.workstations.find((w) => w.id === workstationFilter)
+                  ?.name || "工位已失效"}
+              </span>
+              <Button onClick={() => nav("/admin/devices")}>
+                查看全部设备
+              </Button>
+            </>
+          )}
           {type === "students" && (
             <select
               aria-label="筛选人脸资料状态"
@@ -25429,6 +25683,20 @@ function AdminList({ type, setModal }) {
           columns={config.columns}
           rows={filtered.map(config.row)}
           rowKey={(_, index) => filtered[index].id}
+          renderActions={
+            type === "teachers"
+              ? (_, index) => (
+                  <button
+                    className="table-action"
+                    onClick={() =>
+                      openTeacherPasswordReset(setModal, store, filtered[index])
+                    }
+                  >
+                    重置密码
+                  </button>
+                )
+              : undefined
+          }
           onView={(_, index) => {
             const target = filtered[index];
             if (target) nav(`/admin/${type}/${target.id}`);
@@ -25818,186 +26086,6 @@ const FieldValidationForm = forwardRef(function FieldValidationForm(
   );
 });
 
-const WorkstationAiBaseConfigForm = forwardRef(
-  function WorkstationAiBaseConfigForm({ workstation }, ref) {
-    const { data } = usePrototypeData();
-    const initial = normalizeWorkstationAiBaseConfig(workstation);
-    const [form, setForm] = useState(initial);
-    const cameras = data.devices.filter(
-      (device) =>
-        device.workstationId === workstation.id &&
-        isCameraDevice(device) &&
-        device.status !== "停用",
-    );
-    const edgeDevices = data.devices.filter(
-      (device) =>
-        device.workstationId === workstation.id &&
-        isEdgeDevice(device) &&
-        device.status !== "停用",
-    );
-    const criticalChange = isCriticalWorkstationAiChange(initial, form);
-    const affectedCount = (data.sopWorkstationAiConfigs || []).filter(
-      (config) =>
-        config.workstationId === workstation.id &&
-        ["passed", "validating"].includes(config.validationStatus),
-    ).length;
-    const selectedDevices = [
-      ["主摄像头", form.primaryCameraId],
-      ["备用摄像头", form.fallbackCameraId],
-      ["边缘设备", form.edgeDeviceId],
-    ]
-      .map(([label, id]) => [
-        label,
-        data.devices.find((device) => device.id === id),
-      ])
-      .filter(([, device]) => device);
-
-    useImperativeHandle(ref, () => ({
-      validate() {
-        if (
-          form.primaryCameraId &&
-          form.primaryCameraId === form.fallbackCameraId
-        )
-          throw new Error("主摄像头和备用摄像头不能选择同一台设备。");
-        return withCameraAliases(form);
-      },
-    }));
-
-    return (
-      <div className="workstation-ai-form">
-        <CameraCollectionEditor
-          value={form}
-          onChange={(next) => setForm(withCameraAliases(next))}
-          devices={data.devices}
-          workstation={workstation}
-        />
-        <div className="form-row">
-          <label className="field">
-            <FieldLabel required>默认主视角（兼容入口）</FieldLabel>
-            <select
-              value={form.primaryCameraId}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  cameras: cameraViews(current).some(
-                    (c) => c.deviceId === event.target.value,
-                  )
-                    ? cameraViews(current).map((c) => ({
-                        ...c,
-                        defaultPreview: c.deviceId === event.target.value,
-                        role:
-                          c.deviceId === event.target.value
-                            ? "primary"
-                            : c.role,
-                      }))
-                    : undefined,
-                  primaryCameraId: event.target.value,
-                  fallbackCameraId:
-                    current.fallbackCameraId === event.target.value
-                      ? ""
-                      : current.fallbackCameraId,
-                }))
-              }
-            >
-              <option value="">请选择已绑定摄像头</option>
-              {cameras.map((camera) => (
-                <option value={camera.id} key={camera.id}>
-                  {camera.name} · {camera.status}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <FieldLabel>第二视角（兼容入口）</FieldLabel>
-            <select
-              disabled={cameraViews(form).length > 2}
-              value={form.fallbackCameraId}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  cameras: undefined,
-                  fallbackCameraId: event.target.value,
-                }))
-              }
-            >
-              <option value="">不配置备用摄像头</option>
-              {cameras
-                .filter((camera) => camera.id !== form.primaryCameraId)
-                .map((camera) => (
-                  <option value={camera.id} key={camera.id}>
-                    {camera.name} · {camera.status}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-        <label className="field">
-          <FieldLabel required>边缘设备</FieldLabel>
-          <select
-            value={form.edgeDeviceId}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                edgeDeviceId: event.target.value,
-              }))
-            }
-          >
-            <option value="">请选择已绑定边缘设备</option>
-            {edgeDevices.map((device) => (
-              <option value={device.id} key={device.id}>
-                {deviceDisplayName(device)} · {device.status}
-              </option>
-            ))}
-          </select>
-        </label>
-        {selectedDevices.length > 0 && (
-          <div className="workstation-ai-device-preview">
-            {selectedDevices.map(([label, device]) => (
-              <article key={label}>
-                <span>
-                  {isCameraDevice(device) ? (
-                    <VideoCameraOutlined />
-                  ) : (
-                    <HddOutlined />
-                  )}
-                </span>
-                <div>
-                  <small>{label}</small>
-                  <strong>{deviceDisplayName(device)}</strong>
-                  <p>
-                    {deviceSerialLabel(device)} · {device.status}
-                    {isCameraDevice(device)
-                      ? ` · ${device.streamStatus || "流状态未知"}`
-                      : ""}
-                  </p>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-        {criticalChange && (
-          <div className="workstation-ai-impact-warning">
-            <AlertOutlined />
-            <div>
-              <strong>本次保存包含关键基础配置变更</strong>
-              <p>
-                保存后，相关的已验证或已启用实训标准 AI
-                配置将转为待重新验证，现有配置和关联关系继续保留。
-              </p>
-              <small>预计影响 {affectedCount} 条已有工位验证状态。</small>
-            </div>
-          </div>
-        )}
-        {!cameras.length && (
-          <p className="form-hint">
-            当前工位没有可选摄像头，请先在设备管理中登记并绑定摄像头。
-          </p>
-        )}
-      </div>
-    );
-  },
-);
-
 function AdminDetail({ type, setModal }) {
   const { id } = useParams();
   const nav = useNavigate();
@@ -26033,6 +26121,16 @@ function AdminDetail({ type, setModal }) {
         <Button onClick={() => nav(`/admin/${plural}`)}>返回列表</Button>
       </section>
     );
+  const workstationUse =
+    type === "workstation" ? workstationArrangementState(data, item.id) : null;
+  const currentWorkstationArrangement = workstationUse?.arrangement;
+  const currentArrangementLabel =
+    currentWorkstationArrangement?.name ||
+    (workstationUse?.status === "conflict"
+      ? "存在多条占用记录"
+      : workstationUse?.status === "unresolved"
+        ? "占用信息待核对"
+        : "无");
   const configs = {
     teacher: {
       singular: "教师",
@@ -26048,7 +26146,9 @@ function AdminDetail({ type, setModal }) {
         ["所属专业", item.major],
         ["负责标准", `${item.sopCount} 个`],
         ["历史安排", `${item.arrangementCount} 次`],
-        ["最近账号重置", item.accountResetAt],
+        ["密码状态", teacherPasswordStatus(item)],
+        ["最近密码重置", item.accountResetAt || "未重置"],
+        ["最近密码设置", item.passwordCredential?.changedAt || "未设置"],
         ["更新时间", item.updatedAt],
       ],
       update: store.updateTeacher,
@@ -26075,19 +26175,22 @@ function AdminDetail({ type, setModal }) {
       formType: "workstation",
       icon: <DesktopOutlined />,
       subtitle: workstationCaption(item),
-      identity: item.supportedProject,
+      identity: `已关联 ${workstationLinkedStandards(data, item.id).length} 个实训标准`,
       details: [
         ["工位标识", workstationBusinessCode(item) || "演示工位"],
         ["实训室位置", item.location],
         ["管理状态", item.status],
-        ["使用限制", item.releaseHold?.reasons.join("；") || "无"],
-        ["支持项目", item.supportedProject],
+        ["使用限制", workstationUsageRestriction(item) || "无"],
+        [
+          "关联实训标准",
+          `${workstationLinkedStandards(data, item.id).length} 个`,
+        ],
         [
           "绑定设备",
           `${data.devices.filter((device) => device.workstationId === item.id).length} 台`,
         ],
-        ["当前安排", item.currentArrangement],
-        ["更新时间", item.updatedAt],
+        ["当前安排", currentArrangementLabel],
+        ["更新时间", item.updatedAt || "未记录"],
       ],
       update: store.updateWorkstation,
     },
@@ -26188,14 +26291,7 @@ function AdminDetail({ type, setModal }) {
     });
   const secondary = {
     teacher: {
-      label: "重置账号",
-      title: "生成账号重置任务",
-      text: "系统只记录重置任务，不展示明文密码。教师下次登录时需完成新凭据设置。",
-      confirm: "生成重置任务",
-      run: () => {
-        const when = store.resetTeacherAccount(item.id);
-        return `账号重置任务已生成：${when}`;
-      },
+      label: "重置密码",
     },
     student: {
       label: "人脸重采",
@@ -26210,7 +26306,7 @@ function AdminDetail({ type, setModal }) {
     workstation: {
       label: "处理使用限制",
       title: "处理异常并解除工位使用限制",
-      text: "请先排除故障或安全隐患，确认现场具备使用条件，并填写处理结果。下次使用仍需完成开放检查。",
+      text: "请先处理具体故障或安全隐患，并执行相关设备检测。此操作只记录处理结果并解除使用限制，不修复离线设备、不启用AI。下次使用仍需教师开放检查。",
       confirm: "确认处理并解除限制",
       run: () => {
         store.resolveWorkstationRestriction(item.id, {
@@ -26222,8 +26318,8 @@ function AdminDetail({ type, setModal }) {
     },
     device: {
       label: "连接测试",
-      title: "执行设备连接测试",
-      text: `将按当前连接地址 ${item.address} 执行模拟检测，并写入最近测试时间。`,
+      title: "设备连接测试",
+      text: `检测设备连接状态，连接地址：${item.address}。`,
       confirm: "开始测试",
       run: () => {
         const when = store.testDeviceConnection(item.id);
@@ -26231,53 +26327,18 @@ function AdminDetail({ type, setModal }) {
       },
     },
   }[type];
-  const relatedLogs = data.auditLogs
-    .filter((log) => log.target.includes(item.name))
+  // Historical audit entries may have no textual target. Keep those records in
+  // storage, but do not let unrelated / incomplete logs break a master detail.
+  const relatedLogs = (data.auditLogs || [])
+    .filter(
+      (log) =>
+        typeof log?.target === "string" && log.target.includes(item.name),
+    )
     .slice(0, 5);
-  const linkedDevices =
-    type === "workstation"
-      ? data.devices.filter((device) => device.workstationId === item.id)
-      : [];
-  const workstationAiConfig =
-    type === "workstation" ? normalizeWorkstationAiBaseConfig(item) : null;
-  const workstationAiReadiness =
-    type === "workstation"
-      ? deriveWorkstationAiReadiness({
-          workstation: item,
-          devices: data.devices,
-          edgeRequired: true,
-        })
-      : null;
-  const primaryCamera =
-    type === "workstation"
-      ? data.devices.find(
-          (device) => device.id === workstationAiConfig.primaryCameraId,
-        )
-      : null;
-  const fallbackCamera =
-    type === "workstation"
-      ? data.devices.find(
-          (device) => device.id === workstationAiConfig.fallbackCameraId,
-        )
-      : null;
-  const edgeDevice =
-    type === "workstation"
-      ? data.devices.find(
-          (device) => device.id === workstationAiConfig.edgeDeviceId,
-        )
-      : null;
-  const affectedAiValidationCount =
-    type === "workstation"
-      ? (data.sopWorkstationAiConfigs || []).filter(
-          (config) =>
-            config.workstationId === item.id &&
-            ["passed", "validating"].includes(config.validationStatus),
-        ).length
-      : 0;
   const openWorkstationAiConfig = () =>
     setModal({
       eyebrow: "工位AI基础配置",
-      title: `${item.name} · 选择运行设备`,
+      title: `${item.name} · 配置设备与视角`,
       className: "workstation-ai-config-modal",
       size: "large",
       content: (
@@ -26286,15 +26347,47 @@ function AdminDetail({ type, setModal }) {
           workstation={item}
         />
       ),
-      confirmText: "保存并检查",
+      confirmText: "保存配置",
+      onSuccess: (saved) =>
+        setModal({
+          title: "设备与视角配置已保存",
+          dismissOnly: true,
+          hideCancel: true,
+          confirmText: "返回工位详情",
+          content: (
+            <div className="form-stack">
+              <p>配置已保存，请检测设备。</p>
+              {!saved.workstation.aiBaseConfig.edgeDeviceId && (
+                <p>
+                  未配置边缘设备：录像与人工确认配置已保存，AI仍为待完善，不会启用自动评价。
+                </p>
+              )}
+              <p>
+                {saved.criticalChange
+                  ? `运行条件已变化，${saved.affectedCount}条现场验证状态待重新验证。`
+                  : "本次未改变采集条件，已有现场验证状态保留。"}
+              </p>
+              <button
+                className="button button--primary"
+                onClick={() =>
+                  openWorkstationInspection(setModal, store, saved.workstation)
+                }
+              >
+                下一步：设备检测
+              </button>
+              <p className="form-hint">
+                检测后可在“关联标准与AI运行状态”中完成对应标准的现场验证。
+              </p>
+            </div>
+          ),
+        }),
       onConfirm: () => {
         const saved = store.saveWorkstationAiBaseConfig(
           item.id,
           workstationAiRef.current.validate(),
+          workstationAiRef.current.expectedConfig,
         );
-        return saved.criticalChange
-          ? `AI基础配置已保存，${saved.affectedCount}条状态待重新验证`
-          : `AI基础配置已检查：${saved.readiness.label}`;
+        return saved;
       },
     });
   const studentFaceStatus =
@@ -26345,7 +26438,7 @@ function AdminDetail({ type, setModal }) {
                 icon={<VideoCameraOutlined />}
                 onClick={openWorkstationAiConfig}
               >
-                配置AI基础设备
+                配置设备与视角
               </Button>
             )}
             {type !== "student" &&
@@ -26354,50 +26447,80 @@ function AdminDetail({ type, setModal }) {
                 item.status === "故障") && (
                 <Button
                   onClick={() =>
-                    setModal({
-                      title: secondary.title,
-                      className:
-                        type === "teacher"
-                          ? "teacher-account-reset-modal"
-                          : type === "workstation"
-                            ? "workstation-reset-modal"
-                            : "device-connection-test-modal",
-                      content:
-                        type === "workstation" ? (
-                          <div className="form-stack">
-                            <p>{secondary.text}</p>
-                            {item.releaseHold && (
-                              <p className="hint">
-                                {item.releaseHold.reasons.join("；")}
-                              </p>
-                            )}
-                            <label className="field">
-                              异常处理及现场检查结果
-                              <textarea
-                                ref={workstationRecoveryRef}
-                                rows={3}
-                                placeholder="填写故障或安全隐患的处理情况及检查结果"
-                              />
-                            </label>
-                          </div>
-                        ) : (
-                          <p>{secondary.text}</p>
-                        ),
-                      confirmText: secondary.confirm,
-                      onConfirm: secondary.run,
-                    })
+                    type === "teacher"
+                      ? openTeacherPasswordReset(setModal, store, item)
+                      : setModal({
+                          title: secondary.title,
+                          className:
+                            type === "teacher"
+                              ? "teacher-account-reset-modal"
+                              : type === "workstation"
+                                ? "workstation-reset-modal"
+                                : "device-connection-test-modal",
+                          content:
+                            type === "workstation" ? (
+                              <div className="form-stack">
+                                <p>{secondary.text}</p>
+                                {item.releaseHold && (
+                                  <p className="hint">
+                                    {item.releaseHold.reasons.join("；")}
+                                  </p>
+                                )}
+                                <label className="field">
+                                  异常处理及现场检查结果
+                                  <textarea
+                                    ref={workstationRecoveryRef}
+                                    rows={3}
+                                    placeholder="填写故障或安全隐患的处理情况及检查结果"
+                                  />
+                                </label>
+                              </div>
+                            ) : (
+                              <p>{secondary.text}</p>
+                            ),
+                          confirmText: secondary.confirm,
+                          onConfirm: secondary.run,
+                        })
                   }
                 >
                   {secondary.label}
                 </Button>
               )}
-            <Button onClick={toggleStatus}>{statusConfig.actionLabel}</Button>
+            <Button
+              onClick={toggleStatus}
+              disabled={
+                type === "workstation" && activeWorkstationUse(data, item.id)
+              }
+            >
+              {statusConfig.actionLabel}
+            </Button>
             <Button type="primary" onClick={openEdit}>
               编辑资料
             </Button>
           </>
         }
       />
+      {type === "workstation" && (
+        <div className="equipment-overview-heading">
+          <h2>工位概况与使用状态</h2>
+          {currentWorkstationArrangement && (
+            <Link
+              className="table-action"
+              to={`/admin/${currentWorkstationArrangement.type === "exam" ? "exams" : "practices"}/${encodeURIComponent(currentWorkstationArrangement.id)}`}
+            >
+              查看当前安排
+            </Link>
+          )}
+        </div>
+      )}
+      {type === "workstation" &&
+        ["conflict", "unresolved"].includes(workstationUse.status) && (
+          <p className="hint">
+            {workstationUse.status === "conflict"
+              ? "该工位存在多条未结束占用，请核对相关安排。"
+              : "工位占用记录无法关联到有效安排，请核对占用信息。"}
+          </p>
+        )}
       <div className="identity-card">
         <span>{config.icon}</span>
         <div>
@@ -26406,6 +26529,11 @@ function AdminDetail({ type, setModal }) {
         </div>
         <Status>{item.status}</Status>
       </div>
+      {type === "workstation" && activeWorkstationUse(data, item.id) && (
+        <p className="hint">
+          工位有活动会话或仍被占用。结束相关会话后才能进入维护、更换运行设备或解除使用限制。
+        </p>
+      )}
       <div className="detail-grid class-detail-grid">
         {config.details.map(([label, value]) => (
           <section className="panel" key={label}>
@@ -26420,7 +26548,6 @@ function AdminDetail({ type, setModal }) {
           </section>
         )}
       </div>
-      <PrototypeResourceIdentifiers item={item} type={type} />
       {type === "student" && (
         <section className="panel student-face-card">
           <PanelTitle
@@ -26503,159 +26630,14 @@ function AdminDetail({ type, setModal }) {
         </section>
       )}
       {type === "workstation" && (
-        <section className="panel workstation-ai-panel">
-          <PanelTitle
-            title="AI基础运行配置"
-            action={
-              <Status tone={workstationAiReadiness.tone}>
-                {workstationAiReadiness.label}
-              </Status>
-            }
+        <>
+          <WorkstationEquipmentPanel
+            workstation={item}
+            setModal={setModal}
+            onConfigure={openWorkstationAiConfig}
           />
-          <div className="workstation-ai-summary">
-            <div
-              className={`workstation-ai-readiness is-${workstationAiReadiness.code}`}
-            >
-              <span className="workstation-ai-readiness__icon">
-                {workstationAiReadiness.code === "available" ? (
-                  <CheckCircleOutlined />
-                ) : (
-                  <ExclamationCircleFilled />
-                )}
-              </span>
-              <div>
-                <small>AI就绪状态</small>
-                <strong>{workstationAiReadiness.label}</strong>
-                <p>{workstationAiReadiness.reasons.join("；")}</p>
-              </div>
-            </div>
-            <div className="workstation-ai-timestamps">
-              <span>
-                <small>最近检查</small>
-                <strong>
-                  {displayBusinessText(workstationAiConfig.lastCheckedAt)}
-                </strong>
-              </span>
-              <span>
-                <small>配置更新</small>
-                <strong>
-                  {displayBusinessText(
-                    workstationAiConfig.updatedAt || "未更新",
-                  )}
-                </strong>
-              </span>
-              <span>
-                <small>最近关键变更</small>
-                <strong>
-                  {displayBusinessText(
-                    workstationAiConfig.lastAiCriticalChangeAt,
-                  )}
-                </strong>
-              </span>
-            </div>
-          </div>
-          <section className="enhancement-card">
-            <strong>当前视角集合</strong>
-            {workstationCameras(item, data.devices).map((c) => (
-              <p key={c.id}>
-                {c.label} ·{" "}
-                {c.role === "legacy_secondary"
-                  ? "历史第二视角，角色待确认"
-                  : c.role === "primary"
-                    ? "主采集"
-                    : c.role === "backup"
-                      ? "备用"
-                      : "辅助采集"}{" "}
-                · {c.status || "未连接"} ·{" "}
-                {(c.areaIds || []).join("、") || "区域未记录"}
-              </p>
-            ))}
-          </section>
-          <div className="workstation-ai-assets">
-            {[
-              ["主摄像头", primaryCamera, true],
-              ["第二视角", fallbackCamera, false],
-              ["边缘设备", edgeDevice, true],
-            ].map(([label, device, required]) => (
-              <article key={label} className={!device ? "is-empty" : ""}>
-                <span className="workstation-ai-assets__icon">
-                  {label === "边缘设备" ? (
-                    <HddOutlined />
-                  ) : (
-                    <VideoCameraOutlined />
-                  )}
-                </span>
-                <div className="workstation-ai-assets__heading">
-                  <small>{label}</small>
-                  <strong>
-                    {device
-                      ? deviceDisplayName(device)
-                      : required
-                        ? "未配置"
-                        : "未配置（可选）"}
-                  </strong>
-                </div>
-                {device ? (
-                  <dl>
-                    <div>
-                      <dt>序列号</dt>
-                      <dd>{deviceSerialLabel(device)}</dd>
-                    </div>
-                    <div>
-                      <dt>在线状态</dt>
-                      <dd>
-                        <Status
-                          tone={device.status === "在线" ? "success" : "danger"}
-                        >
-                          {device.status}
-                        </Status>
-                      </dd>
-                    </div>
-                    {isCameraDevice(device) && (
-                      <>
-                        <div>
-                          <dt>视频流</dt>
-                          <dd>{device.streamStatus || "未知"}</dd>
-                        </div>
-                        <div>
-                          <dt>分辨率</dt>
-                          <dd>{device.resolution || "未记录"}</dd>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <dt>最后在线</dt>
-                      <dd>
-                        {displayBusinessText(device.lastHeartbeat || "未记录")}
-                      </dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <p>请从已绑定到本工位的设备中选择。</p>
-                )}
-              </article>
-            ))}
-          </div>
-          <div className="workstation-ai-boundary-note">
-            <CheckCircleOutlined />
-            <div>
-              <strong>基础条件与标准现场验证分开管理</strong>
-              <p>
-                “可用”仅表示主摄像头、视频流和边缘设备满足基础运行条件；具体实训标准能否启用AI判断，仍需在对应AI能力配置中完成工位现场验证。
-              </p>
-            </div>
-          </div>
-          {affectedAiValidationCount > 0 && (
-            <div className="workstation-ai-impact-note">
-              <AlertOutlined />
-              <p>
-                更换或解绑主摄像头、备用摄像头、边缘设备后，当前关联的{" "}
-                {affectedAiValidationCount}{" "}
-                条已验证状态会转为待重新验证，已有判断项和能力关联不会删除。
-              </p>
-            </div>
-          )}
-        </section>
+          <WorkstationStandardsPanel workstation={item} />
+        </>
       )}
       {type === "teacher" && (
         <section className="panel panel--table">
@@ -26688,44 +26670,16 @@ function AdminDetail({ type, setModal }) {
           />
         </section>
       )}
-      {type === "workstation" && (
-        <section className="panel panel--table">
-          <PanelTitle title="已绑定设备" />
-          <DataTable
-            pagination
-            columns={[
-              "设备",
-              "序列号",
-              "类型",
-              "状态",
-              "视频流 / 分辨率",
-              "最后在线",
-            ]}
-            rows={linkedDevices.map((device) => [
-              deviceDisplayName(device),
-              deviceSerialLabel(device),
-              device.type,
-              device.status,
-              isCameraDevice(device)
-                ? `${device.streamStatus || "未知"} / ${device.resolution || "未记录"}`
-                : "--",
-              device.lastHeartbeat || "未记录",
-            ])}
-            rowKey={(_, index) => linkedDevices[index].id}
-            onView={(_, index) => {
-              const device = linkedDevices[index];
-              if (device) nav(`/admin/devices/${device.id}`);
-            }}
-            emptyText="当前工位尚未绑定设备，可在设备管理中选择该工位。"
-          />
-        </section>
-      )}
       {type === "device" && (
         <section className="panel device-binding-note">
           <PanelTitle title="绑定与健康说明" />
           <p>
             {workstation
-              ? `当前绑定 ${workstationOptionLabel(workstation)}，支持项目：${workstation.supportedProject}。`
+              ? `当前绑定 ${workstationOptionLabel(workstation)}。关联实训标准：${
+                  workstationLinkedStandards(data, workstation.id)
+                    .map((sop) => sop.name)
+                    .join("、") || "尚未关联"
+                }。`
               : "当前未绑定工位，不会参与任何实训会话。"}
           </p>
           <p className="form-hint">
@@ -26737,11 +26691,12 @@ function AdminDetail({ type, setModal }) {
         <PanelTitle title="最近审计记录" />
         <DataTable
           pagination
-          columns={["时间", "操作者", "操作", "结果"]}
+          columns={["时间", "操作者", "操作", "说明", "结果"]}
           rows={relatedLogs.map((log) => [
             log.time,
             `${log.actor}（${log.role}）`,
             log.action,
+            log.detail || log.changedFields || "—",
             log.result,
           ])}
           emptyText="当前对象还没有新的审计记录。"
@@ -26811,6 +26766,7 @@ function AdminRecords({ exam = false, setModal }) {
           fileName,
           format: "CSV",
           dataScope: "导出时当前记录",
+          content: `\uFEFF${content}`,
         });
         downloadTextFile(
           fileName,
@@ -26877,13 +26833,14 @@ function SessionDiagnosticPanel({ record, store }) {
   );
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const checks = selectedStep?.diagnostic?.checks || {};
+  const diagnostic = stepDiagnostic(selectedStep, selectedSession);
+  const checks = diagnostic.checks;
   const checkLabels = [
     ["objectVisible", "目标对象可见"],
     ["actionSufficient", "动作持续充分"],
-    ["roiMatched", "动作位于配置区域"],
+    ["roiMatched", "所需区域映射完整"],
     ["evidenceContinuous", "证据连续"],
-    ["configComplete", "评价配置完整"],
+    ["configComplete", "本次AI运行配置依据"],
   ];
   useEffect(() => {
     if (!selectedSession) return;
@@ -26901,10 +26858,10 @@ function SessionDiagnosticPanel({ record, store }) {
   }, [selectedSession?.id, selectedStep?.id]);
   if (!selectedSession || !selectedStep)
     return (
-      <section className="panel diagnostic-panel">
-        <PanelTitle title="实施诊断" />
+      <details className="panel diagnostic-panel">
+        <summary className="diagnostic-summary"><strong>实施诊断</strong><span>暂无可诊断记录</span></summary>
         <p className="hint">当前安排尚未产生可诊断的实训记录。</p>
-      </section>
+      </details>
     );
   const hasFallbackCamera = Boolean(
     selectedSession.evaluationSnapshot?.workstationAiBaseConfigSnapshot
@@ -26922,24 +26879,16 @@ function SessionDiagnosticPanel({ record, store }) {
         },
       );
       setError("");
-      setMessage("根因标记已保存并写入审计日志");
+      setMessage("根因标记已保存；设备或配置问题仍需到对应管理页面处理。");
     } catch (reason) {
       setMessage("");
       setError(reason instanceof Error ? reason.message : "保存失败，请重试。");
     }
   };
   return (
-    <section className="panel diagnostic-panel">
-      <PanelTitle
-        title="实施诊断 · 为什么没有判定"
-        action={
-          <Status>{selectedStep.diagnostic?.triggerStatus || "未触发"}</Status>
-        }
-      />
-      <p className="hint diagnostic-scope-note">
-        仅供管理员/实施人员定位摄像头、ROI、模型、规则或 SOP
-        配置问题；不会直接修改学生成绩。
-      </p>
+    <details className="panel diagnostic-panel">
+      <summary className="diagnostic-summary"><strong>实施诊断</strong><span>查看诊断、证据与根因记录</span></summary>
+      <div className="diagnostic-content">
       <div className="diagnostic-selectors">
         <label className="field">
           实训记录 / 学生 / 工位
@@ -26956,7 +26905,7 @@ function SessionDiagnosticPanel({ record, store }) {
               );
               return (
                 <option key={session.id} value={session.id}>
-                  {session.id} · {sessionStudent?.name || "学生已失效"} ·{" "}
+                  {sessionStudent?.name || "学生已失效"} ·{" "}
                   {sessionWorkstation?.name || session.workstationId}
                 </option>
               );
@@ -26972,11 +26921,28 @@ function SessionDiagnosticPanel({ record, store }) {
             {selectedSession.steps.map((step) => (
               <option key={step.id} value={step.id}>
                 {step.id} · {step.name} · {step.result}
-                <EvaluationBadge step={step} />
               </option>
             ))}
           </select>
         </label>
+      </div>
+      <div className="diagnostic-reason">
+        <AlertOutlined />
+        <div>
+          <small>当前诊断结论</small>
+          <strong>
+            {displayBusinessText(
+              diagnostic.noTriggerReason,
+            )}
+          </strong>
+          <p>
+            {selectedStep.evidenceMetadata?.scoringPolicy ||
+              "诊断结果只用于定位问题，不直接影响成绩。"}
+          </p>
+        </div>
+      </div>
+      <div className="diagnostic-entry-actions">
+        {diagnosticLinks(record, selectedSession, selectedStep, store.data, store.dataSource).map(link => <Link className="button button--default" key={link.label} to={link.path}>{link.label}</Link>)}
       </div>
       <div className="recording-health-grid">
         <span>
@@ -27008,22 +26974,22 @@ function SessionDiagnosticPanel({ record, store }) {
         <div className="diagnostic-checks">
           <h3>完成条件逐项检查</h3>
           {checkLabels.map(([key, label]) => (
-            <article className={checks[key] ? "is-ok" : "is-fail"} key={key}>
-              {checks[key] ? (
+            <article className={checks[key] === true ? "is-ok" : checks[key] === false ? "is-fail" : "is-unknown"} key={key}>
+              {checks[key] === true ? (
                 <CheckCircleFilled />
               ) : (
                 <ExclamationCircleFilled />
               )}
               <span>
                 <strong>{label}</strong>
-                <small>{checks[key] ? "满足" : "未满足"}</small>
+                <small>{diagnosticCheckLabel(checks[key])}</small>
               </span>
             </article>
           ))}
         </div>
         <div className="diagnostic-facts">
           <h3>最近观察事实与时间线</h3>
-          {(selectedStep.diagnostic?.recentFacts || []).map((fact, index) => (
+          {diagnostic.recentFacts.map((fact, index) => (
             <article key={`${displayBusinessText(fact)}-${index}`}>
               <time>
                 {displayBusinessText(
@@ -27046,24 +27012,10 @@ function SessionDiagnosticPanel({ record, store }) {
           ))}
         </div>
       </div>
-      <div className="diagnostic-reason">
-        <AlertOutlined />
-        <div>
-          <small>当前诊断结论</small>
-          <strong>
-            {displayBusinessText(
-              selectedStep.diagnostic?.noTriggerReason || "未知",
-            )}
-          </strong>
-          <p>
-            {selectedStep.evidenceMetadata?.scoringPolicy ||
-              "诊断结果只用于定位问题，不直接影响成绩。"}
-          </p>
-        </div>
-      </div>
+      <details className="diagnostic-technical-details"><summary>本次锁定配置与技术标识</summary>
       <div className="diagnostic-versions">
         {[
-          ["实训标准", record.sopId || "随安排锁定"],
+          ["本次标准标识", selectedSession.evaluationSnapshot?.sopId || record.snapshot?.sopId || record.sopId || "未记录"],
           [
             "AI能力配置",
             selectedStep.evidenceMetadata?.aiCapabilityConfigId || "未配置",
@@ -27076,8 +27028,7 @@ function SessionDiagnosticPanel({ record, store }) {
           ],
           [
             "工位AI配置",
-            selectedStep.evidenceMetadata?.sopWorkstationAiConfigId ||
-              selectedSession.workstationId,
+            selectedStep.evidenceMetadata?.sopWorkstationAiConfigId || "未记录",
           ],
           ["现场验证", selectedStep.evidenceMetadata?.validationId],
         ].map(([label, value]) => (
@@ -27087,6 +27038,7 @@ function SessionDiagnosticPanel({ record, store }) {
           </span>
         ))}
       </div>
+      </details>
       {(selectedSession.recording?.incidents || []).length > 0 && (
         <div className="recording-incident-list">
           <h3>录像异常</h3>
@@ -27101,6 +27053,9 @@ function SessionDiagnosticPanel({ record, store }) {
           ))}
         </div>
       )}
+      <section className="diagnostic-root-cause">
+        <h3>根因记录</h3>
+        <p>用于记录排查结论；保存标记不会解除工位限制或确认故障已修复。</p>
       <div className="root-cause-form">
         <label className="field">
           根因分类
@@ -27138,12 +27093,14 @@ function SessionDiagnosticPanel({ record, store }) {
       )}
       {selectedStep.diagnostic?.confirmedAt && (
         <small className="diagnostic-confirmed">
-          最近确认：{displayBusinessText(selectedStep.diagnostic.confirmedAt)} ·{" "}
+          最近标记：{displayBusinessText(selectedStep.diagnostic.confirmedAt)} ·{" "}
           {selectedStep.diagnostic.confirmedBy} ·{" "}
           {selectedStep.diagnostic.rootCause}
         </small>
       )}
-    </section>
+      </section>
+      </div>
+    </details>
   );
 }
 
@@ -27154,16 +27111,20 @@ function AdminRecordDetail({ exam = false }) {
   const record = store.data.arrangements.find(
     (item) => item.id === id && item.type === (exam ? "exam" : "practice"),
   );
-  const accessLogged = useRef(false);
+  const accessLogged = useRef("");
   useEffect(() => {
-    if (!record || accessLogged.current) return;
-    accessLogged.current = true;
-    store.recordAuditAccess("查看教学记录", `${record.name} / ${record.id}`, {
-      reason: "管理员跨教师只读查看",
-      sopId: record.snapshot?.sopId || record.sopId,
-      snapshotLockedAt: record.snapshot?.lockedAt || "尚未锁定快照",
-    });
-  }, [record?.id]);
+    if (!record || !store.dataWriteReady) return;
+    const key = `${store.dataSource}:${record.id}`;
+    if (accessLogged.current === key) return;
+    if (
+      store.recordAuditAccess("查看教学记录", `${record.name} / ${record.id}`, {
+        reason: "管理员跨教师只读查看",
+        sopId: record.snapshot?.sopId || record.sopId,
+        snapshotLockedAt: record.snapshot?.lockedAt || "尚未锁定快照",
+      })
+    )
+      accessLogged.current = key;
+  }, [record?.id, store.dataWriteReady, store.dataSource]);
   if (!record)
     return (
       <section className="empty-page">
@@ -27508,6 +27469,7 @@ function BackupPage({ setModal }) {
       fileName,
       format: "JSON",
       dataScope: backup.checksum,
+      content,
     });
     downloadTextFile(fileName, content, "application/json;charset=utf-8");
     return `${fileName} 已生成并开始下载`;
@@ -27700,6 +27662,7 @@ function Logs({ setModal }) {
           fileName,
           format: "CSV",
           dataScope: "导出时筛选结果",
+          content: `\uFEFF${content}`,
         });
         downloadTextFile(
           fileName,
@@ -28097,12 +28060,37 @@ function NotFound() {
   );
 }
 
+function AccountShell(props) {
+  const store = usePrototypeData(),
+    location = useLocation();
+  const target = teacherAccountRedirect(
+    store.data,
+    store.accountSession,
+    store.dataSource,
+    location.pathname,
+  );
+  if (target)
+    return (
+      <Navigate
+        to={target}
+        replace
+        state={
+          target === "/login"
+            ? { message: "登录已失效，账号可能已被重置或停用，请重新登录。" }
+            : undefined
+        }
+      />
+    );
+  return <Shell {...props} />;
+}
+
 export function RoutedApp() {
   const [modal, setModal] = useState(null),
     [toast, setToast] = useState("");
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/account/password" element={<TeacherChangePasswordPage />} />
       <Route path="/data-screen" element={<DataScreen />} />
       <Route
         path="/student/login"
@@ -28143,7 +28131,7 @@ export function RoutedApp() {
       <Route
         path="/*"
         element={
-          <Shell
+          <AccountShell
             modal={modal}
             setModal={setModal}
             toast={toast}
@@ -28379,7 +28367,7 @@ export function RoutedApp() {
               />
               <Route path="*" element={<NotFound />} />
             </Routes>
-          </Shell>
+          </AccountShell>
         }
       />
     </Routes>

@@ -1,3 +1,4 @@
+import { standardWorkstationIds } from "./workstationStandardRules.js";
 import { standardReferenceMatches } from "./trainingStandardRules.js";
 import { gradeScoreValidity } from "./gradeScoreValidityRules.js";
 import {
@@ -1549,6 +1550,8 @@ function latestVersion(items = [], field = "version") {
 
 export function getSopAiEvaluationStatus({
   sop,
+  aiCapabilityConfigs = [],
+  sopWorkstationAiConfigs = [],
   datasets = [],
   models = [],
   workstations = [],
@@ -1636,17 +1639,16 @@ export function getSopAiEvaluationStatus({
     sopDatasets.length > 0 ||
     compatibleModels.length > 0 ||
     Boolean(deployedModel);
-  const explicitTargets = Array.isArray(targetWorkstationIds)
-    ? new Set(targetWorkstationIds)
-    : null;
-  const targetWorkstations = workstations.filter((workstation) =>
-    explicitTargets
-      ? explicitTargets.has(workstation.id)
-      : workstation.supportedProject === sop.name ||
-        fieldValidations.some(
-          (record) =>
-            record.sopId === sop.id && record.workstationId === workstation.id,
+  const targets = new Set(
+    Array.isArray(targetWorkstationIds)
+      ? targetWorkstationIds
+      : standardWorkstationIds(
+          { aiCapabilityConfigs, sopWorkstationAiConfigs },
+          sop.id,
         ),
+  );
+  const targetWorkstations = workstations.filter((workstation) =>
+    targets.has(workstation.id),
   );
   const gateResults = targetWorkstations.map((workstation) => {
     const validation = [...fieldValidations]
@@ -1799,17 +1801,16 @@ export function recordedDeductionOf(steps = []) {
 }
 
 export function sessionPrimaryIssue(session) {
-  if (!session) return "尚未开始";
-  const issueStep = (session.steps || []).find(
-    (step) =>
-      ["待复核", "待补充证据"].includes(step.reviewStatus) ||
-      Number(step.effectiveScore ?? step.score ?? 0) < Number(step.maxScore),
-  );
-  if (issueStep) return `${issueStep.id} · ${issueStep.name}`;
-  return (
-    (session.events || []).find((event) => event.level === "danger")?.title ||
-    "无阻断问题"
-  );
+  if (!session || ["待开始", "可入场"].includes(session.status)) return "尚未开始";
+  if (session.resultStatus === "未参加") return "未参加";
+  const steps = session.steps || [];
+  const safety = steps.find(s => s.state === "blocked" || s.redlineConfirmed || s.executionState === "safety_blocked");
+  const review = steps.find(s => requiresMandatoryReview(s) || ["pending", "retest_required"].includes(s.scoreDisposition?.status));
+  const deduction = steps.find(s => !["pending", "active"].includes(s.state) &&
+    s.effectiveScore != null && Number.isFinite(Number(s.effectiveScore)) && Number(s.effectiveScore) < Number(s.maxScore));
+  const issue = safety || review || deduction;
+  if (issue) return `${issue.id} · ${issue.name}`;
+  return (session.events || []).find(e => e.level === "danger")?.title || "无已确认问题";
 }
 
 export function arrangementDestination(item) {

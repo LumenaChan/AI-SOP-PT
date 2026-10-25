@@ -319,7 +319,7 @@ export function TeachingStatisticsPage({ initialTab }) {
   const filters = Object.fromEntries(
     fields.map((k) => [k, effective.get(k) || ""]),
   );
-  filters.teacherId = "t1";
+  filters.teacherId = store.teacherId;
   filters.basisArrangementId = effective.get("basisArrangementId") || "";
   filters.basisSessionId = effective.get("basisSessionId") || "";
   const tab = Object.hasOwn(STATISTICS_TABS, effective.get("tab"))
@@ -391,10 +391,10 @@ export function TeachingStatisticsPage({ initialTab }) {
   const filterError = validateStatisticsFilters(filters),
     model = teachingStatistics(
       data,
-      filterError ? { teacherId: "t1" } : filters,
+      filterError ? { teacherId: store.teacherId } : filters,
     ),
     { metrics, summary } = model;
-  const all = teachingStatistics(data, { teacherId: "t1" }),
+  const all = teachingStatistics(data, { teacherId: store.teacherId }),
     allRows = all.base;
   const unique = (rows, key, label) => [
     ...new Map(
@@ -422,7 +422,7 @@ export function TeachingStatisticsPage({ initialTab }) {
     type: "结果类型",
   };
   const scope = [
-    `当前教师：王老师`,
+    `当前教师：${store.teacherName}`,
     ...(filters.basisSessionId ? ["评分依据：所选历史快照，同口径合并"] : []),
     ...Object.entries(names)
       .filter(([k]) => filters[k])
@@ -907,7 +907,7 @@ export function TeachingStatisticsPage({ initialTab }) {
     : [];
   const legacyAttendance = effective.get("attendance");
   const legacyTarget = !sourceChanged
-    ? legacyAttendanceTarget(data, effective, dataSource)
+    ? legacyAttendanceTarget(data, effective, dataSource, store.teacherId)
     : "";
   useEffect(() => {
     if (legacyTarget) nav(legacyTarget, { replace: true });
@@ -1074,7 +1074,7 @@ export function TeachingStatisticsPage({ initialTab }) {
                 onClick={() => {
                   setError("");
                   setDraft({
-                    teacherId: "t1",
+                    teacherId: store.teacherId,
                     ...Object.fromEntries(fields.map((k) => [k, ""])),
                   });
                   patch({ tab }, true);

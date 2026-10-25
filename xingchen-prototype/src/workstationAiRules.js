@@ -47,13 +47,17 @@ export function validateWorkstationAiBaseConfig({
   workstation,
   input,
   devices = [],
+  requireComplete = false,
 }) {
   if (!workstation?.id) throw new Error("工位不存在或已失效。");
-  const config = {
+  const mergedConfig = {
     ...normalizeWorkstationAiBaseConfig(workstation),
     ...(input || {}),
     workstationId: workstation.id,
   };
+  const config = Array.isArray(input?.cameras)
+    ? withCameraAliases(mergedConfig)
+    : mergedConfig;
   if (
     config.primaryCameraId &&
     config.primaryCameraId === config.fallbackCameraId
@@ -75,9 +79,18 @@ export function validateWorkstationAiBaseConfig({
     );
     if (issue) throw new Error(issue);
   }
-  return Array.isArray(input?.cameras)
+  const validated = Array.isArray(input?.cameras)
     ? validateCameraCollection(config, workstation, devices)
     : withCameraAliases({ ...config, cameras: undefined });
+  if (requireComplete) {
+    if (!validated.primaryCameraId)
+      throw new Error("请选择并启用一台主采集摄像头。");
+    if (cameraViews(validated).some((c) => c.role === "legacy_secondary"))
+      throw new Error("请确认历史第二视角的实际用途，选择辅助采集或备用待命。");
+    if (cameraViews(validated).some((c) => c.role === "backup" && c.enabled))
+      throw new Error("备用视角仅待命；参与采集前请选择主采集或辅助采集用途。");
+  }
+  return validated;
 }
 
 export function deriveWorkstationAiReadiness({
@@ -102,41 +115,29 @@ export function deriveWorkstationAiReadiness({
       reasons: ["尚未选择主摄像头和边缘设备"],
     };
 
-  const primary = devices.find(
-    (device) => device.id === config.primaryCameraId,
-  );
-  const fallback = devices.find(
-    (device) => device.id === config.fallbackCameraId,
-  );
   const edge = devices.find((device) => device.id === config.edgeDeviceId);
   const pendingReasons = [];
   const abnormalReasons = [];
-
   if (!config.primaryCameraId) pendingReasons.push("未选择主摄像头");
-  else {
+  for (const view of cameraViews(config).filter((c) => c.enabled)) {
+    const label =
+      view.role === "primary" ? "主摄像头" : view.name || "采集摄像头";
+    const device = devices.find((d) => d.id === view.deviceId);
     const issue = deviceReferenceIssue(
-      primary,
+      device,
       workstation.id,
       isCameraDevice,
-      "主摄像头",
+      label,
     );
     if (issue) pendingReasons.push(issue);
     else {
-      if (primary.status !== "在线")
-        abnormalReasons.push(`主摄像头当前${primary.status || "离线"}`);
-      if (primary.streamStatus !== "可用")
-        abnormalReasons.push("主摄像头视频流不可用");
+      if (device.status !== "在线")
+        abnormalReasons.push(`${label}当前${device.status || "离线"}`);
+      if (device.streamStatus !== "可用")
+        abnormalReasons.push(`${label}视频流不可用`);
     }
-  }
-
-  if (config.fallbackCameraId) {
-    const issue = deviceReferenceIssue(
-      fallback,
-      workstation.id,
-      isCameraDevice,
-      "备用摄像头",
-    );
-    if (issue) pendingReasons.push(issue);
+    if (view.role === "backup")
+      pendingReasons.push(`${label}为备用设备，请确认是否参与本次采集`);
   }
 
   if (edgeRequired && !config.edgeDeviceId)
@@ -162,7 +163,7 @@ export function deriveWorkstationAiReadiness({
     return {
       code: "abnormal",
       ...WORKSTATION_AI_READINESS.abnormal,
-      reasons: [...new Set(abnormalReasons)],
+      reasons: [...new Set([...abnormalReasons, ...pendingReasons])],
     };
   if (pendingReasons.length)
     return {
@@ -173,22 +174,29 @@ export function deriveWorkstationAiReadiness({
   return {
     code: "available",
     ...WORKSTATION_AI_READINESS.available,
-    reasons: ["主摄像头、视频流和边缘设备均可用"],
+    reasons: ["采集摄像头、视频流和边缘设备均正常"],
   };
 }
 
+// Names and default display are presentation metadata. Runtime resources,
+// coverage and real capture conditions affect validation, independent of order.
+export function workstationCaptureKey(config = {}) {
+  const base = withCameraAliases(config);
+  return JSON.stringify({
+    cameras: cameraViews(base)
+      .filter((c) => c.enabled)
+      .map((c) => ({
+        deviceId: c.deviceId,
+        role: c.role,
+        areaIds: [...new Set(c.areaIds || [])].sort(),
+      }))
+      .sort((a, b) => a.deviceId.localeCompare(b.deviceId)),
+    edgeDeviceId: base.edgeDeviceId || "",
+    regions: base.regions || [],
+  });
+}
 export function isCriticalWorkstationAiChange(before, after) {
-  const previous = before || {};
-  const next = after || {};
-  return (
-    JSON.stringify(cameraViews(previous)) !==
-      JSON.stringify(cameraViews(next)) ||
-    JSON.stringify(previous.regions || []) !==
-      JSON.stringify(next.regions || []) ||
-    ["primaryCameraId", "fallbackCameraId", "edgeDeviceId"].some(
-      (key) => (previous[key] || "") !== (next[key] || ""),
-    )
-  );
+  return workstationCaptureKey(before) !== workstationCaptureKey(after);
 }
 
 export function invalidateWorkstationValidationStates(
@@ -227,18 +235,22 @@ export function applyWorkstationAiBaseConfig({
   devices,
   now,
   updatedBy = "系统管理员",
+  requireComplete = false,
 }) {
   const before = normalizeWorkstationAiBaseConfig(workstation);
   const validated = validateWorkstationAiBaseConfig({
     workstation,
     input,
     devices,
+    requireComplete,
   });
   const criticalChange = isCriticalWorkstationAiChange(before, validated);
   return {
     config: {
       ...validated,
-      lastCheckedAt: now,
+      lastCheckedAt: before.lastCheckedAt,
+      deviceInspection: before.deviceInspection,
+      lastConfigValidatedAt: now,
       updatedAt: now,
       updatedBy,
       lastAiCriticalChangeAt: criticalChange

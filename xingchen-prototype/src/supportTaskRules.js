@@ -76,7 +76,6 @@ function teacherGuard(arrangement, task, input) {
   const actorId = input.actorId || "t1";
   ensure(
     (input.actorRole || "teacher") === "teacher" &&
-      actorId === "t1" &&
       actorId === (arrangement?.teacherId || task?.teacherId) &&
       (!task || task.teacherId === actorId),
     "仅原安排的负责教师可以办理辅导任务。",

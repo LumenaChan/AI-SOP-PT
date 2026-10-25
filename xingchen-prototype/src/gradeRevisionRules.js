@@ -46,7 +46,7 @@ export function gradeStateToken(session = {}) {
 
 function assertOwner(arrangement, session, actorId = "t1") {
   if (!arrangement || !session) throw new Error("对应评价记录不存在或已失效。");
-  if (actorId !== "t1" || (arrangement.teacherId || "t1") !== actorId)
+  if ((arrangement.teacherId || "t1") !== actorId)
     throw new Error("只能由本次安排的负责教师办理成绩。");
 }
 export function assertGradeMutable(arrangement, session, actorId = "t1") {

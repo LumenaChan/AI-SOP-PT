@@ -3,6 +3,14 @@ import { displayDateTime } from "./dateTimeRules.js";
 // Presentation only. Historical messages keep their original bytes and IDs;
 // readable pages/exports translate known system terminology, never enum keys.
 const TERMS = [
+  // Compatibility for previously saved inspection reports and audit entries.
+  ["执行设备模拟检测", "执行设备检测"],
+  ["设备模拟检测", "设备检测"],
+  ["模拟检测通过", "检测通过"],
+  ["模拟检测有异常", "检测有异常"],
+  ["模拟取帧失败", "视频取帧失败"],
+  ["模拟节点通信失败", "边缘设备通信失败"],
+  ["在线 · 视频流可用（原型记录）", "在线 · 视频流可用"],
   ["Automatic evaluation gate", "自动评价启用检查"],
   ["Completion Scoring Coverage", "完成条件与评分规则覆盖情况"],
   ["Validation Test Case", "现场验证用例"],

@@ -185,10 +185,14 @@ test("不同工位实际区域独立并且区域修改触发重新验证", () =>
   );
 });
 
-test("八类验证案例通过并覆盖全部判断项后才能形成验证通过", () => {
+test("十六类验证案例通过并覆盖全部判断项后才能形成验证通过", () => {
   const cases = createDefaultValidationCases(aiConfig).map((item) => ({
     ...item,
-    actualResult: "模拟结果与预期一致",
+    actualResult: "系统已按该场景输出正确的完成或异常状态",
+    reviewNote: "逐项核对系统输出，均符合本用例期望结果",
+    executor: "现场工程师",
+    evidenceUrl: "https://evidence.example.test/validation.mp4",
+    judgementItemIds: aiConfig.judgementItems.map((i) => i.id),
     result: "passed",
   }));
   const coverage = buildValidationCoverage(aiConfig, cases);
@@ -199,7 +203,7 @@ test("八类验证案例通过并覆盖全部判断项后才能形成验证通�
     checks: { ready: true },
   });
   assert.equal(result.passed, true);
-  assert.equal(result.executedCount, 8);
+  assert.equal(result.executedCount, 16);
 });
 
 test("失败案例、未覆盖判断项或配置检查失败都不能启用", () => {

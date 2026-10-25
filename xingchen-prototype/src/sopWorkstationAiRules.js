@@ -1,3 +1,8 @@
+import {
+  readableValidationText,
+  validationEvidenceUrl,
+  fieldAcceptanceIssues,
+} from "./fieldValidationEvidenceRules.js";
 import { cameraViews, bindingCameras } from "./cameraRules.js";
 import { isCapabilityAvailableForConfiguration } from "./aiModelPublishingRules.js";
 import {
@@ -14,6 +19,17 @@ export const WORKSTATION_VALIDATION_STATUSES = {
   failed: "验证不通过",
   pending_revalidation: "待重新验证",
 };
+
+export function workstationValidationLabel(config) {
+  if (
+    config.validationStatus === "passed" &&
+    config.acceptancePolicy === "field_evidence_v1"
+  )
+    return config.fieldAcceptance?.status === "passed"
+      ? "现场验收通过"
+      : "配置检查通过";
+  return WORKSTATION_VALIDATION_STATUSES[config.validationStatus] || "未验证";
+}
 
 export const WORKSTATION_ENABLE_STATUSES = {
   not_enabled: "未启用",
@@ -50,10 +66,41 @@ export const EXTENDED_VALIDATION_SCENARIOS = [
     kind: "technical",
   },
 ];
-export function validationScenariosFor(config) {
-  return config?.validationScenarioSet === "extended"
-    ? [...VALIDATION_SCENARIOS, ...EXTENDED_VALIDATION_SCENARIOS]
-    : VALIDATION_SCENARIOS;
+export function validationScenariosFor() {
+  return [...VALIDATION_SCENARIOS, ...EXTENDED_VALIDATION_SCENARIOS];
+}
+
+export function validationPlan(aiConfig, relation = {}) {
+  const items = activeJudgementItems(aiConfig);
+  return validationScenariosFor().map((scenario, index) => {
+    const requiredItemIds = items
+      .filter((item) => {
+        if (index < 8) return true;
+        const action = ["action", "both"].includes(item.completionBasis);
+        const binding = relation.judgementCameraBindings?.find(
+          (b) => b.judgementItemId === item.id,
+        );
+        const multi = bindingCameras(binding || {}).length > 1;
+        if (
+          ["identity_handoff", "identity_ambiguous", "partial_camera"].includes(
+            scenario.key,
+          )
+        )
+          return multi;
+        if (scenario.key === "sustained_state")
+          return (item.conditions || []).some(
+            (c) => Number(c.minDurationSeconds) > 0,
+          );
+        return action;
+      })
+      .map((item) => item.id);
+    return {
+      ...scenario,
+      advanced: index >= 8,
+      requiredItemIds,
+      required: requiredItemIds.length > 0,
+    };
+  });
 }
 
 const OPERATIONAL_WORKSTATION_STATUSES = new Set(["可入场", "使用中"]);
@@ -99,6 +146,7 @@ export function requiredLogicalAreas(aiConfig = {}) {
 export function normalizeSopWorkstationAiConfig(config = {}) {
   return {
     ...config,
+    validationScenarioSet: "extended",
     id: config.id || "",
     sopAiConfigId: config.sopAiConfigId || "",
     workstationId: config.workstationId || "",
@@ -152,6 +200,7 @@ export function createSopWorkstationAiConfig({
       cameraId: base.primaryCameraId || "",
       source: "primary",
     })),
+    acceptancePolicy: "field_evidence_v1",
     validationStatus: "unvalidated",
     enableStatus: "not_enabled",
     createdAt: now,
@@ -409,7 +458,7 @@ export function setJudgementCameraBinding({
   const current = normalizeSopWorkstationAiConfig(config);
   if (!judgementItemId) throw new Error("AI判断项不存在。");
   if (!allowedCameraIds(workstation).includes(cameraId))
-    throw new Error("只能选择当前工位的主摄像头或备用摄像头。");
+    throw new Error("只能选择当前工位已启用的采集视角。");
   const existing = current.judgementCameraBindings.find(
     (item) => item.judgementItemId === judgementItemId,
   );
@@ -448,7 +497,7 @@ export function setLogicalAreaMapping({
 }) {
   if (!logicalAreaId) throw new Error("逻辑区域不存在。");
   if (!allowedCameraIds(workstation).includes(cameraId))
-    throw new Error("实际区域只能绑定当前工位的主摄像头或备用摄像头。");
+    throw new Error("实际区域只能绑定当前工位已启用的采集视角。");
   const mapping = {
     logicalAreaId,
     cameraId,
@@ -535,89 +584,175 @@ export function createDefaultValidationCases(aiConfig = {}, makeId) {
   }));
 }
 
-export function buildValidationCoverage(aiConfig, cases = []) {
-  const items = activeJudgementItems(aiConfig);
-  const passedCases = cases.filter((item) => item.result === "passed");
+export function completeValidationCases(aiConfig, cases = [], makeId) {
+  return [
+    ...cases,
+    ...createDefaultValidationCases(aiConfig, makeId).filter(
+      (candidate) =>
+        !cases.some((saved) => saved.scenarioType === candidate.scenarioType),
+    ),
+  ];
+}
+
+export function validationCaseInputIssues(c, items = []) {
+  const issues = [],
+    core = ["standard", "uncertain", "camera_error"].includes(c.scenarioType);
+  if (!["passed", "failed", "not_applicable"].includes(c.result))
+    issues.push("请选择用例结论");
+  if (!(c.judgementItemIds || []).some((id) => items.some((i) => i.id === id)))
+    issues.push("至少选择一个判断项");
+  if (c.result === "not_applicable") {
+    if (core) issues.push("标准流程、不确定和摄像头异常场景必须验证");
+    if (!readableValidationText(c.notApplicableReason))
+      issues.push("请说明不适用的具体理由（至少8字）");
+  } else {
+    if (!readableValidationText(c.actualResult))
+      issues.push("请填写具体系统输出，不能只填数字或通过（至少8字）");
+    if (!readableValidationText(c.reviewNote))
+      issues.push("请说明实际输出与期望结果的对照结论（至少8字）");
+    if (!String(c.executor || "").trim()) issues.push("请记录执行人");
+    if (!validationEvidenceUrl(c.evidenceUrl || c.evidenceRef))
+      issues.push("请提供可查看的录像或证据地址");
+  }
+  return issues;
+}
+export function buildValidationCoverage(aiConfig, cases = [], relation = {}) {
+  const items = activeJudgementItems(aiConfig),
+    scenarios = validationPlan(aiConfig, relation);
   const rows = items.map((item) => {
-    const related = passedCases.filter((entry) =>
-      (entry.judgementItemIds || []).includes(item.id),
+    const cells = scenarios.map((scenario) => {
+      if (!scenario.requiredItemIds.includes(item.id))
+        return {
+          scenarioType: scenario.key,
+          label: scenario.label,
+          kind: scenario.kind,
+          status: "not_required",
+        };
+      const related = cases.filter((c) => c.scenarioType === scenario.key);
+      const passed = related.find(
+        (c) =>
+          c.result === "passed" &&
+          (c.judgementItemIds || []).includes(item.id) &&
+          !validationCaseInputIssues(c, items).length,
+      );
+      const core =
+        ["standard", "uncertain", "camera_error"].includes(scenario.key) ||
+        scenario.advanced;
+      const excluded =
+        !core &&
+        related.some(
+          (c) =>
+            ((c.judgementItemIds || []).includes(item.id) &&
+              c.result === "not_applicable" &&
+              readableValidationText(c.notApplicableReason)) ||
+            (!(c.judgementItemIds || []).includes(item.id) &&
+              readableValidationText(c.excludedJudgementItems?.[item.id])),
+        );
+      return {
+        scenarioType: scenario.key,
+        label: scenario.label,
+        kind: scenario.kind,
+        status: passed ? "passed" : excluded ? "not_applicable" : "pending",
+      };
+    });
+    const negativePassed = cells.some(
+      (c) => c.kind === "negative" && c.status === "passed",
     );
+    const covered =
+      cells.every((c) => c.status !== "pending") && negativePassed;
     return {
       judgementItemId: item.id,
       judgementItemName: item.name,
-      covered: related.length > 0,
-      caseNames: related.map((entry) => entry.name),
-      result: related.length ? "通过" : "未覆盖",
+      covered,
+      cells,
+      negativePassed,
+      caseNames: cases
+        .filter(
+          (c) =>
+            c.result === "passed" &&
+            (c.judgementItemIds || []).includes(item.id),
+        )
+        .map((c) => c.name),
+      missingScenarios: cells
+        .filter((c) => c.status === "pending")
+        .map((c) => c.label),
+      result: covered ? "已覆盖" : "待补齐",
     };
   });
   return {
     rows,
     total: rows.length,
-    covered: rows.filter((item) => item.covered).length,
-    complete: rows.every((item) => item.covered),
+    covered: rows.filter((r) => r.covered).length,
+    complete: rows.length > 0 && rows.every((r) => r.covered),
   };
 }
-
 export function evaluateValidationCompletion({
   aiConfig,
   cases = [],
   checks,
   validationPurpose = "prototype_demo",
-  independentReport,
   capabilities = [],
+  relation,
+  data = {},
 }) {
-  const coverage = buildValidationCoverage(aiConfig, cases);
-  const executed = cases.filter((item) => item.result !== "pending");
-  const scenarioKeys = new Set(executed.map((item) => item.scenarioType));
-  const missingScenarios = validationScenariosFor(aiConfig).filter(
-    (item) => !scenarioKeys.has(item.key),
+  const plan = validationPlan(aiConfig, relation);
+  const required = new Set(plan.filter((s) => s.required).map((s) => s.key));
+  const evaluatedCases = cases.filter(
+    (c) =>
+      required.has(c.scenarioType) ||
+      c.result !== "pending" ||
+      c.executionState === "running",
   );
-  const failedCases = cases.filter((item) => item.result === "failed");
-  const issues = [];
-  if (!checks?.ready) issues.push("工位配置检查尚未通过");
-  if (validationPurpose === "real") {
-    if (
-      !independentReport?.id ||
-      independentReport.resultSource !== "real" ||
-      independentReport.passed !== true ||
-      !independentReport.datasetRef
-    )
-      issues.push("缺少可追溯的真实独立评测报告");
-    if (
-      cases.some(
-        (c) =>
-          c.resultSource !== "real" ||
-          !c.evidenceRef?.trim() ||
-          !c.executor?.trim(),
-      )
-    )
-      issues.push("真实现场案例需记录真实执行来源、证据与执行人");
-    if (
-      !capabilities.length ||
-      capabilities.some(
-        (c) =>
-          c.currentPublishedModel?.resultSource !== "real" ||
-          c.currentPublishedModel?.integrationStatus !== "connected_verified",
-      )
-    )
-      issues.push("引用能力尚无经过真实评测的已发布模型");
-  }
-  if (missingScenarios.length)
-    issues.push(
-      `尚未执行：${missingScenarios.map((item) => item.label).join("、")}`,
+  const coverage = buildValidationCoverage(aiConfig, cases, relation),
+    executed = cases.filter((c) => ["passed", "failed"].includes(c.result));
+  const missing = plan
+    .filter((s) => s.required)
+    .filter(
+      (s) =>
+        !cases.some(
+          (c) =>
+            c.scenarioType === s.key &&
+            ["passed", "failed", "not_applicable"].includes(c.result),
+        ),
     );
-  if (!coverage.complete) issues.push("仍有AI判断项未被通过案例覆盖");
-  if (failedCases.length)
-    issues.push(`${failedCases.map((item) => item.name).join("、")}验证不通过`);
-  if (cases.some((item) => item.result === "pending"))
-    issues.push("仍有验证案例未完成");
+  const failed = cases.filter((c) => c.result === "failed"),
+    issues = [];
+  if (!checks?.ready) issues.push("工位配置检查尚未通过");
+  if (missing.length)
+    issues.push(`尚未完成：${missing.map((s) => s.label).join("、")}`);
+  for (const c of evaluatedCases) {
+    const errors = validationCaseInputIssues(c, activeJudgementItems(aiConfig));
+    if (errors.length) issues.push(`${c.name}：${errors.join("；")}`);
+  }
+  if (!coverage.complete)
+    issues.push("仍有判断项的正常、异常或适用场景覆盖未补齐");
+  if (failed.length)
+    issues.push(`${failed.map((c) => c.name).join("、")}验证不通过`);
+  if (validationPurpose === "real")
+    issues.push(
+      ...fieldAcceptanceIssues({
+        relation: {
+          ...relation,
+          validationPurpose,
+          validationCases: evaluatedCases,
+        },
+        aiConfig: {
+          ...aiConfig,
+          judgementItems: activeJudgementItems(aiConfig),
+        },
+        capabilities,
+        data,
+      }),
+    );
   return {
     passed: issues.length === 0,
     issues: [...new Set(issues)],
     coverage,
     executedCount: executed.length,
-    passedCount: cases.filter((item) => item.result === "passed").length,
-    failedCount: failedCases.length,
+    passedCount: cases.filter((c) => c.result === "passed").length,
+    failedCount: failed.length,
+    notApplicableCount: cases.filter((c) => c.result === "not_applicable")
+      .length,
   };
 }
 
@@ -629,6 +764,7 @@ export function deriveSopWorkstationRuntimeStatus({
   const current = normalizeSopWorkstationAiConfig(config);
   if (
     current.validationPurpose === "real" &&
+    current.acceptancePolicy !== "field_evidence_v1" &&
     (!current.independentReport?.id ||
       current.independentReport?.resultSource !== "real" ||
       !current.independentReport?.passed ||
@@ -652,6 +788,19 @@ export function deriveSopWorkstationRuntimeStatus({
     return {
       code: "pending_revalidation",
       label: "待重新验证",
+      runnable: false,
+    };
+  if (readiness?.code !== "available" && !checks?.partialRunnable)
+    return { code: "workstation_abnormal", label: "工位异常", runnable: false };
+  if (
+    current.acceptancePolicy === "field_evidence_v1" &&
+    (current.validationPurpose !== "real" ||
+      current.fieldAcceptance?.status !== "passed" ||
+      current.fieldAcceptance?.runId !== current.validationRunId)
+  )
+    return {
+      code: "field_acceptance_required",
+      label: "待现场验收",
       runnable: false,
     };
   if (

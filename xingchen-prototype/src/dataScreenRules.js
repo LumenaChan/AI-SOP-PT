@@ -1,3 +1,4 @@
+import { workstationLinkedStandards } from "./workstationStandardRules.js";
 import { stepEvaluationMeaning } from "./visualEvaluationRules.js";
 import { withCameraAliases,cameraViews } from "./cameraRules.js";
 import { deriveSopAiConfigurationSummary } from "./aiEntry.js";
@@ -147,7 +148,7 @@ export function buildDataScreenSnapshot(data = {}, { now = new Date(), days = 30
     const healthy = !["故障", "维护中", "停用"].includes(status)
       && (data.dataScreenDemo || (devices.length > 0 && devices.every((d) => d.status === "在线")));
     return { id: w.id, name: w.name, code: w.code, location: w.location, status, healthy,
-      project: arrangement?.name || w.supportedProject || "待命工位", isExam, steps, aiReady: ready,
+      project: arrangement?.name || workstationLinkedStandards(data, w.id).map((sop) => sop.name).join("、") || "待命工位", isExam, steps, aiReady: ready,
       preview: workstationPreview(w, devices, { demo: Boolean(data.dataScreenDemo), isExam, status }),
       currentStep: steps.find((s) => s.current)?.name || (isExam ? "考试进行中 · 过程保密" : "等待实训开始"),
     };
@@ -214,7 +215,7 @@ export function createDataScreenDemo(now = new Date()) {
   const students = classes.flatMap((c, i) => Array.from({ length: 24 }, (_, j) => ({ id: `ds-student-${i}-${j}`, classId: c.id })));
   const configurations = sops.map((sop) => ({ id: `ds-config-${sop.id}`, sopId: sop.id, status: "enabled",
     stepConfigs: sop.steps.map((s, i) => ({ stepId: s.id, actualEvaluationMode: i < 4 ? "visual_auto" : i === 4 ? "visual_assist_default_pass" : "default_pass_manual_deduction" })) }));
-  const workstations = Array.from({ length: 18 }, (_, i) => ({ id: `ds-w-${i}`, name: `${String(i + 1).padStart(2, "0")}号工位`, code: `WS-${String(i + 1).padStart(2, "0")}`, location: `${i < 9 ? "A" : "B"}区`, supportedProject: courses[Math.floor(i / 3)][1], status: i === 16 ? "维护中" : i === 17 ? "故障" : "启用" }));
+  const workstations = Array.from({ length: 18 }, (_, i) => ({ id: `ds-w-${i}`, name: `${String(i + 1).padStart(2, "0")}号工位`, code: `WS-${String(i + 1).padStart(2, "0")}`, location: `${i < 9 ? "A" : "B"}区`, status: i === 16 ? "维护中" : i === 17 ? "故障" : "启用" }));
   const relations = workstations.map((w, i) => ({ id: `ds-rel-${i}`, workstationId: w.id, sopAiConfigId: configurations[Math.floor(i / 3)].id,
     validationStatus: i < 16 ? "passed" : "pending_revalidation", enableStatus: i < 16 ? "enabled" : "disabled" }));
   const arrangements = [];

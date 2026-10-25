@@ -113,7 +113,6 @@ function teacherGuard(arrangement, input) {
   const actorId = input.actorId || "t1";
   ensure(
     (input.actorRole || "teacher") === "teacher" &&
-      actorId === "t1" &&
       actorId === (arrangement.teacherId || "t1"),
     "仅本次安排的负责教师可以办理补证或补测。",
   );

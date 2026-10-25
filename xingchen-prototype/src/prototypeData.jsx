@@ -1,3 +1,23 @@
+import { changeExamReviewVisibility } from "./studentReviewAccessRules.js";
+import { createStoredExport } from "./exportFileRules.js";
+import { stepDiagnostic } from "./sessionDiagnosticRules.js";
+import { createWorkstationValidationActions } from "./workstationValidationActions.js";
+import {
+  createWorkstationConfigActions,
+  assertWorkstationIdle,
+  assertDeviceIdle,
+} from "./workstationConfigActions.js";
+import {
+  createTeacherAccountActions,
+  teacherProfileInput,
+} from "./teacherAccountActions.js";
+import {
+  assertTeacherAccountAvailable,
+  authenticatePrototypeAccount,
+  readAccountSession,
+  writeAccountSession,
+  teacherLoginSessionValid,
+} from "./teacherAccountRules.js";
 import {
   overwriteCurrentStandard,
   applyCurrentStandardUpdate,
@@ -142,7 +162,6 @@ import {
   validateAiJudgementItem,
 } from "./aiCapabilityConfigRules.js";
 import {
-  applyWorkstationAiBaseConfig,
   deriveWorkstationAiReadiness,
   isCameraDevice,
   normalizeWorkstationAiBaseConfig,
@@ -150,10 +169,9 @@ import {
 import {
   activeJudgementItems,
   checkSopWorkstationAiConfig,
-  createDefaultValidationCases,
+  completeValidationCases,
   createSopWorkstationAiConfig,
   deriveSopWorkstationRuntimeStatus,
-  evaluateValidationCompletion,
   invalidateSopWorkstationConfigs,
   normalizeSopWorkstationAiConfig,
   setJudgementCameraBinding,
@@ -184,7 +202,6 @@ import {
   createSessionStepsFromSop,
   createEvaluationClock,
   DIAGNOSTIC_ROOT_CAUSES,
-  diagnoseNoTrigger,
   deriveDataRequirements,
   deriveTechnicalIncidentDisposition,
   assignSourceVideosToSplits,
@@ -522,46 +539,8 @@ function enrichStepEvidence(
         : "系统异常不产生学生扣分，按默认通过规则处理"
       : "按当前实训标准的判定方式处理",
   };
-  const checks = {
-    configComplete: step.judgementMode !== "visual_auto" || aiRuntimeEnabled,
-    objectVisible: pending
-      ? false
-      : !/未看到|丢失/.test(step.observation || ""),
-    actionSufficient: ["pass", "blocked"].includes(step.state),
-    roiMatched: (() => {
-      const requiredAreaIds = new Set(
-        (aiConfigSnapshot?.judgementItems || []).flatMap((item) =>
-          (item.conditions || [])
-            .map((condition) => condition.logicalAreaId)
-            .filter(Boolean),
-        ),
-      );
-      if (!requiredAreaIds.size) return true;
-      const mappedIds = new Set(
-        (workstationConfigSnapshot?.logicalAreaMappings || []).map(
-          (item) => item.logicalAreaId,
-        ),
-      );
-      return [...requiredAreaIds].every((id) => mappedIds.has(id));
-    })(),
-    evidenceContinuous: !incident && recording.status !== "不可用",
-  };
   const diagnostic = {
-    triggerStatus:
-      step.state === "pass"
-        ? "已触发"
-        : step.state === "blocked"
-          ? "安全阻断已触发"
-          : "未触发",
-    checks,
-    noTriggerReason:
-      step.state === "pass" || step.state === "blocked"
-        ? "已满足触发条件"
-        : diagnoseNoTrigger(checks),
-    recentFacts: [
-      step.observation || "尚无观察事实",
-      incident?.detail || step.evidence || "尚无证据说明",
-    ],
+    ...stepDiagnostic(step, { ...session, recording }),
     rootCause: step.diagnostic?.rootCause || "",
     rootCauseNote: step.diagnostic?.rootCauseNote || "",
     confirmedAt: step.diagnostic?.confirmedAt || "",
@@ -756,7 +735,6 @@ const seedData = {
       code: "WS-A01",
       location: "A区-01",
       status: "故障",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:18",
       notes: "边缘推理服务异常，评价受控暂停",
@@ -777,7 +755,6 @@ const seedData = {
       code: "WS-A02",
       location: "A区-02",
       status: "使用中",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:12",
       notes: "",
@@ -798,7 +775,6 @@ const seedData = {
       code: "WS-A03",
       location: "A区-03",
       status: "暂停中",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 10:06",
       notes: "教师人工暂停",
@@ -819,7 +795,6 @@ const seedData = {
       code: "WS-A04",
       location: "A区-04",
       status: "可入场",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "高压安全操作练习",
       updatedAt: "2026-09-18 09:58",
       notes: "",
@@ -840,7 +815,6 @@ const seedData = {
       code: "WS-A05",
       location: "A区-05",
       status: "可入场",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "无",
       updatedAt: "2026-09-18 09:56",
       notes: "",
@@ -861,7 +835,6 @@ const seedData = {
       code: "WS-A06",
       location: "A区-06",
       status: "维护中",
-      supportedProject: "新能源汽车高压安全操作",
       currentArrangement: "无",
       updatedAt: "2026-09-18 09:50",
       notes: "辅助摄像头离线，等待检修",
@@ -3207,6 +3180,16 @@ export function normalizePrototypeData(input) {
         ),
     )
     .map(normalizeSopWorkstationAiConfig)
+    .map((relation) => relation.validationStatus === "validating"
+      ? {
+          ...relation,
+          validationCases: completeValidationCases(
+            next.aiCapabilityConfigs.find((c) => c.id === relation.sopAiConfigId),
+            relation.validationCases,
+            (key) => `${relation.id}-case-${key}`,
+          ),
+        }
+      : relation)
     .filter(
       (item, index, entries) =>
         entries.findIndex(
@@ -4054,10 +4037,18 @@ const PrototypeDataContext = createContext(null);
 
 export function PrototypeDataProvider({ children }) {
   const [dataSource, setDataSource] = useState(readSelectedDataSource);
+  const [accountSession, setAccountSession] = useState(() =>
+    readAccountSession(
+      typeof window === "undefined" ? null : window.sessionStorage,
+    ),
+  );
+  const accountSessionRef = useRef(accountSession);
+  accountSessionRef.current = accountSession;
   const [storedData, setStoredData] = useState(() => loadData(dataSource));
   const sourceRef = useRef(dataSource);
   const dataRef = useRef(storedData);
   const backupReady = useRef(false);
+  const [dataWriteReady, setDataWriteReady] = useState(false);
   const openingInspections = useRef(new Map());
   sourceRef.current = dataSource;
   dataRef.current = storedData;
@@ -4114,6 +4105,7 @@ export function PrototypeDataProvider({ children }) {
           dataRef.current,
         );
         backupReady.current = true;
+        setDataWriteReady(true);
         setDataSyncError("");
       })
       .catch(() => {
@@ -4237,20 +4229,26 @@ export function PrototypeDataProvider({ children }) {
       });
       return { capability, config, groups, readiness, ...result };
     };
-    const getSopWorkstationContext = (relationId, configOverride) => {
+    const getSopWorkstationContext = (
+      relationId,
+      configOverride,
+      sourceData = data,
+    ) => {
       const relation = normalizeSopWorkstationAiConfig(
         configOverride ||
-          (data.sopWorkstationAiConfigs || []).find(
+          (sourceData.sopWorkstationAiConfigs || []).find(
             (item) => item.id === relationId,
           ) ||
           {},
       );
       if (!relation.id) throw new Error("SOP工位AI配置不存在或已失效。");
-      const aiConfig = (data.aiCapabilityConfigs || []).find(
+      const aiConfig = (sourceData.aiCapabilityConfigs || []).find(
         (item) => item.id === relation.sopAiConfigId,
       );
-      const sop = (data.sops || []).find((item) => item.id === aiConfig?.sopId);
-      const workstation = (data.workstations || []).find(
+      const sop = (sourceData.sops || []).find(
+        (item) => item.id === aiConfig?.sopId,
+      );
+      const workstation = (sourceData.workstations || []).find(
         (item) => item.id === relation.workstationId,
       );
       if (!aiConfig || !sop || !workstation)
@@ -4258,15 +4256,15 @@ export function PrototypeDataProvider({ children }) {
       const evaluation = evaluateAiCapabilityConfig({
         sop,
         config: aiConfig,
-        capabilities: data.aiCapabilities || [],
+        capabilities: sourceData.aiCapabilities || [],
       });
       const checks = checkSopWorkstationAiConfig({
         config: relation,
         aiConfig,
         aiConfigReady: evaluation.ready,
         workstation,
-        devices: data.devices || [],
-        capabilities: data.aiCapabilities || [],
+        devices: sourceData.devices || [],
+        capabilities: sourceData.aiCapabilities || [],
       });
       const runtimeStatus = deriveSopWorkstationRuntimeStatus({
         config: relation,
@@ -4288,7 +4286,13 @@ export function PrototypeDataProvider({ children }) {
       if (!existing)
         throw new Error(`${label}不存在或已失效，请返回列表刷新。`);
       setData((current) => {
-        const updated = { ...existing, status, updatedAt: timestamp() };
+        const latest = current[collection].find((item) => item.id === id);
+        if (!latest)
+          throw new Error(`${label}不存在或已失效，请返回列表刷新。`);
+        if (collection === "workstations") assertWorkstationIdle(current, id);
+        if (collection === "devices" && status === "停用")
+          assertDeviceIdle(current, id);
+        const updated = { ...latest, status, updatedAt: timestamp() };
         const next = {
           ...current,
           [collection]: current[collection].map((item) =>
@@ -4335,15 +4339,58 @@ export function PrototypeDataProvider({ children }) {
       });
       return result;
     };
+    const teacherId =
+      accountSession?.role === "teacher" ? accountSession.teacherId : "t1";
+    const currentTeacher = data.teachers.find((t) => t.id === teacherId);
+    const teacherName =
+      accountSession?.role === "teacher"
+        ? currentTeacher?.name || "教师信息缺失"
+        : "王老师";
     return {
       data,
+      accountSession,
+      teacherId,
+      teacherName,
+      currentTeacher,
+      accountSessionValid:
+        accountSession?.role !== "teacher" ||
+        teacherLoginSessionValid(data, accountSession, dataSource),
+      async login(account, password) {
+        const source = sourceRef.current;
+        const result = await authenticatePrototypeAccount(
+          dataRef.current,
+          account,
+          password,
+        );
+        if (source !== sourceRef.current)
+          throw new Error("数据来源已切换，请重新登录。");
+        const session = { ...result, source };
+        if (
+          result.role === "teacher" &&
+          !teacherLoginSessionValid(dataRef.current, session, source)
+        )
+          throw new Error("账号或密码已变化，请重新登录。");
+        writeAccountSession(window.sessionStorage, session);
+        accountSessionRef.current = session;
+        setAccountSession(session);
+        return session;
+      },
+      logout() {
+        try {
+          writeAccountSession(window.sessionStorage, null);
+        } catch {
+          /* Credential changes still invalidate any stale stored session. */
+        }
+        accountSessionRef.current = null;
+        setAccountSession(null);
+      },
       changeSupportTask(input) {
         let result;
         setData((current) => {
           const changed = changeSupportTask(current, {
             ...input,
-            actorId: "t1",
-            actorName: "王老师",
+            actorId: teacherId,
+            actorName: teacherName,
             at: new Date().toISOString(),
             makeId: uid,
           });
@@ -4357,8 +4404,8 @@ export function PrototypeDataProvider({ children }) {
         setData((current) => {
           const changed = changeEvidenceTask(current, {
             ...input,
-            actorId: "t1",
-            actorName: "王老师",
+            actorId: teacherId,
+            actorName: teacherName,
             at: new Date().toISOString(),
             makeId: uid,
           });
@@ -4426,59 +4473,36 @@ export function PrototypeDataProvider({ children }) {
         return updateStatus("classes", id, "启用", "恢复班级", "班级");
       },
 
-      createTeacher(input) {
-        const employeeNo = input.employeeNo.trim().toUpperCase();
-        const account = input.account.trim().toLowerCase();
-        ensureUnique(data.teachers, "employeeNo", employeeNo, null, "教师工号");
-        ensureUnique(data.teachers, "account", account, null, "登录账号");
-        const created = {
-          ...input,
-          id: uid("teacher"),
-          employeeNo,
-          account,
-          name: input.name.trim(),
-          status: "启用",
-          sopCount: 0,
-          arrangementCount: 0,
-          accountResetAt: "未重置",
-          updatedAt: timestamp(),
-        };
-        setData((current) => {
-          const next = {
-            ...current,
-            teachers: [created, ...current.teachers],
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            "新建教师",
-            `${created.name} / ${created.employeeNo}`,
-          );
-          return next;
-        });
-        return created;
-      },
+      ...createTeacherAccountActions({
+        getData: () => dataRef.current,
+        setData,
+        getSession: () => accountSessionRef.current,
+        getSource: () => sourceRef.current,
+        source: dataSource,
+        now: timestamp,
+        makeId: () => uid("teacher-account"),
+      }),
       updateTeacher(id, input) {
-        const existing = data.teachers.find((item) => item.id === id);
-        if (!existing) throw new Error("教师不存在或已失效，请返回列表刷新。");
-        const employeeNo = input.employeeNo.trim().toUpperCase();
-        const account = input.account.trim().toLowerCase();
-        ensureUnique(data.teachers, "employeeNo", employeeNo, id, "教师工号");
-        ensureUnique(data.teachers, "account", account, id, "登录账号");
-        const updated = {
-          ...existing,
-          ...input,
-          employeeNo,
-          account,
-          name: input.name.trim(),
-          updatedAt: timestamp(),
-        };
+        const profile = teacherProfileInput(input);
+        profile.employeeNo = profile.employeeNo.toUpperCase();
+        profile.account = profile.account.toLowerCase();
+        let updated;
         setData((current) => {
+          const existing = current.teachers.find((t) => t.id === id);
+          if (!existing)
+            throw new Error("教师不存在或已失效，请返回列表刷新。");
+          assertTeacherAccountAvailable(current.teachers, profile.account, id);
+          ensureUnique(
+            current.teachers,
+            "employeeNo",
+            profile.employeeNo,
+            id,
+            "教师工号",
+          );
+          updated = { ...existing, ...profile, updatedAt: timestamp() };
           const next = {
             ...current,
-            teachers: current.teachers.map((item) =>
-              item.id === id ? updated : item,
-            ),
+            teachers: current.teachers.map((t) => (t.id === id ? updated : t)),
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(
@@ -4498,29 +4522,6 @@ export function PrototypeDataProvider({ children }) {
           status === "停用" ? "停用教师" : "启用教师",
           "教师",
         );
-      },
-      resetTeacherAccount(id) {
-        const existing = data.teachers.find((item) => item.id === id);
-        if (!existing) throw new Error("教师不存在或已失效，请返回列表刷新。");
-        const when = timestamp();
-        setData((current) => {
-          const next = {
-            ...current,
-            teachers: current.teachers.map((item) =>
-              item.id === id
-                ? { ...item, accountResetAt: when, updatedAt: when }
-                : item,
-            ),
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            "生成账号重置任务",
-            `${existing.name} / ${existing.account}`,
-          );
-          return next;
-        });
-        return when;
       },
 
       createStudent(input) {
@@ -4775,10 +4776,11 @@ export function PrototypeDataProvider({ children }) {
         const code = input.code.trim().toUpperCase();
         ensureUnique(data.workstations, "code", code, null, "工位标识");
         const created = {
-          ...input,
           id: uid("workstation"),
           code,
           name: input.name.trim(),
+          location: input.location?.trim() || "",
+          notes: input.notes?.trim() || "",
           status: "可入场",
           currentArrangement: "无",
           updatedAt: timestamp(),
@@ -4803,9 +4805,10 @@ export function PrototypeDataProvider({ children }) {
         ensureUnique(data.workstations, "code", code, id, "工位标识");
         const updated = {
           ...existing,
-          ...input,
           code,
           name: input.name.trim(),
+          location: input.location?.trim() || "",
+          notes: input.notes?.trim() || "",
           updatedAt: timestamp(),
         };
         setData((current) => {
@@ -4829,93 +4832,15 @@ export function PrototypeDataProvider({ children }) {
           edgeRequired: true,
         });
       },
-      saveWorkstationAiBaseConfig(id, input) {
-        const workstation = data.workstations.find((item) => item.id === id);
-        if (!workstation)
-          throw new Error("工位不存在或已失效，请返回列表刷新。");
-        const oldViews = cameraViews(workstation.aiBaseConfig || {}),
-          newViews = cameraViews(input || {});
-        const removed = oldViews.filter(
-          (c) => !newViews.some((n) => n.deviceId === c.deviceId && n.enabled),
-        );
-        if (
-          removed.length &&
-          data.arrangements.some((a) =>
-            a.sessions.some(
-              (session) =>
-                session.workstationId === id &&
-                ["进行中", "已暂停", "可入场"].includes(session.status),
-            ),
-          )
-        )
-          throw new Error("当前工位有活动会话，结束后才能移除或停用引用视角。");
-        const now = timestamp();
-        const applied = applyWorkstationAiBaseConfig({
-          workstation,
-          input,
-          devices: data.devices,
-          now,
-          updatedBy: "系统管理员",
-        });
-        const previewSopInvalidation = applied.criticalChange
-          ? invalidateSopWorkstationConfigs(
-              data.sopWorkstationAiConfigs,
-              (item) => item.workstationId === id,
-              now,
-              "工位AI基础配置发生关键变化",
-            )
-          : { affectedCount: 0 };
-        const affectedCount = previewSopInvalidation.affectedCount;
-        setData((current) => {
-          const invalidatedSopConfigs = applied.criticalChange
-            ? invalidateSopWorkstationConfigs(
-                current.sopWorkstationAiConfigs,
-                (item) => item.workstationId === id,
-                now,
-                "工位AI基础配置发生关键变化",
-              ).configs
-            : current.sopWorkstationAiConfigs;
-          const updatedWorkstation = {
-            ...workstation,
-            aiBaseConfig: applied.config,
-            updatedAt: now,
-          };
-          const next = {
-            ...current,
-            workstations: current.workstations.map((item) =>
-              item.id === id ? updatedWorkstation : item,
-            ),
-            sopWorkstationAiConfigs: invalidatedSopConfigs,
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            applied.criticalChange
-              ? "变更工位AI基础配置"
-              : "检查工位AI基础配置",
-            `${workstation.name} / ${workstation.code}`,
-            "成功",
-            { affectedAiConfigCount: affectedCount },
-          );
-          return next;
-        });
-        const updatedWorkstation = {
-          ...workstation,
-          aiBaseConfig: applied.config,
-          updatedAt: now,
-        };
-        return {
-          workstation: updatedWorkstation,
-          readiness: deriveWorkstationAiReadiness({
-            workstation: updatedWorkstation,
-            devices: data.devices,
-            edgeRequired: true,
-          }),
-          criticalChange: applied.criticalChange,
-          affectedCount,
-        };
-      },
+      ...createWorkstationConfigActions({
+        setData,
+        getSource: () => sourceRef.current,
+        source: dataSource,
+        now: timestamp,
+        makeId: () => uid("workstation-config"),
+      }),
       setWorkstationStatus(id, status) {
+        assertWorkstationIdle(dataRef.current, id);
         return updateStatus(
           "workstations",
           id,
@@ -5188,6 +5113,8 @@ export function PrototypeDataProvider({ children }) {
         const sop = data.sops.find((item) => item.id === sopId);
         return calculateSopAiEvaluationStatus({
           sop,
+          aiCapabilityConfigs: data.aiCapabilityConfigs,
+          sopWorkstationAiConfigs: data.sopWorkstationAiConfigs,
           datasets: data.datasets,
           models: data.models,
           workstations: data.workstations,
@@ -5677,200 +5604,15 @@ export function PrototypeDataProvider({ children }) {
         });
         return updated;
       },
-      startSopWorkstationValidation(relationId, environment) {
-        const context = getSopWorkstationContext(relationId);
-        if (!context.checks.ready)
-          throw new Error(context.checks.issues[0] || "工位配置检查尚未通过。");
-        const now = timestamp();
-        const cases = createDefaultValidationCases(
-          {
-            ...context.aiConfig,
-            validationScenarioSet: context.relation.validationScenarioSet,
-          },
-          (scenario) => uid(`validation-${scenario}`),
-        );
-        const updated = {
-          ...context.relation,
-          validationStatus: "validating",
-          validationStartedAt: now,
-          validationCases: cases,
-          validationEnvironment: {
-            lighting: String(environment?.lighting || "正常").trim(),
-            occlusion: String(environment?.occlusion || "无遮挡").trim(),
-            tester: String(environment?.tester || "系统管理员").trim(),
-            tools: String(environment?.tools || "").trim(),
-            note: String(environment?.note || "").trim(),
-          },
-          validationInvalidationReason: "",
-          updatedAt: now,
-        };
-        setData((current) => {
-          const next = {
-            ...current,
-            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
-              (item) => (item.id === relationId ? updated : item),
-            ),
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            "开始工位现场验证",
-            `${context.sop.name} / ${context.workstation.name}`,
-          );
-          return next;
-        });
-        return updated;
-      },
-      saveSopWorkstationValidationCase(relationId, caseId, input) {
-        const context = getSopWorkstationContext(relationId);
-        if (context.relation.validationStatus !== "validating")
-          throw new Error("当前不在现场验证执行中。");
-        const existingCase = context.relation.validationCases.find(
-          (item) => item.id === caseId,
-        );
-        if (!existingCase) throw new Error("验证案例不存在。");
-        if (!String(input?.actualResult || "").trim())
-          throw new Error("请记录系统实际结果。");
-        if (!["passed", "failed"].includes(input?.result))
-          throw new Error("请选择案例通过或不通过。");
-        const validItemIds = new Set(
-          context.checks.activeJudgementItems.map((item) => item.id),
-        );
-        const judgementItemIds = [
-          ...new Set(input.judgementItemIds || []),
-        ].filter((id) => validItemIds.has(id));
-        if (!judgementItemIds.length)
-          throw new Error("验证案例至少覆盖一个AI判断项。");
-        const updatedCase = {
-          ...existingCase,
-          judgementItemIds,
-          actualResult: String(input.actualResult).trim(),
-          result: input.result,
-          note: String(input.note || "").trim(),
-          resultSource: input.resultSource || "legacy_unverified",
-          evidenceRef: String(input.evidenceRef || "").trim(),
-          executor: String(input.executor || "").trim(),
-          executedAt: timestamp(),
-        };
-        const updated = {
-          ...context.relation,
-          validationCases: context.relation.validationCases.map((item) =>
-            item.id === caseId ? updatedCase : item,
-          ),
-          updatedAt: timestamp(),
-        };
-        setData((current) => ({
-          ...current,
-          sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
-            (item) => (item.id === relationId ? updated : item),
-          ),
-        }));
-        return updatedCase;
-      },
-      completeSopWorkstationValidation(relationId) {
-        const context = getSopWorkstationContext(relationId);
-        if (context.relation.validationStatus !== "validating")
-          throw new Error("请先开始现场验证并执行验证案例。");
-        const result = evaluateValidationCompletion({
-          aiConfig: {
-            ...context.aiConfig,
-            validationScenarioSet: context.relation.validationScenarioSet,
-          },
-          cases: context.relation.validationCases,
-          checks: context.checks,
-          validationPurpose: context.relation.validationPurpose,
-          independentReport: context.relation.independentReport,
-          capabilities: (data.aiCapabilities || []).filter((c) =>
-            context.aiConfig.judgementItems.some((i) =>
-              (i.conditions || []).some((k) => k.capabilityId === c.id),
-            ),
-          ),
-        });
-        const now = timestamp();
-        const record = {
-          id: uid("validation-record"),
-          sopWorkstationConfigId: relationId,
-          validatedBy:
-            context.relation.validationEnvironment.tester || "系统管理员",
-          startedAt: context.relation.validationStartedAt || now,
-          completedAt: now,
-          overallResult: result.passed ? "passed" : "failed",
-          environment: { ...context.relation.validationEnvironment },
-          cases: context.relation.validationCases.map((item) => ({ ...item })),
-          coverage: result.coverage,
-          summary: {
-            caseCount: context.relation.validationCases.length,
-            passedCount: result.passedCount,
-            failedCount: result.failedCount,
-          },
-        };
-        const updated = {
-          ...context.relation,
-          validationStatus: result.passed ? "passed" : "failed",
-          lastValidatedAt: now,
-          lastValidatedBy: record.validatedBy,
-          validationRecords: [
-            record,
-            ...(context.relation.validationRecords || []),
-          ],
-          updatedAt: now,
-        };
-        setData((current) => {
-          const next = {
-            ...current,
-            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
-              (item) => (item.id === relationId ? updated : item),
-            ),
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            result.passed ? "工位现场验证通过" : "工位现场验证不通过",
-            `${context.sop.name} / ${context.workstation.name}`,
-          );
-          return next;
-        });
-        if (!result.passed)
-          throw new Error(result.issues[0] || "现场验证未通过。");
-        return { updated, record, result };
-      },
-      enableSopWorkstationAi(relationId) {
-        const context = getSopWorkstationContext(relationId);
-        if (context.relation.validationStatus !== "passed")
-          throw new Error("只有现场验证通过后才能启用AI评价。");
-        if (!context.checks.ready)
-          throw new Error(context.checks.issues[0] || "当前配置不可启用。");
-        const updated = {
-          ...context.relation,
-          enableStatus: "enabled",
-          enabledAt: timestamp(),
-          updatedAt: timestamp(),
-        };
-        setData((current) => {
-          const next = {
-            ...current,
-            sopWorkstationAiConfigs: current.sopWorkstationAiConfigs.map(
-              (item) => (item.id === relationId ? updated : item),
-            ),
-            aiCapabilityConfigs: current.aiCapabilityConfigs.map((config) =>
-              config.id === context.aiConfig.id
-                ? {
-                    ...config,
-                    status: "enabled",
-                  }
-                : config,
-            ),
-            auditLogs: [...current.auditLogs],
-          };
-          addAuditLog(
-            next,
-            "启用工位AI评价",
-            `${context.sop.name} / ${context.workstation.name}`,
-          );
-          return next;
-        });
-        return updated;
-      },
+      ...createWorkstationValidationActions({
+        getData: () => dataRef.current,
+        setData,
+        getContext: (id) =>
+          getSopWorkstationContext(id, undefined, dataRef.current),
+        now: timestamp,
+        makeId: uid,
+        audit: addAuditLog,
+      }),
       disableSopWorkstationAi(relationId) {
         const context = getSopWorkstationContext(relationId);
         const updated = {
@@ -7131,6 +6873,7 @@ export function PrototypeDataProvider({ children }) {
         if (
           input.workstationId &&
           !isCameraDevice(input) &&
+          !isEdgeDevice(input) &&
           data.devices.some(
             (item) =>
               item.workstationId === input.workstationId &&
@@ -7174,6 +6917,7 @@ export function PrototypeDataProvider({ children }) {
         if (
           input.workstationId &&
           !isCameraDevice(input) &&
+          !isEdgeDevice(input) &&
           data.devices.some(
             (item) =>
               item.id !== id &&
@@ -7197,29 +6941,19 @@ export function PrototypeDataProvider({ children }) {
           "address",
           "resolution",
         ].some((key) => (existing[key] || "") !== (updated[key] || ""));
-        if (
-          criticalDeviceChange &&
-          data.workstations.some((w) =>
-            cameraViews(w.aiBaseConfig || {}).some((c) => c.deviceId === id),
+        if (criticalDeviceChange) {
+          assertDeviceIdle(dataRef.current, id);
+          if (
+            updated.workstationId !== existing.workstationId &&
+            data.workstations.some(
+              (w) =>
+                cameraViews(w.aiBaseConfig || {}).some(
+                  (c) => c.deviceId === id,
+                ) || w.aiBaseConfig?.edgeDeviceId === id,
+            )
           )
-        ) {
-          const running = data.arrangements.some((a) =>
-            a.sessions.some(
-              (session) =>
-                ["进行中", "已暂停", "可入场"].includes(session.status) &&
-                cameraViews(
-                  session.evaluationSnapshot?.workstationAiBaseConfigSnapshot ||
-                    {},
-                ).some((c) => c.deviceId === id),
-            ),
-          );
-          if (running)
             throw new Error(
-              "相机被活动会话引用，结束相关会话后才能变更机位、释放或转交。",
-            );
-          if (updated.workstationId !== existing.workstationId)
-            throw new Error(
-              "请先在原工位视角配置中移除此相机，再解除绑定或转交。",
+              "请先在原工位运行配置中移除此设备，再解除绑定或转交。",
             );
         }
         const affectedWorkstationIds = criticalDeviceChange
@@ -7234,6 +6968,7 @@ export function PrototypeDataProvider({ children }) {
               .map((workstation) => workstation.id)
           : [];
         setData((current) => {
+          if (criticalDeviceChange) assertDeviceIdle(current, id);
           const now = timestamp();
           let sopWorkstationAiConfigs = current.sopWorkstationAiConfigs;
           let affectedCount = 0;
@@ -7258,7 +6993,6 @@ export function PrototypeDataProvider({ children }) {
                     ...workstation,
                     aiBaseConfig: {
                       ...normalizeWorkstationAiBaseConfig(workstation),
-                      lastCheckedAt: now,
                       updatedAt: now,
                       lastAiCriticalChangeAt: now,
                     },
@@ -7283,20 +7017,7 @@ export function PrototypeDataProvider({ children }) {
         return updated;
       },
       setDeviceStatus(id, status) {
-        if (
-          status === "停用" &&
-          data.arrangements.some((a) =>
-            a.sessions.some(
-              (session) =>
-                ["进行中", "已暂停", "可入场"].includes(session.status) &&
-                cameraViews(
-                  session.evaluationSnapshot?.workstationAiBaseConfigSnapshot ||
-                    {},
-                ).some((c) => c.deviceId === id),
-            ),
-          )
-        )
-          throw new Error("该相机被活动会话引用，请先结束相关会话。");
+        if (status === "停用") assertDeviceIdle(dataRef.current, id);
         return updateStatus(
           "devices",
           id,
@@ -7341,7 +7062,7 @@ export function PrototypeDataProvider({ children }) {
           id: uid("sop"),
           familyId: uid("sop-family"), // Retained for legacy AI data only.
           name: input.name.trim(),
-          owner: input.owner || "王老师",
+          owner: input.owner || teacherName,
           version: "V1.0", // Legacy AI compatibility only.
           status: "草稿",
           frozen: false,
@@ -8713,7 +8434,7 @@ export function PrototypeDataProvider({ children }) {
           ...input,
           id: existing?.id || uid(input.type === "exam" ? "exam" : "practice"),
           name,
-          teacherId: input.teacherId || existing?.teacherId || "t1",
+          teacherId: input.teacherId || existing?.teacherId || teacherId,
           stationAssignments,
           allocationPolicy: "one_student_one_station",
           ...(input.type === "exam" ? { examDurationMinutes } : {}),
@@ -9106,6 +8827,7 @@ export function PrototypeDataProvider({ children }) {
                     ...item,
                     status: "使用中",
                     currentArrangement: arrangement.name,
+                    currentArrangementId: arrangement.id,
                     updatedAt: startedAt,
                   }
                 : item,
@@ -10134,7 +9856,7 @@ export function PrototypeDataProvider({ children }) {
                 ...item,
                 status: "resolved",
                 resolvedAt: when,
-                resolvedBy: "王老师",
+                resolvedBy: teacherName,
               }
             : item,
         );
@@ -10346,7 +10068,7 @@ export function PrototypeDataProvider({ children }) {
             session.evaluationSnapshot?.sopSnapshot ||
             data.sops.find((item) => item.id === arrangement.sopId),
           when,
-          resolvedBy: "王老师",
+          resolvedBy: teacherName,
         });
         const updatedSession = preserveClosedSessionExecution(
           arrangement,
@@ -10390,8 +10112,8 @@ export function PrototypeDataProvider({ children }) {
             arrangementId,
             sessionId,
             stepId,
-            actorId: "t1",
-            actorName: "王老师",
+            actorId: teacherId,
+            actorName: teacherName,
             at: new Date().toISOString(),
             makeId: uid,
           };
@@ -10737,8 +10459,8 @@ export function PrototypeDataProvider({ children }) {
                   },
                   {
                     at: endedAtExact,
-                    actorId: "t1",
-                    actorName: "王老师",
+                    actorId: teacherId,
+                    actorName: teacherName,
                     action: "教师结束安排",
                     operationId: `end-${arrangement.id}-${session.id}`,
                     makeId: uid,
@@ -10857,8 +10579,8 @@ export function PrototypeDataProvider({ children }) {
             arrangementId,
             sessionId,
             stepId,
-            actorId: "t1",
-            actorName: "王老师",
+            actorId: teacherId,
+            actorName: teacherName,
             at: new Date().toISOString(),
             makeId: uid,
           };
@@ -10921,8 +10643,8 @@ export function PrototypeDataProvider({ children }) {
             sessionId,
             stepId,
             action: "adjust",
-            actorId: "t1",
-            actorName: "王老师",
+            actorId: teacherId,
+            actorName: teacherName,
             at: new Date().toISOString(),
             makeId: uid,
           });
@@ -10968,7 +10690,7 @@ export function PrototypeDataProvider({ children }) {
           ...arrangement,
           status: "已发布",
           publishedAt: timestamp(),
-          publishedBy: "王老师",
+          publishedBy: teacherName,
           sessions: arrangement.sessions.map((session) =>
             session.resultStatus === "未参加"
               ? session
@@ -11010,18 +10732,16 @@ export function PrototypeDataProvider({ children }) {
         });
         return updated;
       },
+      saveExamReviewVisibility(arrangementId, options, expected) {
+        setData((current) => {
+          const next = changeExamReviewVisibility(current, { arrangementId, options, expected, at: timestamp() }, { role: accountSession?.role || "teacher", id: teacherId });
+          next.auditLogs = [...current.auditLogs];
+          addAuditLog(next, "设置学生复盘范围", arrangementId, "成功", { feedback: options.feedback, recording: options.recording, standard: options.standard });
+          return next;
+        });
+      },
       createExportJob(input) {
-        const created = {
-          id: uid("export"),
-          scope: input.scope,
-          targetId: input.targetId,
-          fileName: input.fileName,
-          format: input.format,
-          dataScope: input.dataScope || "导出时当前数据",
-          status: "可下载",
-          createdAt: timestamp(),
-          expiresAt: "生成后 7 天",
-        };
+        const created = createStoredExport(input, uid("export"));
         setData((current) => {
           const next = {
             ...current,
@@ -11038,11 +10758,22 @@ export function PrototypeDataProvider({ children }) {
         return created;
       },
       recordAuditAccess(action, target, details = {}) {
-        setData((current) => {
-          const next = { ...current, auditLogs: [...current.auditLogs] };
-          addAuditLog(next, action, target, "成功", details);
-          return next;
-        });
+        // A read-only page may mount before backup completes. The page retries
+        // when dataWriteReady becomes true; keep all write protections intact.
+        if (!backupReady.current || sourceRef.current !== dataSource)
+          return false;
+        try {
+          setData((current) => {
+            const next = { ...current, auditLogs: [...current.auditLogs] };
+            addAuditLog(next, action, target, "成功", details);
+            return next;
+          });
+          return true;
+        } catch {
+          // setData exposes the storage error through the shared page banner.
+          // An audit failure must not throw out of a page's mount effect.
+          return false;
+        }
       },
       saveSystemSettings(input) {
         const nextValues = validateSystemSettings(input);
@@ -11395,6 +11126,7 @@ export function PrototypeDataProvider({ children }) {
       ...createEnhancementActions({ setData, now: timestamp, makeId: uid }),
       dataSource,
       dataSyncError,
+      dataWriteReady,
       exportWorkingData: () =>
         JSON.stringify(
           {
@@ -11435,7 +11167,7 @@ export function PrototypeDataProvider({ children }) {
         );
       },
     };
-  }, [data, dataSource, dataSyncError]);
+  }, [data, dataSource, dataSyncError, accountSession, dataWriteReady]);
 
   return (
     <PrototypeDataContext.Provider value={value}>
@@ -11466,3 +11198,25 @@ export const deviceTypes = [
   "细节摄像头",
   "定向麦克风",
 ];
+
+export function TeacherDataScope({ children }) {
+  const store = usePrototypeData();
+  if (store.accountSession?.role !== "teacher") return children;
+  const data = {
+    ...store.data,
+    arrangements: store.data.arrangements.filter(
+      (a) => a.teacherId === store.teacherId,
+    ),
+    evidenceTasks: (store.data.evidenceTasks || []).filter(
+      (t) => t.teacherId === store.teacherId,
+    ),
+    supportTasks: (store.data.supportTasks || []).filter(
+      (t) => t.teacherId === store.teacherId,
+    ),
+  };
+  return (
+    <PrototypeDataContext.Provider value={{ ...store, data }}>
+      {children}
+    </PrototypeDataContext.Provider>
+  );
+}

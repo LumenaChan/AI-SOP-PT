@@ -1,0 +1,62 @@
+[
+  {
+    "path": "MANIFEST.sha256",
+    "sha256": "0b89825a9bb603c1aea6465abedaff601a6e711e2a66011314af46e060cad38b",
+    "status": 200
+  },
+  {
+    "path": "index.html",
+    "sha256": "fe9ad0bbaf2f8456df1061f274772b37398b19d7f9027df0c627356730c7da5c",
+    "status": 200
+  },
+  {
+    "path": "deployment-version.json",
+    "sha256": "47130062a645ad7945a6ab71a60b1503d472b7769f5455b35a74cf130ca36915",
+    "status": 200
+  },
+  {
+    "path": "assets/login-ai-vision-training.png",
+    "sha256": "5a2ac639743159360c17f4e9b4a38ac4303601d3eb8f03933781533404ed2a48",
+    "status": 200
+  },
+  {
+    "path": "assets/index-BDagOLW3.css",
+    "sha256": "d5ccea99e52422b77c5af44552bd8f03e9636793933023b87812f99fdf7b1be4",
+    "status": 200
+  },
+  {
+    "path": "assets/student-monitor-hand-tracking.png",
+    "sha256": "96e0ab498fba80269aed26a115b1b14aec0464aeb9cfb18031fbf0fcac168412",
+    "status": 200
+  },
+  {
+    "path": "assets/lucide-icons.LICENSE.txt",
+    "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+    "status": 200
+  },
+  {
+    "path": "assets/ai-brain.svg",
+    "sha256": "bee7714689561a289d206722b30110ff7a7def9abd9440a786a8ed8e1f1bba34",
+    "status": 200
+  },
+  {
+    "path": "assets/workstation-empty.png",
+    "sha256": "6aa1e8ca5267cdd630a27baf369d89f2cee6874af081a95f9ae0de72bfd7f3c4",
+    "status": 200
+  },
+  {
+    "path": "assets/index-ChXoLOzY.js",
+    "sha256": "23483cf253083c9a9c0df409eae0f572b7b6aafbbb1b7e8f51db84c603c08d1b",
+    "status": 200
+  },
+  {
+    "path": "assets/workstation-male.png",
+    "sha256": "6b9736c43ebffb3ca58ef0b0bc00584b57a66c8ba2e595f1439726f1c01492df",
+    "status": 200
+  },
+  {
+    "path": "assets/workstation-female.png",
+    "sha256": "92d77e33bde39b1ff2a43840d0f0a33b92251644920ba6e64bbf3893d49b7552",
+    "status": 200
+  }
+]

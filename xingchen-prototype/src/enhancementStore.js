@@ -100,10 +100,20 @@ export function createEnhancementActions({ setData, now, makeId }) {
           ...(r.validationCases || []),
           ...cases.filter(
             (c) =>
-              !r.validationCases.some((x) => x.scenarioType === c.scenarioType),
+              !(r.validationCases || []).some(
+                (x) => x.scenarioType === c.scenarioType,
+              ),
           ),
         ];
-        r.validationStatus = "validating";
+        r.validationStatus =
+          r.validationStatus === "validating"
+            ? "validating"
+            : "pending_revalidation";
+        r.acceptancePolicy = "field_evidence_v1";
+        r.fieldAcceptance = {
+          status: "pending",
+          runId: r.validationRunId || "",
+        };
         r.enableStatus = "disabled";
         return r;
       });
@@ -158,6 +168,7 @@ export function createEnhancementActions({ setData, now, makeId }) {
           modelArtifactId: candidate.modelArtifactId,
           resultSource: candidate.resultSource,
           executionPurpose: candidate.executionPurpose,
+          integrationStatus: candidate.integrationStatus || "unverified",
           source: "existing_model",
           publishedAt: now(),
           independentReport: candidate.independentReport,
@@ -354,8 +365,14 @@ export function createEnhancementActions({ setData, now, makeId }) {
       return change("保存验证用途与证据", (d) => {
         const r = d.sopWorkstationAiConfigs.find((x) => x.id === id);
         if (!r) throw new Error("工位配置不存在");
-        r.validationPurpose = patch.validationPurpose || "prototype_demo";
-        r.independentReport = patch.independentReport || null;
+        if (!["prototype_demo", "real"].includes(patch.validationPurpose))
+          throw new Error("请选择有效的验证用途");
+        r.validationPurpose = patch.validationPurpose;
+        r.acceptancePolicy = "field_evidence_v1";
+        r.fieldAcceptance = {
+          status: "pending",
+          runId: r.validationRunId || "",
+        };
         r.validationStatus = "pending_revalidation";
         r.enableStatus = "disabled";
         return r;

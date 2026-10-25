@@ -141,6 +141,28 @@ test("只有已发布且存在当前模型的能力可供后续配置选择", ()
   );
 });
 
+test("模型发布保留服务核验与独立评测报告，且不共享可变报告引用", () => {
+  const task = {
+    ...completedTask(),
+    executionPurpose: "real",
+    resultSource: "real",
+    integrationStatus: "connected_verified",
+    independentReport: {
+      id: "report-1",
+      modelArtifactId: "artifact-task-1",
+      resultSource: "real",
+      passed: true,
+      datasetRef: "dataset-held-out",
+      eventMetrics: { recall: 0.94 },
+    },
+  };
+  const { capability: published } = publishCandidateModel({ capability, task });
+  assert.equal(published.currentPublishedModel.integrationStatus, "connected_verified");
+  assert.deepEqual(published.currentPublishedModel.independentReport, task.independentReport);
+  task.independentReport.eventMetrics.recall = 0;
+  assert.equal(published.currentPublishedModel.independentReport.eventMetrics.recall, 0.94);
+});
+
 test("重新发布替换当前模型但保留之前发布记录的追溯信息", () => {
   const current = {
     ...capability,

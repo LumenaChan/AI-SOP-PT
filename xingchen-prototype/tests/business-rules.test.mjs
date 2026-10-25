@@ -582,10 +582,13 @@ test("mapping confirmation and actual AI capability remain separate states", () 
     ],
     datasets: [{ sopId: automaticSop.id, version: "D1", status: "已锁定" }],
     models: [deployedModel],
+    aiCapabilityConfigs: [{ id: "ai-current", sopId: automaticSop.id }],
+    sopWorkstationAiConfigs: [
+      { id: "link-current", sopAiConfigId: "ai-current", workstationId: "w1" },
+    ],
     workstations: [
       {
         id: "w1",
-        supportedProject: automaticSop.name,
         implementation: validatedImplementation,
       },
     ],
@@ -1222,10 +1225,13 @@ test("a deployed no-training AI Package does not require a production Dataset", 
         datasetVersion: "无需训练",
       },
     ],
+    aiCapabilityConfigs: [{ id: "ai-current", sopId: automaticSop.id }],
+    sopWorkstationAiConfigs: [
+      { id: "link-current", sopAiConfigId: "ai-current", workstationId: "w1" },
+    ],
     workstations: [
       {
         id: "w1",
-        supportedProject: automaticSop.name,
         implementation: validatedImplementation,
       },
     ],
@@ -1663,10 +1669,13 @@ test("SOP AI status can reuse a previous package and its Dataset only after comp
         status: "已部署",
       },
     ],
+    aiCapabilityConfigs: [{ id: "ai-current", sopId: sop.id }],
+    sopWorkstationAiConfigs: [
+      { id: "link-current", sopAiConfigId: "ai-current", workstationId: "w1" },
+    ],
     workstations: [
       {
         id: "w1",
-        supportedProject: sop.name,
         implementation: validatedImplementation,
       },
     ],

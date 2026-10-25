@@ -93,21 +93,73 @@ function owns(workstation, arrangement) {
         workstation.currentArrangement === arrangement.name;
 }
 
-export function activeWorkstationUse(data, workstationId) {
+// Resolve current use from live sessions and opened reservations. Display names
+// are a legacy fallback only; demo names never affect this decision.
+export function workstationArrangementState(data, workstationId) {
   const workstation = (data.workstations || []).find(
     (w) => w.id === workstationId,
   );
-  return (data.arrangements || []).some(
+  if (!workstation) return { status: "idle", arrangement: null };
+  const arrangements = data.arrangements || [];
+  const active = arrangements.filter(
+    (a) => !ENDED_ARRANGEMENTS.includes(a.status),
+  );
+  const liveUse = (a) =>
+    (a.sessions || []).some(
+      (s) =>
+        s.workstationId === workstationId && !workstationSessionEnded(a, s),
+    );
+  const stationSessions = (a) =>
+    (a.sessions || []).filter((s) => s.workstationId === workstationId);
+  const canReserve = (a) => !stationSessions(a).length;
+  const byId = arrangements.find(
+    (a) => a.id === workstation.currentArrangementId,
+  );
+  let candidates = active.filter(
     (a) =>
-      !ENDED_ARRANGEMENTS.includes(a.status) &&
-      ((a.sessions || []).some(
-        (s) =>
-          s.workstationId === workstationId &&
-          !ENDED_SESSIONS.includes(s.status),
-      ) ||
-        (workstation &&
-          owns(workstation, a) &&
-          !(a.sessions || []).some((s) => s.workstationId === workstationId))),
+      liveUse(a) ||
+      (canReserve(a) &&
+        ((a.openWorkstationIds || []).includes(workstationId) ||
+          a.id === workstation.currentArrangementId)),
+  );
+  if (
+    !candidates.length &&
+    !workstation.currentArrangementId &&
+    workstation.currentArrangement &&
+    workstation.currentArrangement !== "无"
+  ) {
+    candidates = active.filter(
+      (a) => a.name === workstation.currentArrangement && canReserve(a),
+    );
+  }
+  if (candidates.length === 1)
+    return { status: "active", arrangement: candidates[0] };
+  if (candidates.length > 1) return { status: "conflict", arrangement: null };
+  const referenced = workstation.currentArrangementId
+    ? byId
+      ? [byId]
+      : []
+    : arrangements.filter((a) => a.name === workstation.currentArrangement);
+  const hasPointer =
+    workstation.currentArrangementId ||
+    (workstation.currentArrangement && workstation.currentArrangement !== "无");
+  const endedReference =
+    referenced.length > 0 &&
+    referenced.every(
+      (a) =>
+        ENDED_ARRANGEMENTS.includes(a.status) ||
+        (stationSessions(a).length > 0 &&
+          stationSessions(a).every((s) => workstationSessionEnded(a, s))),
+    );
+  return {
+    status: hasPointer && !endedReference ? "unresolved" : "idle",
+    arrangement: null,
+  };
+}
+
+export function activeWorkstationUse(data, workstationId) {
+  return ["active", "conflict"].includes(
+    workstationArrangementState(data, workstationId).status,
   );
 }
 
@@ -117,7 +169,18 @@ export function activeWorkstationUse(data, workstationId) {
 export function normalizeWorkstationReleaseData(data) {
   let arrangements = data.arrangements || [];
   const auditLogs = [...(data.auditLogs || [])];
-  const workstations = (data.workstations || []).map((workstation) => {
+  const workstations = (data.workstations || []).map((original) => {
+    const current = workstationArrangementState(data, original.id);
+    const workstation =
+      current.arrangement &&
+      (original.currentArrangementId !== current.arrangement.id ||
+        original.currentArrangement !== current.arrangement.name)
+        ? {
+            ...original,
+            currentArrangementId: current.arrangement.id,
+            currentArrangement: current.arrangement.name,
+          }
+        : original;
     const owners = arrangements.filter((a) => owns(workstation, a));
     if (owners.length !== 1) return workstation;
     const arrangement = owners[0];

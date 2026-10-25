@@ -133,6 +133,10 @@ export function publishCandidateModel(
     source: task.source || "platform_training",
     resultSource: task.resultSource || "legacy_unverified",
     executionPurpose: task.executionPurpose || "prototype_demo",
+    integrationStatus: task.integrationStatus || "unverified",
+    independentReport: task.independentReport
+      ? clone(task.independentReport)
+      : null,
     trainingTaskId: task.id,
     modelArtifactId: task.modelArtifactId,
     publishedBy: actor,

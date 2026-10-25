@@ -71,3 +71,22 @@ test("可读CSV与页面采用同一术语和北京时间，保留可定位编�
   assert.ok(csv.includes("'=HYPERLINK(1)"));
   assert.deepEqual(row, original);
 });
+
+test("旧设备检测与审计采用业务文案展示，保留检测来源及原始内容", () => {
+  const saved = {
+    source: "prototype_saved_state",
+    action: "执行设备模拟检测",
+    result: "模拟检测通过",
+    detail: "在线 · 视频流可用（原型记录）",
+  };
+  const before = structuredClone(saved);
+  assert.equal(displayBusinessText(saved.action), "执行设备检测");
+  assert.equal(displayBusinessText(saved.result), "检测通过");
+  assert.equal(displayBusinessText(saved.detail), "在线 · 视频流可用");
+  assert.equal(
+    displayBusinessText("模拟取帧失败；模拟节点通信失败"),
+    "视频取帧失败；边缘设备通信失败",
+  );
+  assert.equal(displayBusinessText(saved.source), saved.source);
+  assert.deepEqual(saved, before);
+});

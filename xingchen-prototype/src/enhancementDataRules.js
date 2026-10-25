@@ -245,7 +245,6 @@ export function migrateEnhancementData(input) {
       code: "WS-DEMO-1015",
       location: "演示区",
       status: "可入场",
-      supportedProject: bench.name,
       currentArrangement: "演示练习",
       notes: "五视角数据结构演示，未连接真实摄像头。",
       updatedAt: at,

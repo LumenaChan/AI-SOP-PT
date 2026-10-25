@@ -6,12 +6,12 @@ import { openSupportTasks } from "./supportTaskRules.js";
 import { legacyStatisticsTarget } from "./statisticsCommonRules.js";
 import { DashboardCardPager } from "./DashboardCardPager.jsx";
 export function DashboardPerformanceSection() {
-  const { data } = usePrototypeData(),
+  const { data, teacherId } = usePrototypeData(),
     nav = useNavigate(),
     [params] = useSearchParams(),
     [page, setPage] = useState(0);
-  const metrics = teacherDashboardMetrics(data),
-    tasks = openSupportTasks(data),
+  const metrics = teacherDashboardMetrics(data, { teacherId }),
+    tasks = openSupportTasks(data, teacherId),
     count = new Set(tasks.map((t) => t.studentId)).size;
   const pages = Math.max(1, Math.ceil(metrics.errors.length / 3)),
     safe = Math.min(page, pages - 1);

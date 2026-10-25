@@ -544,7 +544,7 @@ test("真实验证不能用演示案例或手填百分比放行，缺少服务�
       capabilities: session.evaluationSnapshot.capabilitySnapshots,
     });
   assert.equal(result.passed, false);
-  assert.match(result.issues.join(","), /真实/);
+  assert.match(result.issues.join(","), /执行记录|模型接入/);
   const candidate = { id: "c", capabilityId: "cap", modelArtifactId: "m" };
   assert.equal(
     validateExistingModelReport(candidate, {

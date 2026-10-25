@@ -92,3 +92,24 @@ test("corrupted or unavailable storage does not break the login flow", () => {
   );
   assert.equal(saveRememberedLogin(blockedStorage, { remember: false }), false);
 });
+
+test("新教师仅记住已验证账号，不将私人密码持久化", () => {
+  const storage = memoryStorage();
+  saveRememberedLogin(storage, {
+    account: "newteacher",
+    password: "PrivatePassword889",
+    remember: true,
+    accountOnly: true,
+  });
+  assert.deepEqual(readRememberedLogin(storage), {
+    account: "newteacher",
+    accountOnly: true,
+  });
+  assert.ok(
+    !storage
+      .getItem("aisop-prototype-remembered-login-v1")
+      .includes("PrivatePassword889"),
+  );
+  saveRememberedLogin(storage, { remember: false });
+  assert.equal(readRememberedLogin(storage), null);
+});

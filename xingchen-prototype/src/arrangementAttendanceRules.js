@@ -10,10 +10,10 @@ export function arrangementAttendancePath(arrangement) {
   return `/teacher/${arrangement.type === "exam" ? "exams" : "practices"}/${encodeURIComponent(arrangement.id)}/${arrangementDestination(arrangement)}?attendance=1`;
 }
 
-export function legacyAttendanceTarget(data, params, source) {
+export function legacyAttendanceTarget(data, params, source, teacherId = "t1") {
   const id = params.get("attendance");
   const arrangement = (data.arrangements || []).find(
-    (a) => a.id === id && a.teacherId === "t1",
+    (a) => a.id === id && a.teacherId === teacherId,
   );
   if (!arrangement) return "";
   const back = new URLSearchParams(params);

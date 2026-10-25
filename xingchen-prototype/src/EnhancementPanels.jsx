@@ -1,3 +1,4 @@
+import { ValidationModelReports } from "./FieldValidationPanels.jsx";
 import { displayBusinessText } from "./businessTextRules.js";
 import React, { useState, useEffect } from "react";
 import { usePrototypeData } from "./prototypeData.jsx";
@@ -9,6 +10,7 @@ import {
 import {
   workstationCameras,
   cameraViews,
+  editCameraView,
   CAMERA_ROLES,
   VIEW_STRATEGIES,
   bindingCameras,
@@ -285,131 +287,171 @@ export function CameraCollectionEditor({
         d.status !== "停用",
     );
   const update = (index, patch) =>
-    onChange({
-      ...value,
-      cameras: cameras.map((c, i) =>
-        i === index
-          ? { ...c, ...patch }
-          : patch.defaultPreview
-            ? { ...c, defaultPreview: false }
-            : c,
-      ),
-    });
+    onChange(editCameraView(value, cameras[index].deviceId, patch));
   return (
-    <section className="enhancement-card">
-      <strong>工位视角与区域</strong>
+    <section className="equipment-camera-editor">
+      <h3>采集视角</h3>
       <p>
-        辅助视角用于局部证据；备用相机需重新验证后切换。历史第二视角请确认实际用途。
+        主采集与辅助采集参与录像和开放检查；备用设备只待命。默认显示只影响画面展示，不改变采集或AI评价。
       </p>
-      {cameras.map((c, i) => (
-        <article className="enhancement-camera" key={c.deviceId}>
-          <strong>
-            {available.find((d) => d.id === c.deviceId)?.name || c.deviceId}
-          </strong>
-          <label className="field">
-            视角名称
-            <input
-              value={c.name || ""}
-              onChange={(e) => update(i, { name: e.target.value })}
-            />
-          </label>
-          <label className="field">
-            角色
-            <select
-              value={c.role}
-              onChange={(e) => update(i, { role: e.target.value })}
-            >
-              {Object.entries(CAMERA_ROLES).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {displayBusinessText(v)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={c.defaultPreview || false}
-              onChange={(e) => update(i, { defaultPreview: e.target.checked })}
-            />
-            默认预览
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={c.enabled !== false}
-              onChange={(e) => update(i, { enabled: e.target.checked })}
-            />
-            启用
-          </label>
-          <label className="field">
-            覆盖区域（逗号分隔）
-            <input
-              value={(c.areaIds || []).join(",")}
-              onChange={(e) =>
-                update(i, {
-                  areaIds: e.target.value
-                    .split(/[,，]/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() =>
-              onChange({ ...value, cameras: cameras.filter((_, j) => j !== i) })
-            }
-          >
-            移除视角
-          </button>
-        </article>
-      ))}
-      <select
-        aria-label="添加工位相机"
-        value=""
-        onChange={(e) => {
-          const d = available.find((d) => d.id === e.target.value);
-          if (d)
-            onChange({
-              ...value,
-              cameras: [
-                ...cameras,
-                {
-                  deviceId: d.id,
-                  name: d.name,
-                  role: cameras.length ? "auxiliary" : "primary",
-                  enabled: true,
-                  defaultPreview: !cameras.length,
-                  areaIds: [],
-                },
-              ],
-            });
-        }}
-      >
-        <option value="">添加已绑定相机…</option>
-        {available
-          .filter((d) => !cameras.some((c) => c.deviceId === d.id))
-          .map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-      </select>
+      {cameras.map((c, i) => {
+        const device = devices.find((d) => d.id === c.deviceId);
+        return (
+          <article className="equipment-camera-card" key={c.deviceId}>
+            <header>
+              <strong>{device?.name || "设备已移除"}</strong>
+              <span>
+                {device?.status || "不存在"} · 视频流
+                {device?.streamStatus || "未知"}
+              </span>
+              <button
+                type="button"
+                className="table-action"
+                onClick={() =>
+                  onChange(
+                    editCameraView(
+                      { ...value, cameras: cameras.filter((_, j) => j !== i) },
+                      "",
+                      {},
+                    ),
+                  )
+                }
+              >
+                移除视角
+              </button>
+            </header>
+            <div className="equipment-camera-fields">
+              <label className="field">
+                视角名称
+                <input
+                  value={c.name || c.label || ""}
+                  maxLength={80}
+                  onChange={(e) => update(i, { name: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                采集用途
+                <select
+                  value={c.role}
+                  onChange={(e) => update(i, { role: e.target.value })}
+                >
+                  {c.role === "legacy_secondary" && (
+                    <option value="legacy_secondary" disabled>
+                      历史视角，请确认用途
+                    </option>
+                  )}
+                  <option value="primary">主采集</option>
+                  <option value="auxiliary">辅助采集</option>
+                  <option value="backup">备用待命</option>
+                </select>
+              </label>
+              <label className="equipment-check">
+                <input
+                  type="checkbox"
+                  checked={c.enabled !== false}
+                  disabled={c.role === "backup"}
+                  onChange={(e) => update(i, { enabled: e.target.checked })}
+                />
+                参与采集
+              </label>
+              <label className="equipment-check">
+                <input
+                  type="radio"
+                  name={`default-preview-${workstation.id}`}
+                  checked={Boolean(c.defaultPreview)}
+                  disabled={!c.enabled || c.role === "backup"}
+                  onChange={() => update(i, { defaultPreview: true })}
+                />
+                默认显示
+              </label>
+              <label className="field equipment-camera-coverage">
+                物理覆盖说明
+                <input
+                  value={(c.areaIds || []).join("，")}
+                  placeholder="如：工作台、入口"
+                  onChange={(e) =>
+                    update(i, {
+                      areaIds: e.target.value
+                        .split(/[,，]/)
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </label>
+            </div>
+            {c.role === "legacy_secondary" && (
+              <p className="form-hint">
+                保存前请确认这台设备用于辅助采集还是备用待命，不会自动改写历史用途。
+              </p>
+            )}
+          </article>
+        );
+      })}
+      {!cameras.length && (
+        <p className="hint">尚未配置采集视角，请从已绑定设备中添加。</p>
+      )}
       <label className="field">
-        工位区域与用途
+        添加已绑定摄像头
+        <select
+          aria-label="添加工位相机"
+          value=""
+          onChange={(e) => {
+            const d = available.find((d) => d.id === e.target.value);
+            if (d)
+              onChange(
+                editCameraView(
+                  {
+                    ...value,
+                    cameras: [
+                      ...cameras,
+                      {
+                        deviceId: d.id,
+                        name: d.name,
+                        role: cameras.some(
+                          (c) => c.enabled && c.role === "primary",
+                        )
+                          ? "auxiliary"
+                          : "primary",
+                        enabled: true,
+                        defaultPreview: false,
+                        areaIds: [],
+                      },
+                    ],
+                  },
+                  d.id,
+                  {},
+                ),
+              );
+          }}
+        >
+          <option value="">选择摄像头…</option>
+          {available
+            .filter((d) => !cameras.some((c) => c.deviceId === d.id))
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} · {d.status}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label className="field">
+        工位用途说明
         <textarea
           value={value.regionDescription || ""}
           onChange={(e) =>
             onChange({ ...value, regionDescription: e.target.value })
           }
-          placeholder="入口：放置锥桶；工作台：手套与工具；驾驶舱；车底"
+          placeholder="描述工位与拍摄位置的用途"
         />
       </label>
+      <p className="form-hint">
+        物理覆盖说明不代表已完成AI区域配置。具体实训标准的区域框选仍在“工位启用与验证”中设置。
+      </p>
     </section>
   );
 }
+
 export function ViewBindingEditor({ relation, item, cameras, store }) {
   const binding =
       relation.judgementCameraBindings.find(
@@ -429,31 +471,38 @@ export function ViewBindingEditor({ relation, item, cameras, store }) {
     [relation.id, JSON.stringify(binding)],
   );
   return (
-    <article>
-      <div>
+    <article className="judgement-camera-card">
+      <div className="judgement-camera-card__heading">
         <strong>{item.name}</strong>
         <small>同一操作人；到达区域不代表完成检查</small>
       </div>
-      <select
-        value={draft.strategy}
-        onChange={(e) =>
-          setDraft({
-            ...draft,
-            strategy: e.target.value,
-            cameraIds:
-              e.target.value === "single"
-                ? draft.cameraIds.slice(0, 1)
-                : draft.cameraIds,
-          })
-        }
+      <label className="judgement-camera-card__strategy">
+        <span>视角策略</span>
+        <select
+          value={draft.strategy}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              strategy: e.target.value,
+              cameraIds:
+                e.target.value === "single"
+                  ? draft.cameraIds.slice(0, 1)
+                  : draft.cameraIds,
+            })
+          }
+        >
+          {Object.entries(VIEW_STRATEGIES).map(([k, v]) => (
+            <option key={k} value={k}>
+              {displayBusinessText(v)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div
+        className="judgement-camera-card__options"
+        role="group"
+        aria-label={`${item.name}的摄像头选择`}
       >
-        {Object.entries(VIEW_STRATEGIES).map(([k, v]) => (
-          <option key={k} value={k}>
-            {displayBusinessText(v)}
-          </option>
-        ))}
-      </select>
-      <div>
         {cameras.map((c) => (
           <label key={c.id}>
             <input
@@ -472,65 +521,62 @@ export function ViewBindingEditor({ relation, item, cameras, store }) {
                 })
               }
             />
-            {c.label} · {c.status || "离线"}
+            <span>{c.label}</span>
+            <span className="judgement-camera-card__camera-status">
+              {c.status || "离线"}
+            </span>
           </label>
         ))}
       </div>
-      <button
-        onClick={() =>
-          run(() => store.saveMultiCameraBinding(relation.id, item.id, draft))
-        }
-      >
-        保存视角策略
-      </button>
-      <small role="status">{displayBusinessText(message)}</small>
+      <div className="judgement-camera-card__actions">
+        <button
+          type="button"
+          className="button button--default"
+          onClick={() =>
+            run(() => store.saveMultiCameraBinding(relation.id, item.id, draft))
+          }
+        >
+          保存视角策略
+        </button>
+        {message && <small role="status">{displayBusinessText(message)}</small>}
+      </div>
     </article>
   );
 }
-export function ValidationPurposePanel({ relation, store }) {
+export function ValidationPurposePanel({ relation, store, setModal }) {
   const [purpose, setPurpose] = useState(
       relation.validationPurpose || "prototype_demo",
-    ),
-    [report, setReport] = useState(
-      JSON.stringify(relation.independentReport || {}, null, 2),
     ),
     [message, run] = useAction();
   return (
     <section className="enhancement-card">
-      <strong>本次验证用途</strong>
-      <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-        <option value="prototype_demo">原型演示检查</option>
-        <option value="real">真实现场验证（待模型服务接入）</option>
-      </select>
+      <label className="validation-purpose-field">
+        <strong>本次验证用途</strong>
+        <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+          <option value="prototype_demo">配置检查</option>
+          <option value="real">现场验证</option>
+        </select>
+      </label>
       <p>
-        演示通过只支持原型流程。真实启用要求真实模型、独立评测及每项现场证据；旧记录默认历史未核实。
+        配置检查用于核对配置和验证流程。启用AI前，需完成现场验证，并提供独立评测报告和各项验证证据。
       </p>
       {purpose === "real" && (
-        <label className="field">
-          独立评测报告记录（JSON）
-          <textarea
-            value={report}
-            onChange={(e) => setReport(e.target.value)}
-            placeholder='{"id":"报告ID","resultSource":"real","datasetRef":"独立数据标识","passed":true}'
-          />
-        </label>
+        <ValidationModelReports
+          relation={relation}
+          store={store}
+          setModal={setModal}
+        />
       )}
-      <button
-        onClick={() => run(() => store.expandValidationScenarios(relation.id))}
-      >
-        补充动作与跨镜头验证案例
-      </button>
       <button
         onClick={() =>
           run(() =>
             store.saveValidationPurpose(relation.id, {
               validationPurpose: purpose,
-              independentReport: purpose === "real" ? JSON.parse(report) : null,
             }),
           )
         }
       >
-        保存用途并重新验证
+        保存验证设置
       </button>
       <small role="status">{displayBusinessText(message)}</small>
     </section>

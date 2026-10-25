@@ -37,7 +37,6 @@ export function migratePreparationDemoData(data) {
         location: "固定工作台演示区",
         status: "可入场",
         currentArrangement: "无",
-        supportedProject: sop.name,
         demoPackageId: PREPARATION_DEMO_PACKAGE,
         aiBaseConfig: {
           primaryCameraId: `${id}-camera`,

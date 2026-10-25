@@ -103,7 +103,6 @@ export function migrateArrangementStatusDemoData(data) {
       code: `DEMO-STATUS-${index + 1}`,
       location: "状态流程演示区",
       status: paused ? "使用中" : "可入场",
-      supportedProject: sop.name,
       currentArrangement: opened ? name : "无",
       currentArrangementId: opened ? id : "",
       demoPackageId: ARRANGEMENT_STATUS_DEMO_PACKAGE,

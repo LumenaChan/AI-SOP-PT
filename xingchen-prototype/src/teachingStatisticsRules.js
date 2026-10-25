@@ -58,7 +58,7 @@ export function comparableStatistics(filters, rows) {
   );
 }
 export function teachingStatistics(data, filters = {}) {
-  const scoped = { ...filters, teacherId: "t1" };
+  const scoped = { ...filters, teacherId: filters.teacherId || "t1" };
   delete scoped.sopVersion;
   const error = validateStatisticsFilters(scoped);
   if (error) throw new Error(error);
@@ -126,7 +126,7 @@ export function teachingStatistics(data, filters = {}) {
     for (const t of arr(
       data[kind === "support" ? "supportTasks" : "evidenceTasks"],
     )) {
-      if (t.teacherId !== "t1") continue;
+      if (t.teacherId !== scoped.teacherId) continue;
       const row = base.find(
         (r) =>
           r.arrangementId === t.arrangementId &&

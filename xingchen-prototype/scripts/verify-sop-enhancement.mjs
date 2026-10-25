@@ -20,6 +20,14 @@ const cacheDir = mkdtempSync(resolve(tmpdir(), "sop-page-verification-"));
 const hmr = createHttpServer();
 const server = await createServer({
   root,
+  plugins: [{
+    name: "validation-tab-state-test",
+    enforce: "pre",
+    transform(code, id) {
+      if (id.split("?")[0] !== resolve(root, "src/FieldValidationPanels.jsx")) return;
+      return { code: code.replace("useEffect, useState", "useEffect, useState as originalUseState") + "\nfunction useState(initial) { return globalThis.__validationTabState ? globalThis.__validationTabState(initial) : originalUseState(initial); }", map: null };
+    },
+  }],
   cacheDir,
   appType: "custom",
   logLevel: "error",
@@ -53,6 +61,8 @@ try {
     AiConfigStepCard,
     AiJudgementItemForm,
     StudentHintContent,
+    TeacherImportForm,
+    AiWorkstationConfigWorkspace,
   } = await server.ssrLoadModule("/src/App.jsx");
   const raw = JSON.parse(
     readFileSync(resolve(root, "src/data/currentPrototypeData.json"), "utf8"),
@@ -904,6 +914,8 @@ try {
     attendanceFromStatistics,
   ];
   const paths = [
+    "/admin/teachers",
+    ...normalized.teachers.map((teacher) => `/admin/teachers/${teacher.id}`),
     analysisMainPath,
     stepAnalysisPath,
     stepSamplesPath,
@@ -1804,9 +1816,694 @@ try {
   );
   globalThis.window = { localStorage: storage, sessionStorage: storage };
   try {
+    const detailData = structuredClone(normalized);
+    detailData.auditLogs.unshift(
+      { id: "missing-target", action: "缺少对象的历史日志" },
+      { id: "null-target", target: null, action: "空对象日志" },
+      { id: "number-target", target: 123, action: "旧格式对象日志" },
+      { id: "object-target", target: { id: "t1" }, action: "结构化旧对象日志" },
+      {
+        id: "teacher-valid",
+        target: detailData.teachers[0].name,
+        action: "合法教师关联审计",
+        actor: "管理员",
+        role: "管理员",
+        result: "成功",
+      },
+      {
+        id: "unrelated-target",
+        target: "无关资料对象",
+        action: "UNRELATED_AUDIT_SHOULD_NOT_APPEAR",
+      },
+    );
+    const detailCases = [
+      ...detailData.teachers.map((teacher) => [
+        `/admin/teachers/${teacher.id}`,
+        teacher.name,
+      ]),
+      [
+        `/admin/students/${detailData.students[0].id}`,
+        detailData.students[0].name,
+      ],
+      [
+        `/admin/workstations/${detailData.workstations[0].id}`,
+        detailData.workstations[0].name,
+      ],
+      [
+        `/admin/devices/${detailData.devices[0].id}`,
+        detailData.devices[0].name,
+      ],
+      ["/admin/teachers/nonexistent-teacher", "资料不存在或已失效"],
+    ];
+    let adminDetailChecks = 0;
+    for (const source of ["browser", "cpd"]) {
+      values.set("xingchen-prototype-data-source-v1", source);
+      const key =
+        source === "cpd"
+          ? "xingchen-prototype-cpd-working-data-v1"
+          : "xingchen-prototype-data-v22";
+      const bytes = JSON.stringify(
+        source === "cpd"
+          ? { fingerprint: "existing-working-copy", data: detailData }
+          : detailData,
+      );
+      values.set(key, bytes);
+      for (const [path, name] of detailCases) {
+        const html = renderToString(
+          React.createElement(
+            PrototypeDataProvider,
+            null,
+            React.createElement(
+              MemoryRouter,
+              { initialEntries: [path] },
+              React.createElement(RoutedApp),
+            ),
+          ),
+        );
+        assert.ok(
+          html.includes(name),
+          `缺失审计对象时详情仍可显示：${source} ${path}`,
+        );
+        assert.ok(!html.includes("UNRELATED_AUDIT_SHOULD_NOT_APPEAR"));
+        if (path === `/admin/teachers/${detailData.teachers[0].id}`) {
+          assert.ok(
+            html.includes("合法教师关联审计") &&
+              html.includes("负责班级与教学范围"),
+          );
+          assert.ok(html.includes("重置密码") && html.includes("编辑资料"));
+        }
+        assert.equal(
+          values.get(key),
+          bytes,
+          "查看详情不删除或改写原始审计工作数据",
+        );
+        adminDetailChecks++;
+      }
+      console.log(
+        `PASS ${source} 教师及共用资料详情兼容缺失／空／非文本审计对象，合法关联及失效提示保留`,
+      );
+    }
+    values.set("xingchen-prototype-data-source-v1", "browser");
+    values.set("xingchen-prototype-data-v22", JSON.stringify(normalized));
+    values.delete("xingchen-prototype-cpd-working-data-v1");
+    const { teacherPasswordCredential, TEACHER_LOGIN_SESSION_KEY } =
+      await server.ssrLoadModule("/src/teacherAccountRules.js");
+    const { TeacherPasswordReceipt, TeacherImportReceipt } =
+      await server.ssrLoadModule("/src/TeacherPasswordPanels.jsx");
+    const passwordData = structuredClone(normalized);
+    const passwordTeacher = {
+      id: "teacher-password-flow-test",
+      account: "passwordflow",
+      name: "密码流程教师",
+      status: "启用",
+      passwordCredential: await teacherPasswordCredential("TestOnlyPass889", {
+        temporary: true,
+      }),
+    };
+    passwordData.teachers.push(passwordTeacher);
+    passwordData.arrangements[0].name = "PRIVATE_OTHER_TEACHER_TASK";
+    const ownArrangement = structuredClone(passwordData.arrangements[0]);
+    ownArrangement.id = "password-flow-arrangement";
+    ownArrangement.name = "当前教师专属安排";
+    ownArrangement.teacherId = passwordTeacher.id;
+    passwordData.arrangements.push(ownArrangement);
+    values.set("xingchen-prototype-data-v22", JSON.stringify(passwordData));
+    const passwordSession = {
+      role: "teacher",
+      teacherId: passwordTeacher.id,
+      account: passwordTeacher.account,
+      credentialId: passwordTeacher.passwordCredential.id,
+      source: "browser",
+    };
+    values.set(TEACHER_LOGIN_SESSION_KEY, JSON.stringify(passwordSession));
+    const renderAccountPath = (path) =>
+      renderToString(
+        React.createElement(
+          PrototypeDataProvider,
+          null,
+          React.createElement(
+            MemoryRouter,
+            { initialEntries: [path] },
+            React.createElement(RoutedApp),
+          ),
+        ),
+      );
+    const { RecordExportHistory } = await server.ssrLoadModule("/src/RecordExportHistory.jsx");
+    const { createStoredExport } = await server.ssrLoadModule("/src/exportFileRules.js");
+    const historyHtml = renderToString(React.createElement(RecordExportHistory, {
+      jobs: [createStoredExport({ fileName: "原始报告.html", format: "HTML", content: "<p>原始成绩</p>" }, "new"), { id: "old", fileName: "旧报告.html", format: "HTML" }],
+      onDownload() {}, onExport() {},
+    }));
+    assert.equal((historyHtml.match(/下载原文件/g) || []).length, 1);
+    assert.ok(historyHtml.includes("原文件不可用") && historyHtml.includes("重新导出安排结果"));
+    const requiredPasswordHtml = renderAccountPath("/account/password");
+    assert.ok(
+      requiredPasswordHtml.includes("设置自己的登录密码") &&
+        requiredPasswordHtml.includes("当前临时密码"),
+    );
+    assert.ok(
+      !requiredPasswordHtml.includes("TestOnlyPass889") &&
+        !requiredPasswordHtml.includes("返回工作台"),
+    );
+    passwordTeacher.passwordCredential.mustChange = false;
+    values.set("xingchen-prototype-data-v22", JSON.stringify(passwordData));
+    for (const path of [
+      "/teacher/dashboard",
+      "/teacher/practices",
+      "/teacher/statistics?tab=followup",
+      "/account/password",
+    ]) {
+      const html = renderAccountPath(path);
+      assert.ok(
+        html.includes(passwordTeacher.name),
+        "新教师登录后显示实际身份",
+      );
+      assert.ok(
+        !html.includes("PRIVATE_OTHER_TEACHER_TASK"),
+        "新账号不能读取演示教师的安排",
+      );
+      if (path === "/teacher/dashboard" || path === "/teacher/practices")
+        assert.ok(html.includes(ownArrangement.name));
+      if (path === "/account/password")
+        assert.ok(html.includes("修改登录密码") && html.includes("当前密码"));
+    }
+    const receiptHtml = renderToString(
+      React.createElement(TeacherPasswordReceipt, {
+        receipt: {
+          teacher: passwordTeacher,
+          temporaryPassword: "TEST-ONE-TIME-PASSWORD",
+        },
+      }),
+    );
+    assert.ok(
+      receiptHtml.includes("TEST-ONE-TIME-PASSWORD") &&
+        receiptHtml.includes("复制登录信息") &&
+        receiptHtml.includes("显示一次"),
+    );
+    values.delete(TEACHER_LOGIN_SESSION_KEY);
+    values.set("xingchen-prototype-data-v22", JSON.stringify(normalized));
+    assert.ok(renderAccountPath("/admin/teachers").includes("导入教师"));
+    const renderImport = (initialRaw = "") =>
+      renderToString(
+        React.createElement(
+          PrototypeDataProvider,
+          null,
+          React.createElement(TeacherImportForm, { initialRaw }),
+        ),
+      );
+    const emptyImport = renderImport();
+    assert.ok(
+      emptyImport.includes("下载CSV模板") &&
+        emptyImport.includes("选择CSV文件") &&
+        emptyImport.includes("独立临时密码"),
+    );
+    const conflictImport = renderImport(
+      `导入教师,${normalized.teachers[0].employeeNo},importtest,院系,专业`,
+    );
+    assert.ok(conflictImport.includes("教师工号已存在"));
+    const importReceipt = renderToString(
+      React.createElement(TeacherImportReceipt, {
+        receipts: [
+          {
+            teacher: {
+              id: "test-import",
+              name: "导入教师",
+              account: "importtest",
+            },
+            temporaryPassword: "Test-Import-Only889",
+          },
+        ],
+      }),
+    );
+    assert.ok(
+      importReceipt.includes("Test-Import-Only889") &&
+        importReceipt.includes("下载登录信息CSV") &&
+        importReceipt.includes("复制全部登录信息") &&
+        importReceipt.includes("关闭后无法再次查看"),
+    );
+    console.log(
+      "PASS 教师导入入口、模板与空预览、重复工号提示、整批初始登录信息回执（4场景）",
+    );
+    console.log(
+      "PASS 初始／重置密码一次性回执、强制改密页面、教师真实身份与安排范围、主动改密入口（6场景）",
+    );
+    const { WorkstationAiBaseConfigForm, WorkstationInspectionContent } =
+      await server.ssrLoadModule("/src/WorkstationEquipmentPanels.jsx");
+    const { buildWorkstationInspection } = await server.ssrLoadModule(
+      "/src/workstationConfigActions.js",
+    );
+    const { workstationArrangementState } = await server.ssrLoadModule(
+      "/src/workstationReleaseRules.js",
+    );
+    const { FieldValidationCaseCard, ValidationRunDetails, ValidationCaseTabs } =
+      await server.ssrLoadModule("/src/FieldValidationPanels.jsx");
+    const { createDefaultValidationCases: validationCasesFor } =
+      await server.ssrLoadModule("/src/sopWorkstationAiRules.js");
+    const { ValidationPurposePanel } = await server.ssrLoadModule(
+      "/src/EnhancementPanels.jsx",
+    );
+    let workstationManagementChecks = 0;
+    for (const source of ["browser", "cpd"]) {
+      values.set("xingchen-prototype-data-source-v1", source);
+      const key =
+        source === "cpd"
+          ? "xingchen-prototype-cpd-working-data-v1"
+          : "xingchen-prototype-data-v22";
+      values.set(
+        key,
+        JSON.stringify(
+          source === "cpd"
+            ? { fingerprint: "existing-working-copy", data: normalized }
+            : normalized,
+        ),
+      );
+      const practiceRecordHtml = renderAccountPath("/admin/practices/p1");
+      assert.ok(practiceRecordHtml.includes("含暂计分") && practiceRecordHtml.includes("当前异常工位") && practiceRecordHtml.includes("关联工位当前异常"));
+      assert.ok(practiceRecordHtml.includes("会话状态") && practiceRecordHtml.includes("成绩状态") && practiceRecordHtml.includes("尚未形成"));
+      assert.ok(practiceRecordHtml.includes("未取得证据") && practiceRecordHtml.includes("安全阻断已触发，不代表动作完成条件已满足"));
+      assert.ok(!practiceRecordHtml.includes("为什么没有判定") && !practiceRecordHtml.includes("已满足触发条件"));
+      assert.ok(practiceRecordHtml.includes('<details class="panel diagnostic-panel"><summary'));
+      assert.ok(practiceRecordHtml.includes("负责教师") && practiceRecordHtml.includes("本次实训标准") && practiceRecordHtml.includes("尚未结束"));
+      assert.ok(practiceRecordHtml.includes('<details class="diagnostic-technical-details">'));
+      assert.ok(practiceRecordHtml.includes("查看本步骤证据") && practiceRecordHtml.includes("不会解除工位限制"));
+      const diagnosticTarget = practiceRecordHtml.match(/href="([^"]+)"[^>]*>查看本步骤证据/)[1].replaceAll("&amp;", "&");
+      const diagnosticTargetHtml = renderAccountPath(diagnosticTarget);
+      assert.ok(!diagnosticTargetHtml.includes("指定结果已失效") && !diagnosticTargetHtml.includes("资料不存在或已失效"));
+      workstationManagementChecks++;
+      for (const station of normalized.workstations) {
+        const html = renderAccountPath(`/admin/workstations/${station.id}`);
+        const current = workstationArrangementState(normalized, station.id);
+        assert.equal(
+          html.includes("查看当前安排"),
+          Boolean(current.arrangement),
+          `${source} ${station.id} 当前安排入口按实际占用显示`,
+        );
+        if (current.arrangement) {
+          const a = current.arrangement;
+          assert.ok(
+            html.includes(
+              `/admin/${a.type === "exam" ? "exams" : "practices"}/${a.id}`,
+            ),
+          );
+          assert.ok(html.includes(a.name));
+          assert.equal(station.currentArrangementId, a.id);
+          assert.equal(station.currentArrangement, a.name);
+          const targetPath = `/admin/${a.type === "exam" ? "exams" : "practices"}/${a.id}`;
+          const targetHtml = renderAccountPath(targetPath);
+          assert.ok(
+            targetHtml.includes(a.name),
+            `${source} ${targetPath} 安排页可渲染`,
+          );
+          assert.ok(targetHtml.includes("管理员只读查看同一份教学结果"));
+          assert.ok(!targetHtml.includes("安排不存在或已失效"));
+        }
+        assert.ok(!html.includes("资料不存在或已失效"));
+        workstationManagementChecks++;
+      }
+      const validationCase = {
+        id: "field-case",
+        name: "标准流程",
+        scenarioType: "standard",
+        judgementItemIds: ["field-item"],
+        instruction: "按标准进行现场测试",
+        expectedResult: "系统正确识别",
+        actualResult: "",
+        result: "pending",
+      };
+      const validationRelation = {
+        id: "field-relation",
+        sopAiConfigId: "field-config",
+        validationRunId: "field-run",
+        validationPurpose: "real",
+        validationEnvironment: { tester: "现场工程师" },
+      };
+      const execution = {
+        id: "execution",
+        relationId: "field-relation",
+        validationRunId: "field-run",
+        caseId: "field-case",
+        scenarioType: "standard",
+        actualResult: "系统已完成本次测试并输出完整的识别结果",
+        executor: "执行工程师",
+        completedAt: "2026-10-25T08:00:00Z",
+        evidenceUrl: "https://evidence.example.test/clip",
+        expectationMatched: true,
+      };
+      const fieldProps = {
+        validationCase: { ...validationCase, executionRecordId: execution.id },
+        judgementItems: [{ id: "field-item", name: "防护用品穿戴" }],
+        relationId: validationRelation.id,
+        relation: validationRelation,
+        data: { aiFieldValidationExecutions: [execution] },
+        store: {},
+        setModal() {},
+      };
+      // Exercise real Tab/toggle handlers without a browser or screenshots.
+      const hookState = [];
+      let hookIndex = 0;
+      globalThis.__validationTabState = (initial) => {
+        const i = hookIndex++;
+        if (!(i in hookState)) hookState[i] = typeof initial === "function" ? initial() : initial;
+        return [hookState[i], (value) => { hookState[i] = typeof value === "function" ? value(hookState[i]) : value; }];
+      };
+      const collect = (node, predicate) => {
+        if (!React.isValidElement(node)) return [];
+        return [...(predicate(node) ? [node] : []), ...React.Children.toArray(node.props.children).flatMap((child) => collect(child, predicate))];
+      };
+      try {
+        const aiConfig = { stepConfigs: [{ stepId: "step", actualEvaluationMode: "visual_auto" }], judgementItems: [{ id: "field-item", stepId: "step", name: "防护用品", conditions: [] }] };
+        const tabProps = { ...fieldProps, aiConfig, relation: { ...validationRelation, validationCases: validationCasesFor(aiConfig) } };
+        const renderTabs = () => { hookIndex = 0; return ValidationCaseTabs(tabProps); };
+        let tree = renderTabs();
+        let guidance;
+        tabProps.setModal = (value) => { guidance = value; };
+        tree = renderTabs();
+        collect(tree, (n) => n.type === "button" && n.props.children === "验证说明")[0].props.onClick();
+        assert.equal(guidance.title, "验证说明");
+        assert.ok(renderToString(guidance.content).includes("验收要求"));
+        assert.equal(collect(tree, (n) => n.props.role === "tab").length, 8);
+        collect(tree, (n) => n.type === "input" && n.props.type === "checkbox")[0].props.onChange({ target: { checked: true } });
+        tree = renderTabs();
+        const tabs = collect(tree, (n) => n.props.role === "tab");
+        assert.equal(tabs.length, 16);
+        tabs[15].props.onClick();
+        tree = renderTabs();
+        assert.equal(collect(tree, (n) => n.props.role === "tabpanel" && !n.props.hidden)[0].props.id, tabs[15].props["aria-controls"]);
+        collect(tree, (n) => n.type === "input" && n.props.type === "checkbox")[0].props.onChange({ target: { checked: false } });
+        tree = renderTabs();
+        assert.equal(collect(tree, (n) => n.props.role === "tab").length, 8);
+        assert.equal(collect(tree, (n) => n.props.role === "tabpanel").length, 16);
+        aiConfig.judgementItems[0].completionBasis = "action";
+        tree = renderTabs();
+        assert.equal(collect(tree, (n) => n.props.role === "tab").length, 12, "配置依赖的高级场景不能被开关隐藏");
+      } finally { delete globalThis.__validationTabState; }
+      workstationManagementChecks++;
+      const fieldHtml = renderToString(
+        React.createElement(FieldValidationCaseCard, fieldProps),
+      );
+      assert.ok(
+        fieldHtml.includes(execution.actualResult) &&
+          fieldHtml.includes('readOnly=""') &&
+          fieldHtml.includes("查看执行记录") &&
+          fieldHtml.includes("查看证据"),
+      );
+      assert.ok(
+        !fieldHtml.includes("执行结果来源") && !fieldHtml.includes("原型模拟"),
+      );
+      // Capture the real component's event handlers while React owns its hooks.
+      let caseTree, rerunModal;
+      const starts = [];
+      const caseProps = {
+        ...fieldProps,
+        validationCase: { ...fieldProps.validationCase, result: "passed", executionState: "saved", executionAttemptId: "previous-attempt" },
+        store: { startValidationCase: (...args) => starts.push(args) },
+        setModal: (value) => { rerunModal = value; },
+      };
+      const captureCase = () => renderToString(React.createElement(function CaptureCase() {
+        caseTree = FieldValidationCaseCard(caseProps);
+        return caseTree;
+      }));
+      const savedHtml = captureCase();
+      const rerunButton = collect(caseTree, (n) => n.type === "button" && n.props.children === "重新执行本用例")[0];
+      assert.equal(rerunButton.props.className, "button button--default");
+      assert.ok(savedHtml.indexOf("重新执行本用例") < savedHtml.indexOf("操作说明"));
+      rerunButton.props.onClick();
+      assert.equal(starts.length, 0, "重测必须确认后才改变用例");
+      assert.equal(rerunModal.confirmText, "确认重新执行");
+      rerunModal.onConfirm();
+      assert.equal(starts.length, 1);
+      assert.equal(starts[0][1], caseProps.validationCase.id);
+      assert.deepEqual(starts[0][2].judgementItemIds, caseProps.validationCase.judgementItemIds);
+      for (const state of ["pending", "running", "awaiting_review"]) {
+        caseProps.validationCase = { ...fieldProps.validationCase, result: "pending", executionState: state, executionAttemptId: state === "pending" ? "" : "attempt", executedAt: "" };
+        const html = captureCase();
+        if (state === "pending") {
+          assert.ok(html.indexOf("涉及AI判断项") < html.indexOf("开始执行"));
+          assert.ok(!html.includes("重新执行本用例"));
+        } else if (state === "running") {
+          assert.ok(html.indexOf("涉及AI判断项") < html.indexOf("结束执行"));
+          assert.ok(html.includes("取消执行") && !html.includes("重新执行本用例"));
+        } else {
+          const saveButton = collect(caseTree, (n) => n.type === "button" && n.props.children === "保存用例结果")[0];
+          assert.equal(saveButton.props.className, "button button--primary");
+          assert.ok(html.includes("待核对并保存") && !html.includes(">开始执行<"));
+        }
+      }
+      caseProps.editable = false;
+      assert.ok(!captureCase().includes("重新执行本用例"));
+      workstationManagementChecks++;
+      const regressionConfig = normalized.aiCapabilityConfigs.find((c) => c.sopId === "sop-muj8yyn3-x3ed0");
+      const regressionRelation = normalized.sopWorkstationAiConfigs.find((r) => r.sopAiConfigId === regressionConfig.id);
+      // Reproduce the user's actual old shape: eight cases, no expansion flag or history.
+      const regressionCases = validationCasesFor(regressionConfig).slice(0, 8);
+      regressionCases[0].actualResult = "先前已保存的现场验证结果应当继续保留供核对";
+      for (const status of ["unvalidated", "pending_revalidation", "validating", "passed"]) {
+        const regressionData = structuredClone(normalized);
+        const storedRelation = regressionData.sopWorkstationAiConfigs.find((r) => r.id === regressionRelation.id);
+        Object.assign(storedRelation, { validationStatus: status, validationCases: structuredClone(regressionCases), validationRecords: [] });
+        delete storedRelation.validationScenarioSet;
+        const loadedData = normalizePrototypeData(regressionData);
+        const loadedRelation = loadedData.sopWorkstationAiConfigs.find((r) => r.id === regressionRelation.id);
+        assert.deepEqual(loadedRelation.validationCases.slice(0, 8), regressionCases);
+        assert.deepEqual(loadedRelation.validationRecords, []);
+        assert.equal(loadedRelation.validationCases.length, status === "validating" ? 16 : 8);
+        assert.deepEqual(normalizePrototypeData(loadedData).sopWorkstationAiConfigs.find((r) => r.id === regressionRelation.id).validationCases, loadedRelation.validationCases);
+        const html = renderToString(React.createElement(AiWorkstationConfigWorkspace, {
+          relation: loadedRelation,
+          aiConfig: regressionConfig,
+          evaluation: { ready: true },
+          data: loadedData,
+          store: { data: loadedData },
+          setModal() {},
+        }));
+        assert.equal((html.match(/class="ai-validation-case"/g) || []).length, 16, `${source} ${status} 显示全部16张验证卡片`);
+        assert.equal((html.match(/role="tabpanel"/g) || []).length, 16);
+        assert.equal((html.match(/role="tabpanel"[^>]*hidden=""/g) || []).length, 15, "一次只展示一个用例，隐藏面板保留输入");
+        assert.ok(html.includes("显示高级验证") && html.includes("共16类场景"));
+        assert.equal((html.match(/class="validation-tabs-toolbar"/g) || []).length, 1);
+        assert.ok(!html.includes('class="ai-validation-summary-strip"'));
+        assert.ok(!html.includes("基础验证默认显示；"));
+        if (status === "validating") {
+          assert.match(html, /class="validation-environment-summary"><details><summary>/);
+          assert.match(html, /<details class="validation-acceptance-details"><summary>验收覆盖/);
+          assert.ok(html.indexOf('class="validation-environment-summary"') < html.indexOf('class="validation-tabs-toolbar"'));
+          assert.ok(html.indexOf('class="validation-acceptance-details"') > html.lastIndexOf('role="tabpanel"'));
+        }
+        assert.equal(html.includes("开始执行"), status === "validating");
+        assert.ok(html.includes(regressionCases[0].actualResult));
+        assert.equal(html.includes("保存用例结果"), status === "validating");
+        if (status !== "validating") {
+          assert.ok(html.includes("验证人") && html.includes("使用工具") && html.includes("光照情况"));
+          assert.equal((html.match(/class="validation-case-fields" disabled=""/g) || []).length, 16);
+        }
+        workstationManagementChecks++;
+      }
+      const excludedHtml = renderToString(
+        React.createElement(FieldValidationCaseCard, {
+          ...fieldProps,
+          validationCase: {
+            ...validationCase,
+            scenarioType: "wrong_order",
+            result: "not_applicable",
+            notApplicableReason: "当前判断项只检查持续状态，不依赖动作先后顺序",
+          },
+        }),
+      );
+      assert.ok(
+        excludedHtml.includes("不适用原因") &&
+          !excludedHtml.includes("系统实际结果"),
+      );
+      workstationManagementChecks++;
+      const settingsHtml = renderToString(
+        React.createElement(ValidationPurposePanel, {
+          relation: validationRelation,
+          store: { data: { aiCapabilityConfigs: [], aiCapabilities: [] } },
+          setModal() {},
+        }),
+      );
+      assert.ok(
+        settingsHtml.includes("当前模型独立评测") &&
+          !settingsHtml.includes("JSON") &&
+          !settingsHtml.includes("待模型服务接入"),
+      );
+      workstationManagementChecks++;
+      const historyHtml = renderToString(
+        React.createElement(ValidationRunDetails, {
+          record: {
+            validatedBy: "现场工程师",
+            completedAt: "2026-10-25T08:00:00Z",
+            environment: { lighting: "正常" },
+            cases: [
+              {
+                ...validationCase,
+                evidenceUrl: execution.evidenceUrl,
+                actualResult: execution.actualResult,
+                result: "passed",
+              },
+            ],
+          },
+        }),
+      );
+      assert.ok(
+        historyHtml.includes("查看证据") &&
+          historyHtml.includes(execution.actualResult),
+      );
+      workstationManagementChecks++;
+      const demoStation = normalized.workstations.find(
+        (station) => station.id === "ws-allocation-demo-b-20261022",
+      );
+      const demoDevice = normalized.devices.find(
+        (device) => device.workstationId === demoStation?.id,
+      );
+      assert.ok(demoStation && demoDevice);
+      for (const path of [
+        `/admin/workstations/${demoStation.id}`,
+        `/admin/devices/${demoDevice.id}`,
+      ]) {
+        const html = renderAccountPath(path);
+        assert.ok(!html.includes("资料不存在或已失效"));
+        assert.ok(
+          !/原型内部信息|prototype-resource-identifiers|内部工位编号|内部设备序列号|资源 ID/.test(
+            html,
+          ),
+        );
+        workstationManagementChecks++;
+      }
+      const w = normalized.workstations.find((w) => w.id === "w1");
+      const details = renderAccountPath(`/admin/workstations/${w.id}`);
+      assert.ok(
+        details.includes("工位概况与使用状态") &&
+          details.includes("设备与视角") &&
+          details.includes("关联标准与AI运行状态"),
+      );
+      assert.ok(!details.includes("AI基础运行配置"));
+      assert.ok(details.includes("设备检测"));
+      assert.ok(details.includes("关联实训标准"));
+      assert.ok(!details.includes("支持项目"));
+      assert.ok(
+        !/设备模拟检测|以上为原型保存的设备状态|非实时在线证明/.test(details),
+      );
+      assert.match(details, /class="table-action" href="\/admin\/devices\//);
+      if (w.status === "故障") assert.ok(details.includes("工位当前故障"));
+      workstationManagementChecks++;
+      const renderEquipmentForm = (workstation) =>
+        renderToString(
+          React.createElement(
+            PrototypeDataProvider,
+            null,
+            React.createElement(
+              MemoryRouter,
+              null,
+              React.createElement(WorkstationAiBaseConfigForm, { workstation }),
+            ),
+          ),
+        );
+      const form = renderEquipmentForm(w);
+      assert.ok(
+        form.includes('type="radio"') &&
+          form.includes("默认显示") &&
+          form.includes("采集用途"),
+      );
+      assert.ok(
+        !form.includes("兼容入口") &&
+          !form.includes("保存并检查") &&
+          !form.includes("覆盖区域（逗号分隔）"),
+      );
+      assert.ok(
+        form.includes('target="_blank"') && form.includes("workstationId=w1"),
+      );
+      workstationManagementChecks++;
+      const report = buildWorkstationInspection(
+        w,
+        normalized.devices,
+        "2026-10-25 12:00:00",
+      );
+      const inspected = renderToString(
+        React.createElement(WorkstationInspectionContent, {
+          report,
+          workstationId: w.id,
+        }),
+      );
+      assert.ok(
+        inspected.includes("检测时间") &&
+          inspected.includes("处理设备") &&
+          inspected.includes('class="table-action"') &&
+          !/原型|模拟|真实硬件|非实时在线证明/.test(inspected),
+      );
+      workstationManagementChecks++;
+      const inventory = renderAccountPath("/admin/devices?workstationId=w1");
+      assert.ok(
+        inventory.includes("当前工位") && inventory.includes("查看全部设备"),
+      );
+      assert.ok(!inventory.includes("CAM-002-A"));
+      workstationManagementChecks++;
+      const empty = renderEquipmentForm({
+        id: "empty-station",
+        name: "空工位",
+        aiBaseConfig: { cameras: [] },
+      });
+      assert.ok(
+        empty.includes("尚未配置采集视角") &&
+          empty.includes("AI状态保持待完善") &&
+          empty.includes("管理本工位设备"),
+      );
+      workstationManagementChecks++;
+      const aiPage = renderAccountPath(
+        "/admin/ai-capability-config/sop-demo-bench-20261015?tab=workstation&workstationId=ws-demo-20261015",
+      );
+      assert.ok(
+        aiPage.includes("返回工位详情") && aiPage.includes("判断项摄像头配置"),
+        "从工位定位到对应标准的工位验证，不停留在概览",
+      );
+      workstationManagementChecks++;
+      const expiredTarget = renderAccountPath(
+        "/admin/ai-capability-config/sop-demo-bench-20261015?tab=workstation&workstationId=missing-workstation",
+      );
+      assert.ok(
+        expiredTarget.includes("目标工位的关联已失效") &&
+          !expiredTarget.includes("判断项摄像头配置"),
+        "失效工位链接不能静默进入另一工位的编辑区",
+      );
+      workstationManagementChecks++;
+    }
+    values.set("xingchen-prototype-data-source-v1", "browser");
+    values.set("xingchen-prototype-data-v22", JSON.stringify(normalized));
+    values.delete("xingchen-prototype-cpd-working-data-v1");
+    console.log(
+      `PASS ${workstationManagementChecks}个双来源工位配置、状态、设备检测、设备筛选、空态与现场验证定位场景`,
+    );
+    const { StepPlaybackVideo, StudentStepPlayback } = await server.ssrLoadModule("/src/StudentStepPlayback.jsx");
+    let playbackError = "", pauses = 0;
+    const testClip = { id: "clip", label: "主视角", url: "/test-only-recording.mp4", start: 12, end: 25 };
+    const player = { duration: 60, currentTime: 0, playbackRate: 1, pause() { pauses++; } };
+    const videoElement = StepPlaybackVideo({ clip: testClip, speed: 1.5, verify: () => true, onError: value => { playbackError = value; } });
+    videoElement.props.onLoadedMetadata({ currentTarget: player });
+    assert.equal(player.currentTime, 12);
+    assert.equal(player.playbackRate, 1.5);
+    player.currentTime = 26;
+    videoElement.props.onTimeUpdate({ currentTarget: player });
+    assert.equal(pauses, 1, "片段结束暂停");
+    videoElement.props.onPlay({ currentTarget: player });
+    assert.equal(player.currentTime, 12, "重播从本步骤开始");
+    player.currentTime = 2;
+    videoElement.props.onSeeking({ currentTarget: player });
+    assert.equal(player.currentTime, 12);
+    videoElement.props.onError();
+    assert.ok(playbackError.includes("暂时无法播放"));
+    const expiredVideo = StepPlaybackVideo({ clip: testClip, speed: 1, verify: p => { p.pause(); return false; }, onError() {} });
+    player.currentTime = 40;
+    expiredVideo.props.onPlay({ currentTarget: player });
+    assert.equal(player.currentTime, 40, "失效片段不继续定位播放");
+    const collapsedPlaybackHtml = renderToString(React.createElement(StudentStepPlayback, { playback: { message: "回放片段", clips: [testClip] } }));
+    assert.ok(collapsedPlaybackHtml.includes("查看操作片段") && !collapsedPlaybackHtml.includes("<video"), "展开前不加载录像");
+    const { ExamReviewVisibilityPanel } = await server.ssrLoadModule("/src/ExamReviewVisibilityPanel.jsx");
+    const visibilityHtml = renderToString(React.createElement(ExamReviewVisibilityPanel, { arrangement: { id: "exam" }, store: {} }));
+    assert.equal((visibilityHtml.match(/type="checkbox"/g) || []).length, 3);
+    assert.ok(!visibilityHtml.includes('checked=""'));
     const studentPaths = [
       "/student/current",
       "/student/results/practice-dashboard-low-pending-20261022/session-dashboard-low-pending-20261022",
+      "/student/results/practice-dashboard-low-repeat-20261022/session-dashboard-low-repeat-20261022",
       "/student/results/exam-dashboard-published-20261022/session-dashboard-published-20261022",
       "/student/results/practice-grade-evidence-completed-20261022/session-grade-evidence-completed-20261022",
       "/student/results/exam-grade-evidence-awaiting-20261022/session-grade-evidence-awaiting-20261022",
@@ -1819,6 +2516,25 @@ try {
       "/student/results/exam-closure-exam-result-20261022/session-closure-exam-result-20261022",
       "/student/results/p1/session-p1-w1",
     ];
+    const openedReviewData = structuredClone(normalized);
+    const openedExam = openedReviewData.arrangements.find(a => a.id === "exam-dashboard-published-20261022");
+    const openedSession = openedExam.sessions.find(s => s.id === "session-dashboard-published-20261022");
+    openedExam.studentReviewVisibility = { feedback: true, recording: true, standard: true };
+    openedSession.recording = { status: "完整", expiresAt: "2099-01-01T00:00:00Z", clips: [{ id: "own-clip", stepId: openedSession.steps[0].id, sessionId: openedSession.id, studentId: openedSession.studentId, url: "/test-only-own-recording.mp4" }] };
+    openedSession.steps[0].reviewNote = "公开给学生的教师反馈";
+    openedSession.evaluationSnapshot = { ...openedSession.evaluationSnapshot, sopSnapshot: { ...openedSession.evaluationSnapshot?.sopSnapshot, steps: [{ id: openedSession.steps[0].id, completionCondition: "本次公开的正确操作要求", standardMedia: [{ id: "own-standard", name: "本次示范视频.mp4", url: "/test-only-standard.mp4", kind: "video" }] }] } };
+    for (const source of ["browser", "cpd"]) {
+      values.set("xingchen-prototype-data-source-v1", source);
+      const key = source === "cpd" ? "xingchen-prototype-cpd-working-data-v1" : "xingchen-prototype-data-v22";
+      values.set(key, JSON.stringify(source === "cpd" ? { fingerprint: "test", data: openedReviewData } : openedReviewData));
+      const openedHtml = renderAccountPath("/student/results/exam-dashboard-published-20261022/session-dashboard-published-20261022");
+      assert.ok(openedHtml.includes("查看操作片段") && openedHtml.includes("查看正确示范") && openedHtml.includes("本次公开的正确操作要求") && openedHtml.includes("公开给学生的教师反馈"));
+      const teacherHtml = renderAccountPath("/teacher/exams/e1/results");
+      const adminHtml = renderAccountPath("/admin/exams/e1");
+      assert.ok(teacherHtml.includes("学生复盘开放范围") && !adminHtml.includes("学生复盘开放范围"));
+      values.set(key, JSON.stringify(source === "cpd" ? { fingerprint: "test", data: normalized } : normalized));
+    }
+    values.set("xingchen-prototype-data-source-v1", "browser");
     for (const path of studentPaths) {
       const html = renderToString(
         React.createElement(
@@ -1855,6 +2571,18 @@ try {
             !html.includes("确认并开始训练") &&
             !html.includes("从断点恢复"),
         );
+      if (path.includes("/student/results/practice-dashboard-low-repeat-20261022/")) {
+        assert.ok(html.includes("重点改进") && html.includes("步骤复盘") && html.includes("教师反馈与评分说明") && html.includes("本次正确要求"));
+        assert.ok(html.includes("扣30分") && html.includes("万用表测量动作"));
+        const cards = [...html.matchAll(/<details[^>]*class="student-review-step"[^>]*>/g)].map(m => m[0]);
+        assert.equal(cards.length, 2);
+        assert.equal(cards.filter(c => c.includes('open=""')).length, 1, "只有需要关注的步骤默认展开");
+        assert.ok(!html.includes("量程选错") && !html.includes("接线错误"), "没有依据时不编造操作错误");
+      }
+      if (path.includes("/student/results/exam-dashboard-published-20261022/")) {
+        assert.ok(html.includes('src="/assets/student-review-preview.mp4"') && html.includes('poster="/assets/student-monitor-hand-tracking.png"'));
+        assert.ok(html.includes("播放速度"), "用户指定的已发布展示结果默认展开实际视频播放器");
+      }
       if (path.includes("/student/results/exam-closure-exam-wait"))
         assert.ok(
           html.includes("待发布") &&
@@ -2036,7 +2764,7 @@ try {
     );
     console.log("PASS 失效关联任务只读历史，不导致页面抛错");
     console.log(
-      `${paths.length + studentPaths.length + 7} 个页面/阶段合计通过（含12个隔离学生身份页面、1个辅导考试保护场景和1个失效历史任务及5个多资料关联/考试保护场景），未执行浏览器视觉验收。`,
+      `${paths.length + studentPaths.length + 7 + adminDetailChecks + 6 + 4 + workstationManagementChecks} 个页面/阶段合计通过（含${workstationManagementChecks}个工位管理场景、4个教师导入场景、6个密码流程场景、${adminDetailChecks}个双来源管理员详情兼容场景、12个隔离学生身份页面、1个辅导考试保护场景和1个失效历史任务及5个多资料关联/考试保护场景），未执行浏览器视觉验收。`,
     );
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
