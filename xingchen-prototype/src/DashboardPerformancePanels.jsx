@@ -33,7 +33,7 @@ export function DashboardPerformanceSection() {
               className="button button--default"
               onClick={() => nav("/teacher/statistics")}
             >
-              查看教学统计
+              查看教学改进
             </button>
           </div>
           <div className="dashboard-performance-metrics">
@@ -65,7 +65,7 @@ export function DashboardPerformanceSection() {
             </button>
           </div>
           <p className="hint">
-            按当前教师全部记录统计；详细筛选与分析请进入教学统计。
+            按当前教师全部记录统计；详细筛选与分析请进入教学改进。
           </p>
         </section>
         <section className="panel teacher-error-card">

@@ -10,6 +10,19 @@ const sampleMetadata = (input) =>
   Object.fromEntries(
     SAMPLE_FIELDS.filter((k) => k in (input || {})).map((k) => [k, input[k]]),
   );
+export function sourceMetadataChanged(before, after) {
+  return SAMPLE_FIELDS.some(
+    (key) => (before?.[key] || "") !== (after?.[key] || ""),
+  );
+}
+
+export function invalidateTrainingDataPreparation(configs, capabilityId) {
+  return (configs || []).map((config) =>
+    config.capabilityId === capabilityId
+      ? { ...config, readinessStatus: "pending", preparedAt: "" }
+      : config,
+  );
+}
 export const AI_VIDEO_CATEGORIES = {
   normal: "正常",
   error: "错误",

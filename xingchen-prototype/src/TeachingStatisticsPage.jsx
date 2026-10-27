@@ -1,3 +1,4 @@
+import { rememberStatisticsFilters } from "./statisticsFilterMemory.js";
 import { displayBusinessText, displayStepLabel } from "./businessTextRules.js";
 import { displayGradeText } from "./gradeRevisionRules.js";
 import {
@@ -218,7 +219,7 @@ function ExportButton({ rows, columns, title, unit, scope, source, disabled }) {
         url = URL.createObjectURL(blob),
         a = document.createElement("a");
       a.href = url;
-      a.download = `教学统计-${title}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `教学改进-${title}-${new Date().toISOString().slice(0, 10)}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -325,6 +326,9 @@ export function TeachingStatisticsPage({ initialTab }) {
   const tab = Object.hasOwn(STATISTICS_TABS, effective.get("tab"))
     ? effective.get("tab")
     : initialTab || "classes";
+  useEffect(() => {
+    if (!sourceChanged && !validateStatisticsFilters(filters)) rememberStatisticsFilters("/teacher/statistics", effective, dataSource, store.teacherId);
+  }, [loc.search, dataSource, store.teacherId, sourceChanged]);
   const [draft, setDraft] = useState(filters),
     [error, setError] = useState(""),
     [support, setSupport] = useState(null),
@@ -948,7 +952,7 @@ export function TeachingStatisticsPage({ initialTab }) {
   if (filterError)
     return (
       <section className="panel">
-        <h1>教学统计</h1>
+        <h1>教学改进</h1>
         <p role="alert">{filterError}</p>
         <button className={btn} onClick={() => patch({}, true)}>
           重置查询
@@ -959,7 +963,7 @@ export function TeachingStatisticsPage({ initialTab }) {
     <div className="teaching-statistics" data-refresh={refresh}>
       <div className="page-header">
         <div>
-          <h1>教学统计</h1>
+          <h1>教学改进</h1>
           <p>从结果和依据出发，查看班级表现与教学跟进。</p>
         </div>
         <div className="statistics-row-actions">
@@ -1001,7 +1005,7 @@ export function TeachingStatisticsPage({ initialTab }) {
       )}
       <section className="panel statistics-filter-panel">
         <form
-          aria-label="教学统计筛选"
+          aria-label="教学改进筛选"
           onSubmit={(e) => {
             e.preventDefault();
             const message = validateStatisticsFilters(draft);
@@ -1097,7 +1101,7 @@ export function TeachingStatisticsPage({ initialTab }) {
           {error || store.dataSyncError}
         </p>
       )}
-      <div className="statistics-tabs" role="tablist" aria-label="教学统计分类">
+      <div className="statistics-tabs" role="tablist" aria-label="教学改进分类">
         {Object.entries(STATISTICS_TABS).map(([id, label]) => (
           <button
             role="tab"

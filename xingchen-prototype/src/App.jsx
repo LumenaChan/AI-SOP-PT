@@ -1,3 +1,8 @@
+import { AccountProfilePage } from "./AccountProfilePage.jsx";
+import { AdminUsersPage } from "./AdminUsersPage.jsx";
+import { ADMIN_LIBRARY_MENUS, managedAdmin, canAdminMenu, adminPathAllowed, adminMenuForPath, adminLandingPath, adminLibraryLandingPath, adminAccountRedirect } from "./adminAccessRules.js";
+import { FieldPreparationPanel, FieldModelPreparation } from "./FieldPreparationPanel.jsx";
+import { fieldPreparation, fieldWorkflowState } from "./fieldPreparationRules.js";
 import { ExamReviewVisibilityPanel } from "./ExamReviewVisibilityPanel.jsx";
 import { StudentResultReview } from "./StudentResultReview.jsx";
 import { RecordExportHistory } from "./RecordExportHistory.jsx";
@@ -78,6 +83,7 @@ import {
 } from "./StandardMedia.jsx";
 import { sessionStandardMediaStep } from "./standardMediaRules.js";
 import { TeachingStatisticsPage } from "./TeachingStatisticsPage.jsx";
+import { TeacherDataStatisticsPage } from "./TeacherDataStatisticsPage.jsx";
 import { DashboardCardPager } from "./DashboardCardPager.jsx";
 import { NotificationPopover } from "./NotificationPopover.jsx";
 import { ArrangementStudentPicker } from "./ArrangementStudentPicker.jsx";
@@ -133,12 +139,10 @@ import {
 } from "./arrangementPreparationRules.js";
 import { modelSourceLabel } from "./modelProvenanceRules.js";
 import {
-  SampleMetadataPanel,
   PreannotationTasks,
   SuggestionPanel,
+  SampleMetadataPanel,
   ViewBindingEditor,
-  ValidationPurposePanel,
-  ExistingModelPanel,
   ObservationSimulator,
   ObservationTimeline,
   EvidenceCameraSummary,
@@ -239,6 +243,8 @@ import DataScreen from "./DataScreen.jsx";
 import {
   createLoginCaptcha,
   matchesLoginCaptcha,
+  recordLoginFailure,
+  loginRecoveryHint,
   readRememberedLogin,
   saveRememberedLogin,
 } from "./loginRules.js";
@@ -433,10 +439,12 @@ const teacherNav = [
   ["实训标准库", "/teacher/sop", <BookOutlined />],
   ["练习管理", "/teacher/practices", <EditOutlined />],
   ["考试管理", "/teacher/exams", <FileDoneOutlined />],
-  ["教学统计", "/teacher/statistics", <BarChartOutlined />],
+  ["数据统计", "/teacher/data-statistics", <BarChartOutlined />],
+  ["教学改进", "/teacher/statistics", <BarChartOutlined />],
 ];
 const adminNav = [
   ["运行概览", "/admin/overview", <BarChartOutlined />],
+  ["用户管理", "/admin/users", <TeamOutlined />],
   ["教师管理", "/admin/teachers", <TeamOutlined />],
   ["班级管理", "/admin/classes", <AppstoreOutlined />],
   ["学生管理", "/admin/students", <UserOutlined />],
@@ -784,6 +792,8 @@ const examRows = [
 ];
 
 function Status({ children, tone }) {
+  if (children == null || children === false || (typeof children === "string" && !children.trim()))
+    return null;
   const text = String(children);
   const t =
     tone ||
@@ -1039,10 +1049,9 @@ function Modal({ data, close, done }) {
   );
 }
 function Shell({ children, modal, setModal, toast, setToast }) {
-  const loc = useLocation(),
-    nav = useNavigate(),
-    admin = loc.pathname.startsWith("/admin");
+  const loc = useLocation(), nav = useNavigate();
   const store = usePrototypeData();
+  const admin = loc.pathname.startsWith("/admin") || loc.pathname === "/account/profile" && store.accountSession?.role === "admin";
   const { notifications = [] } = store.data;
   const [collapsed, setCollapsed] = useState(
       () => typeof window !== "undefined" && window.innerWidth < 1180,
@@ -1056,7 +1065,12 @@ function Shell({ children, modal, setModal, toast, setToast }) {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const items = admin ? adminNav : teacherNav;
+  const limitedAdmin = managedAdmin(store.accountSession);
+  const adminName = limitedAdmin ? store.currentAdminUser?.name || "用户" : store.data.systemAdminAccount?.name || "系统管理员";
+  const adminIdentity = limitedAdmin ? store.currentAdminUser?.identity || "管理员端" : "管理员端";
+  const items = admin ? adminNav.filter(([, path]) => path === AI_LIBRARY_PATH
+    ? ADMIN_LIBRARY_MENUS.some(menu => canAdminMenu(store.data, store.accountSession, menu.id))
+    : canAdminMenu(store.data, store.accountSession, adminMenuForPath(path))) : teacherNav;
   const onAiLibraryPage = loc.pathname.startsWith(AI_LIBRARY_PATH);
   const showAiLibraryChildren = onAiLibraryPage && aiLibraryOpen && !collapsed;
   const activeAiLibraryItemRef = useRef(null);
@@ -1139,7 +1153,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   } else {
                     setAiLibraryOpen(true);
                   }
-                  if (!onAiLibraryPage) nav(AI_LIBRARY_PATH);
+                  if (!onAiLibraryPage) nav(adminLibraryLandingPath(store.data, store.accountSession) || adminLandingPath(store.data, store.accountSession));
                 }}
               >
                 {icon}
@@ -1152,7 +1166,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   role="group"
                   aria-label="AI能力库二级菜单"
                 >
-                  {AI_LIBRARY_SECTIONS.map((section) => {
+                  {AI_LIBRARY_SECTIONS.filter(section => canAdminMenu(store.data, store.accountSession, `library.${section.path}`)).map((section) => {
                     const sectionPath = `${AI_LIBRARY_PATH}/${section.path}`;
                     const active =
                       loc.pathname === sectionPath ||
@@ -1240,7 +1254,7 @@ function Shell({ children, modal, setModal, toast, setToast }) {
             >
               <DesktopOutlined /> 数据大屏
             </a>
-            <div className="notification-wrap">
+            {!limitedAdmin && <div className="notification-wrap">
               <button
                 className="notification"
                 aria-label={`通知，${unreadCount} 条未读`}
@@ -1269,11 +1283,11 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   onClose={() => setNotificationOpen(false)}
                 />
               )}
-            </div>
+            </div>}
             <div className="role-menu-wrap">
               <button
                 className="user-menu"
-                aria-label={`打开身份菜单，当前为${admin ? "系统管理员" : store.teacherName}`}
+                aria-label={`打开身份菜单，当前为${admin ? adminName : store.teacherName}`}
                 aria-haspopup="menu"
                 aria-expanded={roleMenuOpen}
                 onClick={() => {
@@ -1285,10 +1299,10 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   <UserOutlined aria-hidden="true" />
                 </span>
                 <span>
-                  <strong>{admin ? "系统管理员" : store.teacherName}</strong>
+                  <strong>{admin ? adminName : store.teacherName}</strong>
                   <small>
                     {admin
-                      ? "管理员端"
+                      ? adminIdentity
                       : store.currentTeacher?.department || "教师端"}
                   </small>
                 </span>
@@ -1300,10 +1314,10 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                 <div className="role-popover" role="menu">
                   <span className="eyebrow">当前工作身份</span>
                   <strong>
-                    {admin ? "系统管理员" : `${store.teacherName} · 教师`}
+                    {admin ? `${adminName} · ${adminIdentity}` : `${store.teacherName} · 教师`}
                   </strong>
-                  <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>
-                  <details className="role-data-source">
+                  {!limitedAdmin && <p>切换身份后将进入对应工作台，当前页面不会保存为草稿。</p>}
+                  {!limitedAdmin && <details className="role-data-source">
                     <summary className="role-data-source__heading">
                       <span>原型数据与备份</span>
                       <small>
@@ -1414,21 +1428,20 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                         两套数据独立保存。切换会关闭当前编辑，未保存内容不会带入另一来源。
                       </p>
                     </div>
-                  </details>
+                  </details>}
+                  {!limitedAdmin && <>
                   <Button
                     disabled={!admin}
                     onClick={() => {
-                      nav("/teacher/dashboard");
-                      setRoleMenuOpen(false);
+                      try { store.switchWorkIdentity("teacher"); nav("/teacher/dashboard"); setRoleMenuOpen(false); } catch (error) { setToast(error.message); }
                     }}
                   >
                     教师端{!admin ? " · 当前" : ""}
                   </Button>
                   <Button
-                    disabled={admin || store.accountSession?.role === "teacher"}
+                    disabled={admin || store.accountSession?.role === "teacher" && !store.canSwitchToAdmin}
                     onClick={() => {
-                      nav("/admin/overview");
-                      setRoleMenuOpen(false);
+                      try { store.switchWorkIdentity("admin"); nav("/admin/overview"); setRoleMenuOpen(false); } catch (error) { setToast(error.message); }
                     }}
                   >
                     管理员端{admin ? " · 当前" : ""}
@@ -1442,16 +1455,13 @@ function Shell({ children, modal, setModal, toast, setToast }) {
                   >
                     学生端
                   </Button>
-                  {!admin && (
-                    <Button
-                      onClick={() => {
-                        setRoleMenuOpen(false);
-                        nav("/account/password");
-                      }}
-                    >
-                      修改密码
-                    </Button>
-                  )}
+                  </>}
+                  <Button onClick={() => {
+                    try {
+                      if (!admin && store.accountSession?.role === "admin") store.switchWorkIdentity("teacher");
+                      setRoleMenuOpen(false); nav("/account/profile");
+                    } catch (error) { setToast(error.message); }
+                  }}>个人资料</Button>
                   <Button
                     onClick={() => {
                       store.logout();
@@ -1491,6 +1501,7 @@ function LoginPage() {
     try {
       const saved = readRememberedLogin(window.localStorage);
       const demoTeacher = store.data.teachers.find((t) => t.id === "t1");
+      if (saved?.account === "admin" && store.data.systemAdminAccount?.passwordCredential) return { account: "admin", accountOnly: true };
       return saved?.account === "wanglaoshi" && demoTeacher?.passwordCredential
         ? { account: demoTeacher.account, accountOnly: true }
         : saved;
@@ -1508,6 +1519,7 @@ function LoginPage() {
   );
   const [rememberPassword, setRememberPassword] = useState(Boolean(remembered));
   const rememberAccountOnly =
+    account.trim().toLowerCase() === "admin" && Boolean(store.data.systemAdminAccount?.passwordCredential) ||
     account.trim().toLowerCase() !== "admin" &&
     (account.trim().toLowerCase() !== "wanglaoshi" ||
       Boolean(
@@ -1516,6 +1528,8 @@ function LoginPage() {
   const [captcha, setCaptcha] = useState(createLoginCaptcha);
   const [captchaInput, setCaptchaInput] = useState("");
   const [error, setError] = useState("");
+  const [loginFailures, setLoginFailures] = useState(null);
+  const recoveryHint = loginRecoveryHint(store.data, account, loginFailures);
   const captchaCanvas = useRef(null),
     captchaField = useRef(null);
   const refreshCaptcha = () => {
@@ -1586,6 +1600,7 @@ function LoginPage() {
             setSigningIn(true);
             try {
               const result = await store.login(account, password);
+              setLoginFailures(null);
               try {
                 saveRememberedLogin(window.localStorage, {
                   account:
@@ -1595,7 +1610,7 @@ function LoginPage() {
                       : account.trim().toLowerCase(),
                   password,
                   accountOnly:
-                    result.role === "teacher" &&
+                    Boolean(result.adminUserId) || result.role === "admin" && Boolean(store.data.systemAdminAccount?.passwordCredential) || result.role === "teacher" &&
                     (result.credentialId !== "legacy-demo" ||
                       account.trim().toLowerCase() !== "wanglaoshi"),
                   remember: rememberPassword && !result.mustChange,
@@ -1604,15 +1619,14 @@ function LoginPage() {
                 /* Optional remembered login never blocks a valid session. */
               }
               nav(
-                result.role === "admin"
-                  ? "/admin/overview"
-                  : result.mustChange
-                    ? "/account/password"
-                    : "/teacher/dashboard",
+                result.mustChange ? "/account/password" : result.role === "admin"
+                  ? adminLandingPath(store.data, result)
+                  : "/teacher/dashboard",
                 { replace: true },
               );
             } catch (failure) {
               setError(failure.message || "登录失败，请重试。");
+              setLoginFailures(previous => recordLoginFailure(previous, account, failure));
               refreshCaptcha();
             } finally {
               setSigningIn(false);
@@ -1632,6 +1646,7 @@ function LoginPage() {
               autoComplete="username"
               value={account}
               onChange={(event) => {
+                if (event.target.value.trim().toLowerCase() !== account.trim().toLowerCase()) setLoginFailures(null);
                 setAccount(event.target.value);
                 setError("");
               }}
@@ -1714,9 +1729,7 @@ function LoginPage() {
           <Button htmlType="submit" type="primary" disabled={signingIn}>
             {signingIn ? "正在登录…" : "登录系统"}
           </Button>
-          <p className="login-account-note">
-            忘记教师密码？请联系管理员在教师管理中重置密码。
-          </p>
+          {recoveryHint && <p className="login-account-note" role="status">{recoveryHint}</p>}
           <div className="login-secondary-links">
             <button
               type="button"
@@ -12283,6 +12296,9 @@ export function AiWorkstationConfigWorkspace({
     data,
   };
   const validationCheck = validationResult(validationContext);
+  const preparation = fieldPreparation({ checks, aiConfig, data });
+  const workflow = fieldWorkflowState(normalized, validationCheck.passed);
+  const formalRunning = normalized.validationPurpose === "real" && normalized.validationStatus === "validating";
   let enableIssue = "";
   try {
     assertFieldEnablement(validationContext);
@@ -12299,8 +12315,18 @@ export function AiWorkstationConfigWorkspace({
     setValidationMessage("");
   }, [normalized.id, normalized.validationStartedAt]);
   const startValidation = () => {
+    const begin = () => store.startSopWorkstationFieldValidation(normalized.id, environment, { restart: normalized.validationStatus === "validating" });
+    if (normalized.enableStatus === "enabled" || normalized.validationRunId || normalized.validationStatus === "validating") {
+      setModal({
+        title: "开始新一轮现场验证",
+        content: <p>已保存的验证过程将保留。开始后，该关联将暂停用于新会话的AI评价，验收通过后可重新启用；现有会话和历史成绩不改写。</p>,
+        confirmText: "开始现场验证",
+        onConfirm: begin,
+      });
+      return;
+    }
     try {
-      store.startSopWorkstationValidation(normalized.id, environment);
+      begin();
       setValidationMessage("");
     } catch (error) {
       setValidationMessage(error.message);
@@ -12323,7 +12349,7 @@ export function AiWorkstationConfigWorkspace({
       ),
       confirmText: "保存过程并重新开始",
       onConfirm: () =>
-        store.startSopWorkstationValidation(
+        store.startSopWorkstationFieldValidation(
           normalized.id,
           restartEnvironmentRef.current.getValue(),
           { restart: true },
@@ -12349,12 +12375,11 @@ export function AiWorkstationConfigWorkspace({
     });
   return (
     <div className="ai-workstation-workspace">
-      <ValidationPurposePanel
-        key={normalized.id}
-        relation={normalized}
-        store={store}
-        setModal={setModal}
-      />
+      <nav className="field-workflow-nav" aria-label="工位AI启用流程">
+        <a href={`#field-preparation-${normalized.id}`}>1. 准备检查</a><a href={`#field-validation-${normalized.id}`}>2. 现场验证</a><a href={`#field-enable-${normalized.id}`}>3. 启用AI评价</a>
+      </nav>
+      <FieldPreparationPanel relation={normalized} preparation={preparation} store={store} setModal={setModal} />
+      <details className="field-configuration-details"><summary>设备、视角与区域配置</summary><div className="field-configuration-body">
       <section className="ai-workstation-block">
         <PanelTitle
           title={`${workstation.name} · 工位基础信息`}
@@ -12392,7 +12417,7 @@ export function AiWorkstationConfigWorkspace({
         )}
       </section>
 
-      <section className="ai-workstation-block">
+      <section className="ai-workstation-block" id={`field-cameras-${normalized.id}`}>
         <PanelTitle
           title="判断项摄像头配置"
           action={<span>按判断项配置有效视角</span>}
@@ -12410,7 +12435,7 @@ export function AiWorkstationConfigWorkspace({
         </div>
       </section>
 
-      <section className="ai-workstation-block">
+      <section className="ai-workstation-block" id={`field-areas-${normalized.id}`}>
         <PanelTitle
           title="逻辑区域到实际区域"
           action={<span>{areas.length} 个需要映射</span>}
@@ -12435,35 +12460,15 @@ export function AiWorkstationConfigWorkspace({
         {!areas.length && <p className="hint">当前AI判断项不依赖逻辑区域。</p>}
       </section>
 
-      <section className="ai-workstation-block">
+      </div></details>
+      <FieldModelPreparation relation={normalized} store={store} setModal={setModal} />
+      <section className="ai-workstation-block" id={`field-validation-${normalized.id}`}>
         <PanelTitle
-          title="配置检查"
-          action={
-            <Status>{checks.ready ? "可以开始现场验证" : "需要完善"}</Status>
-          }
+          title="2. 现场验证"
+          action={<Status>{workflow.validationLabel}</Status>}
         />
-        <div className="ai-workstation-checks">
-          {checks.checks.map((check) => (
-            <article
-              className={check.passed ? "is-pass" : "is-fail"}
-              key={check.key}
-            >
-              {check.passed ? <CheckCircleOutlined /> : <AlertOutlined />}
-              <span>
-                <strong>{check.label}</strong>
-                {check.reason && <small>{check.reason}</small>}
-              </span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="ai-workstation-block">
-        <PanelTitle
-          title="现场验证"
-          action={<Status>{workstationValidationLabel(normalized)}</Status>}
-        />
-        {normalized.validationStatus !== "validating" ? (
+        {!preparation.ready && <p className="hint">准备检查尚有缺项，请按上方“待处理”项目完成配置。</p>}
+        {!formalRunning ? (
           <>
           <div className="ai-validation-start">
             <div className="form-row">
@@ -12550,12 +12555,10 @@ export function AiWorkstationConfigWorkspace({
               )}
               <Button
                 type="primary"
-                disabled={!checks.ready}
+                disabled={!preparation.ready}
                 onClick={startValidation}
               >
-                {normalized.validationPurpose === "real"
-                  ? "开始现场验证"
-                  : "开始配置检查"}
+                开始现场验证
               </Button>
             </div>
           </div>
@@ -12710,25 +12713,25 @@ export function AiWorkstationConfigWorkspace({
         )}
       </section>
 
-      <section className="ai-workstation-block ai-workstation-enable-state">
+      <section className="ai-workstation-block ai-workstation-enable-state" id={`field-enable-${normalized.id}`}>
         <PanelTitle
-          title="启用与运行状态"
-          action={<Status>{runtime.label}</Status>}
+          title="3. 启用AI评价"
+          action={<Status>{workflow.accepted ? runtime.label : "待现场验收"}</Status>}
         />
         <div className="ai-workstation-enable-grid">
           <span>
             <small>启用状态</small>
             <strong>
-              {WORKSTATION_ENABLE_STATUSES[normalized.enableStatus]}
+              {workflow.enableLabel}
             </strong>
           </span>
           <span>
             <small>验证状态</small>
-            <strong>{workstationValidationLabel(normalized)}</strong>
+            <strong>{workflow.validationLabel}</strong>
           </span>
           <span>
             <small>当前运行状态</small>
-            <strong>{runtime.label}</strong>
+            <strong>{workflow.accepted ? runtime.label : "待现场验收"}</strong>
           </span>
           <span>
             <small>最近验证</small>
@@ -12842,6 +12845,7 @@ function SopWorkstationEnablementSection({
         <AlertOutlined />
         <h2>当前实训标准的AI能力配置尚未完成</h2>
         <p>请先完成AI判断项和能力引用配置，再进入工位启用与现场验证。</p>
+        <a className="button button--default" href={`${AI_CONFIG_PATH}/${encodeURIComponent(sop.id)}?tab=judgement&source=${store.dataSource || "browser"}`}>去完善AI判断项配置</a>
       </section>
     );
   return (
@@ -12899,6 +12903,8 @@ function SopWorkstationEnablementSection({
                 checks,
                 readiness: checks.readiness,
               });
+              const validation = validationResult({ relation: normalizeSopWorkstationAiConfig(relation), aiConfig, checks, workstation, data });
+              const workflow = fieldWorkflowState(relation, validation.passed);
               const base = normalizeWorkstationAiBaseConfig(workstation);
               const selectableCameraIds = new Set(
                 [base.primaryCameraId, base.fallbackCameraId].filter(Boolean),
@@ -12951,22 +12957,18 @@ function SopWorkstationEnablementSection({
                   <span>
                     <small>现场验证</small>
                     <Status>
-                      {
-                        WORKSTATION_VALIDATION_STATUSES[
-                          relation.validationStatus
-                        ]
-                      }
+                      {workflow.validationLabel}
                     </Status>
                   </span>
                   <span>
                     <small>启用状态</small>
                     <Status>
-                      {WORKSTATION_ENABLE_STATUSES[relation.enableStatus]}
+                      {workflow.enableLabel}
                     </Status>
                   </span>
                   <span>
                     <small>运行状态</small>
-                    <Status>{runtime.label}</Status>
+                    <Status>{workflow.accepted ? runtime.label : "待现场验收"}</Status>
                   </span>
                   <span>
                     <small>最近验证</small>
@@ -13496,8 +13498,8 @@ function AiCapabilityConfigTabbedWorkspace({
   const nav = useNavigate();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState(() =>
-    new URLSearchParams(location.search).get("tab") === "workstation"
-      ? "workstation"
+    ["workstation", "judgement"].includes(new URLSearchParams(location.search).get("tab"))
+      ? new URLSearchParams(location.search).get("tab")
       : "overview",
   );
   const rawConfig = (data.aiCapabilityConfigs || []).find(
@@ -14833,7 +14835,7 @@ const AiVideoMetadataForm = forwardRef(function AiVideoMetadataForm(
     setForm((current) => ({ ...current, [key]: value }));
   return (
     <div className="form-stack">
-      <SourceMetadataFields value={form} onChange={update} />
+      <SourceMetadataFields value={form} onChange={update} lockedUse={video.sampleUse === "sealed_test"} />
       <label className="field">
         视频名称
         <input
@@ -15024,6 +15026,8 @@ function AiVideoManagement({ setModal }) {
   const videos = capability
     ? allVideos.filter((item) => item.capabilityId === capability.id)
     : [];
+  const requestedVideoId = new URLSearchParams(location.search).get("videoId");
+  const requestedVideo = videos.find((video) => video.id === requestedVideoId);
   const visible = videos.filter(
     (item) =>
       (!query.trim() ||
@@ -15247,7 +15251,17 @@ function AiVideoManagement({ setModal }) {
           </p>
         )}
       </section>
-      {capability && <SampleMetadataPanel capabilityId={capability.id} />}
+      {capability && requestedVideoId && (
+        <section className="panel source-video-context" aria-label="标注来源视频">
+          {requestedVideo ? <>
+            <div><small>当前标注的来源视频</small>
+              <strong>{requestedVideo.displayName || requestedVideo.fileName || "未命名视频"}</strong>
+              <span>修改采集信息后，需重新检查训练数据划分；已生成的训练任务保留原始记录。</span>
+            </div>
+            <Button onClick={() => openEdit(requestedVideo)}>编辑采集属性</Button>
+          </> : <p className="form-error" role="alert">来源视频不存在或不属于当前AI能力，请重新选择视频。</p>}
+        </section>
+      )}
       {!capability ? (
         <section className="panel empty-state ai-library-empty ai-entry-table">
           <VideoCameraOutlined />
@@ -19047,6 +19061,11 @@ function ObjectAnnotationWorkbench({
           保存并下一张
         </Button>
       </div>
+      <SampleMetadataPanel
+        capabilityId={current.capabilityId}
+        current={current}
+        kind="frames"
+      />
     </div>
   );
 }
@@ -19192,6 +19211,11 @@ function ActionAnnotationWorkbench({
           </Button>
         </div>
       </div>
+      <SampleMetadataPanel
+        capabilityId={current.capabilityId}
+        current={current}
+        kind="clips"
+      />
     </div>
   );
 }
@@ -19526,7 +19550,10 @@ function AiAnnotationPage({ setModal }) {
                       checked={selectedIds.includes(item.id)}
                       onChange={() => toggleSelected(item.id)}
                     />
-                    <button onClick={() => setCurrentId(item.id)}>
+                    <button
+                      className={mode === "clips" ? "annotation-queue-item--clip" : undefined}
+                      onClick={() => setCurrentId(item.id)}
+                    >
                       {mode === "frames" ? (
                         <img src={frameImageUrl(item)} alt="" />
                       ) : (
@@ -19762,6 +19789,8 @@ function AiTrainingDataPage({ setModal }) {
     ["hasTestData", "测试集有数据"],
     ["allAssigned", "所有候选数据均已分配"],
     ["noSourceVideoLeakage", "未发现来源视频跨集合"],
+    ["noParticipantLeakage", "已记录的同一操作人未跨集合"],
+    ["sealedTestProtected", "封存测试数据未进入训练或调优"],
     ["annotationsComplete", "当前训练数据标注完整"],
     ["filesValid", "当前训练数据文件有效"],
     ["hasTargetCategories", "存在主要目标类别"],
@@ -20180,6 +20209,9 @@ function AiTrainingDataPage({ setModal }) {
                 </Status>
               }
             />
+            <p className="training-source-metadata-link">
+              采集组、操作人或数据用途有误时，<a className="table-action" href={`${AI_LIBRARY_PATH}/videos?${new URLSearchParams({ capabilityId: capability.id, source: store.dataSource || "browser" })}`}>去视频管理修改采集属性</a>。
+            </p>
             <div className="training-check-grid">
               {checkRows.map(([key, label]) => (
                 <article
@@ -20691,15 +20723,9 @@ function AiModelTrainingPage({ setModal }) {
         )}
       </section>
       {capability && (
-        <>
-          <ExistingModelPanel
-            key={capability.id}
-            capabilityId={capability.id}
-          />
-          <section className="enhancement-card">
-            当前训练、验证与测试为原型模拟；事件级完整视频指标与现场时延尚未实测。手部关键点可按效果选用，不是所有动作必须标注。
-          </section>
-        </>
+        <section className="enhancement-card">
+          当前训练、验证与测试为原型模拟；事件级完整视频指标与现场时延尚未实测。手部关键点可按效果选用，不是所有动作必须标注。
+        </section>
       )}
       {!selectedId ? (
         <section className="panel ai-library-workspace">
@@ -21233,15 +21259,9 @@ function AiModelPublishingPage({ setModal }) {
         )}
       </section>
       {capability && (
-        <>
-          <ExistingModelPanel
-            key={capability.id}
-            capabilityId={capability.id}
-          />
-          <section className="enhancement-card">
-            发布当前候选用于原型演示。历史结果未核实；真实模型接入与独立现场评测完成后，才可进入真实启用流程。
-          </section>
-        </>
+        <section className="enhancement-card">
+          发布当前候选用于原型演示。历史结果未核实；真实模型接入与独立现场评测完成后，才可进入真实启用流程。
+        </section>
       )}
       {!selectedId ? (
         <section className="panel ai-library-workspace">
@@ -28063,7 +28083,8 @@ function NotFound() {
 function AccountShell(props) {
   const store = usePrototypeData(),
     location = useLocation();
-  const target = teacherAccountRedirect(
+  const adminTarget = adminAccountRedirect(store.data, store.accountSession, store.dataSource, location.pathname);
+  const target = adminTarget || teacherAccountRedirect(
     store.data,
     store.accountSession,
     store.dataSource,
@@ -28081,6 +28102,8 @@ function AccountShell(props) {
         }
       />
     );
+  if (managedAdmin(store.accountSession) && !adminPathAllowed(store.data, store.accountSession, location.pathname))
+    return <Shell {...props}><section className="panel admin-access-denied"><h1>此功能尚未授权</h1><p>当前账号没有访问该功能的权限，请联系系统管理员调整菜单授权。</p><Button type="primary" onClick={() => window.location.assign(adminLandingPath(store.data, store.accountSession))}>返回可用功能</Button></section></Shell>;
   return <Shell {...props} />;
 }
 
@@ -28142,7 +28165,10 @@ export function RoutedApp() {
                 path="/"
                 element={<Navigate to="/teacher/dashboard" replace />}
               />
+              <Route path="/account/profile" element={<AccountProfilePage setModal={setModal} />} />
+              <Route path="/admin/users" element={<AdminUsersPage setModal={setModal} />} />
               <Route path="/teacher/dashboard" element={<Dashboard />} />
+              <Route path="/teacher/data-statistics" element={<TeacherDataStatisticsPage />} />
               <Route
                 path="/teacher/statistics"
                 element={<TeachingStatisticsPage />}

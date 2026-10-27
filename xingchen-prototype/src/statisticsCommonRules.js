@@ -50,8 +50,10 @@ export function validStatisticsReturn(path) {
   try {
     const u = new URL(path, "http://prototype.local");
     return u.origin === "http://prototype.local" &&
-      u.pathname === "/teacher/statistics" &&
-      path.startsWith("/teacher/statistics")
+      ["/teacher/statistics", "/teacher/data-statistics"].includes(
+        u.pathname,
+      ) &&
+      path.startsWith("/teacher/")
       ? u.pathname + u.search
       : "";
   } catch {

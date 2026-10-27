@@ -1,5 +1,16 @@
-import { useState } from "react";
-import { useNavigate, Navigate } from "react-router-dom";
+import {
+  passwordSessionToken,
+  changeAccountPassword,
+} from "./accountPasswordRules.js";
+import { delegatedAdminValid } from "./accountIdentityRules.js";
+import { systemAdminProfile } from "./accountProfileRules.js";
+import {
+  managedAdmin,
+  superAdmin,
+  adminLandingPath,
+} from "./adminAccessRules.js";
+import { useState, forwardRef, useImperativeHandle } from "react";
+import { useNavigate, Navigate, useSearchParams } from "react-router-dom";
 import { usePrototypeData } from "./prototypeData.jsx";
 import { TEACHER_PASSWORD_HINT } from "./teacherAccountRules.js";
 import { teacherCredentialsCsv } from "./teacherImportRules.js";
@@ -162,6 +173,50 @@ export function openTeacherPasswordReset(setModal, store, teacher) {
     onSuccess: (receipt) => setModal(teacherPasswordReceiptModal(receipt)),
   });
 }
+export const AccountPasswordFields = forwardRef(function AccountPasswordFields(
+  { name, account },
+  ref,
+) {
+  const [form, setForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [busy, setBusy] = useState(false);
+  useImperativeHandle(ref, () => ({ getValue: () => form, setBusy }));
+  return (
+    <div className="form-stack account-password-fields">
+      <p>
+        {name} · {account}
+      </p>
+      {[
+        ["currentPassword", "当前密码", "current-password"],
+        ["newPassword", "新密码", "new-password"],
+        ["confirmPassword", "确认新密码", "new-password"],
+      ].map(([key, label, autoComplete]) => (
+        <label className="field" key={key}>
+          {label}
+          <input
+            type="password"
+            name={key}
+            required
+            maxLength={key === "currentPassword" ? 128 : 32}
+            value={form[key]}
+            autoComplete={autoComplete}
+            disabled={busy}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, [key]: event.target.value }))
+            }
+          />
+        </label>
+      ))}
+      <p className="form-hint">
+        {TEACHER_PASSWORD_HINT}
+        ，新密码不能与当前密码相同。修改成功后需重新登录。
+      </p>
+    </div>
+  );
+});
 export function TeacherChangePasswordPage() {
   const store = usePrototypeData(),
     nav = useNavigate();
@@ -172,20 +227,31 @@ export function TeacherChangePasswordPage() {
   });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const teacher = store.currentTeacher;
+  const [params] = useSearchParams();
+  const root = superAdmin(store.accountSession);
+  const isAdmin = root || managedAdmin(store.accountSession);
+  const teacher = root
+    ? systemAdminProfile(store.data)
+    : isAdmin
+      ? store.currentAdminUser
+      : store.currentTeacher;
   if (
     !store.accountSession ||
-    store.accountSession.role !== "teacher" ||
+    (store.accountSession.role !== "teacher" && !isAdmin) ||
     !store.accountSessionValid
   )
     return (
       <Navigate
         to="/login"
         replace
-        state={{ message: "请使用教师账号重新登录后修改密码。" }}
+        state={{ message: "请使用本人账号重新登录后修改密码。" }}
       />
     );
-  const required = Boolean(teacher?.passwordCredential?.mustChange);
+  const required =
+    Boolean(teacher?.passwordCredential?.mustChange) &&
+    !delegatedAdminValid(store.data, store.accountSession, store.dataSource);
+  if (params.get("from") === "profile" && !required)
+    return <Navigate to="/account/profile?password=change" replace />;
   return (
     <main className="teacher-password-page">
       <section className="panel">
@@ -206,7 +272,11 @@ export function TeacherChangePasswordPage() {
             setBusy(true);
             setError("");
             try {
-              const result = await store.changeTeacherPassword(form);
+              const result = await changeAccountPassword(
+                store,
+                form,
+                passwordSessionToken(store),
+              );
               store.logout();
               nav("/login", {
                 replace: true,
@@ -265,9 +335,20 @@ export function TeacherChangePasswordPage() {
                 type="button"
                 className="button button--default"
                 disabled={busy}
-                onClick={() => nav("/teacher/dashboard", { replace: true })}
+                onClick={() =>
+                  nav(
+                    params.get("from") === "profile"
+                      ? "/account/profile"
+                      : isAdmin
+                        ? adminLandingPath(store.data, store.accountSession)
+                        : "/teacher/dashboard",
+                    { replace: true },
+                  )
+                }
               >
-                返回工作台
+                {params.get("from") === "profile"
+                  ? "返回个人资料"
+                  : "返回工作台"}
               </button>
             )}
             <button

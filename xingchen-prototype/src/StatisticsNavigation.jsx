@@ -1,3 +1,4 @@
+import { rememberedStatisticsPath } from "./statisticsFilterMemory.js";
 import { useNavigate, useLocation } from "react-router-dom";
 import { usePrototypeData } from "./prototypeData.jsx";
 import {
@@ -12,8 +13,10 @@ import {
 export function useStatisticsNavigate() {
   const nav = useNavigate(),
     loc = useLocation(),
-    { dataSource } = usePrototypeData();
+    { dataSource, teacherId } = usePrototypeData();
   return (path, options) => {
+    if (typeof path === "string")
+      path = rememberedStatisticsPath(path, dataSource, teacherId);
     const params = new URLSearchParams(loc.search),
       back = validStatisticsReturn(params.get("statisticsReturn"));
     const destination =
@@ -49,7 +52,9 @@ export function StatisticsReturnLink() {
   return (
     <div className="statistics-return">
       <button className="button button--default" onClick={() => nav(back)}>
-        ← 返回教学统计
+        {back.startsWith("/teacher/data-statistics")
+          ? "← 返回数据统计"
+          : "← 返回教学改进"}
       </button>
       <span>办理后返回原筛选范围，统计按最新记录更新。</span>
     </div>

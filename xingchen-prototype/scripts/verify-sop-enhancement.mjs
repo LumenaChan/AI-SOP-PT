@@ -914,6 +914,7 @@ try {
     attendanceFromStatistics,
   ];
   const paths = [
+    "/admin/users",
     "/admin/teachers",
     ...normalized.teachers.map((teacher) => `/admin/teachers/${teacher.id}`),
     analysisMainPath,
@@ -949,6 +950,14 @@ try {
       search: "?tab=progress&source=browser&student=s3",
       state: { statisticsReturned: true },
     },
+    `/teacher/practices/p4/results?statisticsReturn=${encodeURIComponent("/teacher/data-statistics?range=all&detail=coverage&source=browser")}&statisticsSource=browser`,
+    "/teacher/data-statistics",
+    "/teacher/data-statistics?range=all",
+    "/teacher/data-statistics?range=all&detail=coverage",
+    "/teacher/data-statistics?range=all&detail=grades",
+    "/teacher/data-statistics?range=all&dimension=standard",
+    "/teacher/data-statistics?range=term&from=2026-09-01&to=2027-01-31",
+    "/teacher/data-statistics?range=custom&from=2026-12-31&to=2026-01-01",
     "/teacher/statistics?tab=progress&student=s1&sopId=sop-demo-bench-20261015&sopVersion=教学统计演示V1&type=practice",
     "/teacher/statistics?tab=steps",
     "/teacher/sop/edit/s1",
@@ -1207,7 +1216,7 @@ try {
       assert.ok(html.includes('aria-label="返回统计明细"'));
     if (entry === recordFromAttendance) {
       assert.ok(
-        html.includes("返回参加名单") && !html.includes("返回教学统计"),
+        html.includes("返回参加名单") && !html.includes("返回教学改进"),
       );
       assert.ok(html.includes("张浩"));
     }
@@ -1392,7 +1401,7 @@ try {
     )
       assert.ok(
         html.includes(
-          entry === recordFromAttendance ? "返回参加名单" : "返回教学统计",
+          entry === recordFromAttendance ? "返回参加名单" : decodeURIComponent(entry).includes("/teacher/data-statistics") ? "返回数据统计" : "返回教学改进",
         ),
       );
     if (
@@ -1530,8 +1539,16 @@ try {
           html.includes("复查记录") && !html.includes(">确认完成辅导</button>"),
         );
     }
+    if (typeof entry === "string" && entry.startsWith("/teacher/data-statistics")) {
+      assert.ok(html.includes("<h1>数据统计</h1>") && html.includes('aria-label="数据统计筛选"'));
+      assert.ok(!html.includes('aria-label="教学改进筛选"'));
+      if (!entry.includes("from=2026-12-31")) {
+        for (const text of ["开展场次", "参与学生数", "参与人次", "完成率", "平均分", "参考及格率", "实训开展趋势", "班级参与与完成", "实训项目开展", "统计汇总", "导出统计汇总"]) assert.ok(html.replace(/<!--.*?-->/g, "").includes(text), `数据统计缺少${text}`);
+        if (entry.includes("detail=")) assert.ok(html.includes('role="dialog"') && html.includes("导出"));
+      } else assert.ok(html.includes("开始日期不能晚于结束日期"));
+    }
     if (typeof entry === "string" && entry.startsWith("/teacher/statistics")) {
-      assert.ok(html.includes("教学统计分类") && html.includes("应用筛选"));
+      assert.ok(html.includes("教学改进分类") && html.includes("应用筛选"));
       assert.ok(!html.includes('class="panel runtime-simulator"'));
       if (entry.includes("tab=followup")) {
         const query = new URL(entry, "http://localhost").searchParams,
@@ -1816,6 +1833,122 @@ try {
   );
   globalThis.window = { localStorage: storage, sessionStorage: storage };
   try {
+    const { SampleMetadataPanel, SourceMetadataFields } = await server.ssrLoadModule("/src/EnhancementPanels.jsx");
+    const metadataData = structuredClone(normalized);
+    const metadataCapability = metadataData.aiCapabilities[0];
+    const metadataSource = { id: "metadata-exact-video", capabilityId: metadataCapability.id, displayName: "指定来源视频", fileName: "source.mp4", sourceGroupId: "采集组A", participantId: "人员A", sampleUse: "sealed_test", dataCategory: "normal", sourceType: "standard_demo", processingStatus: "unprocessed" };
+    metadataData.aiSourceVideos.push(metadataSource);
+    values.set("xingchen-prototype-data-source-v1", "browser");
+    values.set("xingchen-prototype-data-v22", JSON.stringify(metadataData));
+    const renderMetadata = (node, path = "/admin/ai-capability-library/annotation") => renderToString(React.createElement(PrototypeDataProvider, null,
+      React.createElement(MemoryRouter, { initialEntries: [path] }, node)));
+    const metadataSample = { id: "metadata-sample", sourceVideoId: metadataSource.id, sampleType: "uncertain", visibility: "occluded" };
+    const summaryHtml = renderMetadata(React.createElement(SampleMetadataPanel, { capabilityId: metadataCapability.id, current: metadataSample, kind: "frames" }));
+    assert.ok(summaryHtml.includes("指定来源视频") && summaryHtml.includes("封存测试"));
+    assert.ok(summaryHtml.includes(`capabilityId=${metadataCapability.id}&amp;videoId=metadata-exact-video&amp;source=browser`));
+    assert.equal((summaryHtml.match(/<select/g) || []).length, 2);
+    assert.ok(!summaryHtml.includes("<input") && !summaryHtml.includes("保存视频属性"));
+    assert.ok(!summaryHtml.includes("<details class=\"sample-metadata-details\" open"));
+    for (const sourceVideoId of ["missing-source", metadataData.aiSourceVideos.find(v => v.capabilityId !== metadataCapability.id)?.id].filter(Boolean)) {
+      const missingHtml = renderMetadata(React.createElement(SampleMetadataPanel, { capabilityId: metadataCapability.id, current: { ...metadataSample, sourceVideoId }, kind: "frames" }));
+      assert.ok(missingHtml.includes("来源视频已失效") && !missingHtml.includes("管理来源视频"));
+    }
+    const editorHtml = renderToString(React.createElement(SourceMetadataFields, { value: metadataSource, onChange() {}, lockedUse: true }));
+    assert.ok(editorHtml.includes("补充采集说明（选填）") && editorHtml.includes("已封存的测试素材不能转回训练用途"));
+    assert.ok(/<select disabled=""/.test(editorHtml));
+    const targetPath = `/admin/ai-capability-library/videos?capabilityId=${metadataCapability.id}&videoId=${metadataSource.id}&source=browser`;
+    const targetHtml = renderMetadata(React.createElement(RoutedApp), targetPath);
+    assert.ok(targetHtml.includes("当前标注的来源视频") && targetHtml.includes("编辑采集属性"));
+    assert.ok(!targetHtml.includes("保存视频属性"));
+    const missingTargetHtml = renderMetadata(React.createElement(RoutedApp), targetPath.replace(metadataSource.id, "missing-source"));
+    assert.ok(missingTargetHtml.includes("来源视频不存在或不属于当前AI能力"));
+    assert.ok(!missingTargetHtml.includes("编辑采集属性"));
+    console.log("PASS 标注样本属性精简、来源视频准确定位、失效关联无回退及封存用途只读");
+    const { AdminUserForm } = await server.ssrLoadModule("/src/AdminUsersPage.jsx");
+    const { teacherPasswordCredential: adminCredential, authenticatePrototypeAccount: adminAuthenticate } = await server.ssrLoadModule("/src/teacherAccountRules.js");
+    const { TEACHER_LOGIN_SESSION_KEY: adminSessionKey } = await server.ssrLoadModule("/src/teacherAccountRules.js");
+    const accountData = structuredClone(normalized);
+    const restrictedUser = { id: "restricted-engineer", name: "授权实施人员", account: "limited-engineer", identity: "AI实施工程师", status: "启用", accessId: "access-only-ai", permissions: ["ai-config"], passwordCredential: await adminCredential("AccountTest123!") };
+    accountData.adminUsers = [restrictedUser];
+    const userFormHtml = renderToString(React.createElement(AdminUserForm, {}));
+    assert.ok(userFormHtml.includes("身份") && userFormHtml.includes("功能菜单权限") && userFormHtml.includes("AI能力库") && userFormHtml.includes('required=""'));
+    assert.ok(userFormHtml.includes('role="combobox"') && userFormHtml.includes('aria-expanded="false"') && !userFormHtml.includes("<datalist"));
+    for (const source of ["browser", "cpd"]) {
+      values.set("xingchen-prototype-data-source-v1", source);
+      values.set(source === "cpd" ? "xingchen-prototype-cpd-working-data-v1" : "xingchen-prototype-data-v22", JSON.stringify(source === "cpd" ? { fingerprint: "accounts", data: accountData } : accountData));
+      const login = { ...await adminAuthenticate(accountData, restrictedUser.account, "AccountTest123!"), source };
+      values.set(adminSessionKey, JSON.stringify(login));
+      const restrictedRender = path => renderToString(React.createElement(PrototypeDataProvider, null, React.createElement(MemoryRouter, { initialEntries: [path] }, React.createElement(RoutedApp))));
+      const allowed = restrictedRender("/admin/ai-capability-config");
+      assert.ok(allowed.includes("授权实施人员") && allowed.includes("AI实施工程师"));
+      assert.ok(!allowed.includes('aria-label="用户管理"') && !allowed.includes('aria-label="教师管理"') && !allowed.includes('aria-label="AI能力库"'));
+      for (const path of ["/admin/users", "/admin/teachers", "/admin/ai-capability-library/annotation", "/teacher/dashboard"]) {
+        const denied = restrictedRender(path); assert.ok(denied.includes("此功能尚未授权"), `未阻止${source} ${path}`);
+        assert.ok(!denied.includes("新建用户") && !denied.includes("新建教师"));
+      }
+      const libraryData = structuredClone(accountData);
+      libraryData.adminUsers = [{...restrictedUser,id:"admin1-user",account:"admin1",identity:"AI能力工程师",accessId:"admin1-access",permissions:["overview","ai-config","library.videos","library.annotation"]}];
+      values.set(source === "cpd" ? "xingchen-prototype-cpd-working-data-v1" : "xingchen-prototype-data-v22", JSON.stringify(source === "cpd" ? { fingerprint:"library-nav",data:libraryData } : libraryData));
+      const libraryLogin = {...await adminAuthenticate(libraryData,"admin1","AccountTest123!"),source};
+      values.set(adminSessionKey,JSON.stringify(libraryLogin));
+      const {adminAccountRedirect: libraryRedirect} = await server.ssrLoadModule("/src/adminAccessRules.js");
+      const libraryTarget = libraryRedirect(libraryData,libraryLogin,source,"/admin/ai-capability-library");
+      assert.equal(libraryTarget,"/admin/ai-capability-library/videos");
+      const librarySidebar = restrictedRender(libraryTarget).split("</aside>")[0];
+      assert.ok(librarySidebar.includes('aria-label="AI能力库二级菜单"') && librarySidebar.includes('aria-expanded="true"'));
+      assert.ok(librarySidebar.includes('title="视频管理"') && librarySidebar.includes('title="数据标注"'));
+      assert.ok(!librarySidebar.includes('title="能力管理"') && !librarySidebar.includes('title="模型训练"'));
+      values.set(adminSessionKey,JSON.stringify(login));
+      const disabled = structuredClone(accountData); disabled.adminUsers[0].status = "停用";
+      values.set(source === "cpd" ? "xingchen-prototype-cpd-working-data-v1" : "xingchen-prototype-data-v22", JSON.stringify(source === "cpd" ? { fingerprint: "disabled", data: disabled } : disabled));
+      assert.ok(!restrictedRender("/admin/ai-capability-config").includes("AI能力配置</h1>"));
+      const writeProfileData = data => values.set(source === "cpd" ? "xingchen-prototype-cpd-working-data-v1" : "xingchen-prototype-data-v22", JSON.stringify(source === "cpd" ? { fingerprint: "profile", data } : data));
+      writeProfileData(accountData);
+      values.set(adminSessionKey, JSON.stringify(login));
+      const engineerProfile = restrictedRender("/account/profile");
+      assert.ok(engineerProfile.includes("<h1>个人资料</h1>") && engineerProfile.includes("授权实施人员") && engineerProfile.includes("AI实施工程师"));
+      assert.ok(engineerProfile.includes("编辑资料") && engineerProfile.includes("修改密码") && !engineerProfile.includes("教师工号"));
+      const teacherProfileData = structuredClone(accountData);
+      teacherProfileData.teachers[0].passwordCredential = restrictedUser.passwordCredential;
+      writeProfileData(teacherProfileData);
+      const teacherLogin = { ...await adminAuthenticate(teacherProfileData, teacherProfileData.teachers[0].account, "AccountTest123!"), source };
+      values.set(adminSessionKey, JSON.stringify(teacherLogin));
+      const teacherProfileHtml = restrictedRender("/account/profile");
+      assert.ok(teacherProfileHtml.includes("<h1>个人资料</h1>") && teacherProfileHtml.includes("教师工号") && teacherProfileHtml.includes("所属院系") && teacherProfileHtml.includes("所属专业"));
+      assert.ok(!teacherProfileHtml.includes("功能菜单权限") && !teacherProfileHtml.includes("passwordCredential"));
+      values.set(adminSessionKey, JSON.stringify({role:"admin",account:"admin",source}));
+      const { switchWorkIdentitySession } = await server.ssrLoadModule("/src/accountIdentityRules.js");
+      const switchedTeacherSession = switchWorkIdentitySession(teacherProfileData, {role:"admin",account:"admin",source}, source, "teacher");
+      values.set(adminSessionKey, JSON.stringify(switchedTeacherSession));
+      const switchedTeacherProfileHtml = restrictedRender("/account/profile");
+      assert.ok(switchedTeacherProfileHtml.includes("教师工号") && !switchedTeacherProfileHtml.includes("全部管理功能（含用户管理）"));
+      values.set(adminSessionKey, JSON.stringify(switchWorkIdentitySession(teacherProfileData,switchedTeacherSession,source,"admin")));
+      const rootProfileHtml = restrictedRender("/account/profile");
+      assert.ok(rootProfileHtml.includes("<h1>个人资料</h1>") && rootProfileHtml.includes("全部管理功能（含用户管理）"));
+      const rootPasswordHtml = restrictedRender("/account/password");
+      assert.ok(rootPasswordHtml.includes("修改登录密码") && rootPasswordHtml.includes("保存新密码"));
+      assert.ok(!rootProfileHtml.includes('href="/account/password?from=profile"'));
+      const { AccountPasswordFields } = await server.ssrLoadModule("/src/TeacherPasswordPanels.jsx");
+      const passwordFieldsHtml = renderToString(React.createElement(AccountPasswordFields,{name:"当前用户",account:"admin"}));
+      assert.equal((passwordFieldsHtml.match(/type="password"/g)||[]).length,3);
+      assert.ok(passwordFieldsHtml.includes("当前密码") && passwordFieldsHtml.includes("确认新密码"));
+      const privateRootData = structuredClone(teacherProfileData);
+      privateRootData.adminUsers = [];
+      privateRootData.systemAdminAccount = {name:"自定义管理员",passwordCredential:await adminCredential("RootPrivate123!")};
+      writeProfileData(privateRootData);
+      assert.ok(!restrictedRender("/account/profile").includes("<h1>个人资料</h1>"), "修改密码后旧admin登录失效");
+      values.delete(adminSessionKey);
+      assert.ok(!restrictedRender("/account/profile").includes("<h1>个人资料</h1>"), "已设置私人密码后禁止自动启动为admin");
+      values.set(adminSessionKey, JSON.stringify({...await adminAuthenticate(privateRootData,"admin","RootPrivate123!"),source}));
+      assert.ok(restrictedRender("/account/profile").includes("自定义管理员"));
+      values.delete(adminSessionKey);
+    }
+    console.log("PASS 双来源教师／普通管理员／内置admin个人资料、改密页面与旧admin密码失效保护");
+    values.set("xingchen-prototype-data-source-v1", "browser");
+    values.set("xingchen-prototype-data-v22", JSON.stringify(normalized));
+    values.set("xingchen-prototype-cpd-working-data-v1", JSON.stringify({ fingerprint: "reset-test-context", data: normalized }));
+    values.delete(adminSessionKey);
+    console.log("PASS 双来源管理端普通账号身份、授权菜单、直达网址阻断及停用登录失效；身份表单必填");
     const detailData = structuredClone(normalized);
     detailData.auditLogs.unshift(
       { id: "missing-target", action: "缺少对象的历史日志" },
@@ -2059,9 +2192,12 @@ try {
       await server.ssrLoadModule("/src/FieldValidationPanels.jsx");
     const { createDefaultValidationCases: validationCasesFor } =
       await server.ssrLoadModule("/src/sopWorkstationAiRules.js");
-    const { ValidationPurposePanel } = await server.ssrLoadModule(
-      "/src/EnhancementPanels.jsx",
-    );
+    const { FieldModelPreparation, focusFieldSection } = await server.ssrLoadModule("/src/FieldPreparationPanel.jsx");
+    const previousDocument = globalThis.document;
+    const parentDetails = { tagName: "DETAILS", open: false, parentElement: null };
+    let focused = false, scrolled = false;
+    globalThis.document = { getElementById: () => ({ parentElement: parentDetails, scrollIntoView() { assert.equal(parentDetails.open, true); scrolled = true; }, querySelector: () => ({ focus() { focused = true; } }) }) };
+    try { focusFieldSection("field-cameras-target"); assert.ok(focused && scrolled); } finally { globalThis.document = previousDocument; }
     let workstationManagementChecks = 0;
     for (const source of ["browser", "cpd"]) {
       values.set("xingchen-prototype-data-source-v1", source);
@@ -2280,21 +2416,30 @@ try {
         assert.equal((html.match(/role="tabpanel"/g) || []).length, 16);
         assert.equal((html.match(/role="tabpanel"[^>]*hidden=""/g) || []).length, 15, "一次只展示一个用例，隐藏面板保留输入");
         assert.ok(html.includes("显示高级验证") && html.includes("共16类场景"));
+        assert.ok(html.includes("1. 准备检查") && html.includes("2. 现场验证") && html.includes("3. 启用AI评价"));
+        assert.ok(html.includes("查看设备配置") && html.includes("配置摄像头视角") && html.includes("查看模型与评测"));
+        assert.ok(!html.includes("本次验证用途") && !html.includes("保存验证设置") && !html.includes("开始配置检查"));
         assert.equal((html.match(/class="validation-tabs-toolbar"/g) || []).length, 1);
         assert.ok(!html.includes('class="ai-validation-summary-strip"'));
         assert.ok(!html.includes("基础验证默认显示；"));
-        if (status === "validating") {
+        const formalRunning = status === "validating" && loadedRelation.validationPurpose === "real";
+        if (formalRunning) {
           assert.match(html, /class="validation-environment-summary"><details><summary>/);
           assert.match(html, /<details class="validation-acceptance-details"><summary>验收覆盖/);
           assert.ok(html.indexOf('class="validation-environment-summary"') < html.indexOf('class="validation-tabs-toolbar"'));
           assert.ok(html.indexOf('class="validation-acceptance-details"') > html.lastIndexOf('role="tabpanel"'));
         }
-        assert.equal(html.includes("开始执行"), status === "validating");
+        assert.equal(html.includes("开始执行"), formalRunning);
         assert.ok(html.includes(regressionCases[0].actualResult));
-        assert.equal(html.includes("保存用例结果"), status === "validating");
-        if (status !== "validating") {
+        assert.equal(html.includes("保存用例结果"), formalRunning);
+        if (!formalRunning) {
           assert.ok(html.includes("验证人") && html.includes("使用工具") && html.includes("光照情况"));
           assert.equal((html.match(/class="validation-case-fields" disabled=""/g) || []).length, 16);
+        }
+        if (status === "validating") {
+          const formalHtml = renderToString(React.createElement(AiWorkstationConfigWorkspace, { relation: { ...loadedRelation, validationPurpose: "real" }, aiConfig: regressionConfig, evaluation: { ready: true }, data: loadedData, store: { data: loadedData }, setModal() {} }));
+          assert.ok(formalHtml.includes("开始执行") && formalHtml.includes("保存用例结果"));
+          assert.ok(formalHtml.includes("validation-environment-summary") && formalHtml.includes("验收覆盖"));
         }
         workstationManagementChecks++;
       }
@@ -2315,7 +2460,7 @@ try {
       );
       workstationManagementChecks++;
       const settingsHtml = renderToString(
-        React.createElement(ValidationPurposePanel, {
+        React.createElement(FieldModelPreparation, {
           relation: validationRelation,
           store: { data: { aiCapabilityConfigs: [], aiCapabilities: [] } },
           setModal() {},

@@ -1,4 +1,5 @@
 import { validateExistingModelReport } from "./modelProvenanceRules.js";
+import { invalidateTrainingDataPreparation } from "./aiVideoRules.js";
 import {
   createDefaultValidationCases,
   setJudgementCameraBinding,
@@ -294,13 +295,10 @@ export function createEnhancementActions({ setData, now, makeId }) {
                 "visibility",
                 "samplePurpose",
               ];
+        const changed = fields.some((key) => key in patch && item[key] !== patch[key]);
         for (const k of fields) if (k in patch) item[k] = patch[k];
-        if (kind === "video")
-          for (const config of d.aiTrainingDataConfigs || [])
-            if (config.capabilityId === item.capabilityId) {
-              config.readinessStatus = "pending";
-              config.preparedAt = "";
-            }
+        if (changed)
+          d.aiTrainingDataConfigs = invalidateTrainingDataPreparation(d.aiTrainingDataConfigs, item.capabilityId);
         return item;
       });
     },
@@ -367,6 +365,7 @@ export function createEnhancementActions({ setData, now, makeId }) {
         if (!r) throw new Error("工位配置不存在");
         if (!["prototype_demo", "real"].includes(patch.validationPurpose))
           throw new Error("请选择有效的验证用途");
+        if (r.validationPurpose === patch.validationPurpose) return r;
         r.validationPurpose = patch.validationPurpose;
         r.acceptancePolicy = "field_evidence_v1";
         r.fieldAcceptance = {

@@ -109,7 +109,15 @@ export function collectTrainingCandidates({
       else if (durationMs > 0 && endMs > durationMs) reason = "动作区间无效";
     } else reason = "能力类型不支持";
     if (reason) unavailable.push({ item, reason });
-    else candidates.push(item);
+    else {
+      const source = sourceById[item.sourceVideoId];
+      candidates.push({
+        ...item,
+        sourceGroupId: source.sourceGroupId || source.id,
+        participantId: source.participantId || "",
+        samplePurpose: source.sampleUse || "development",
+      });
+    }
   }
   const reasonCounts = unavailable.reduce((result, entry) => {
     result[entry.reason] = (result[entry.reason] || 0) + 1;

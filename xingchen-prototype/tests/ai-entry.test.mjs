@@ -71,7 +71,7 @@ test("library sections expand below the main sidebar entry without a page-level 
   assert.ok(shell);
   assert.ok(libraryPage);
   assert.match(shell, /className="sidebar__subnav"/);
-  assert.match(shell, /AI_LIBRARY_SECTIONS\.map/);
+  assert.match(shell, /AI_LIBRARY_SECTIONS\.filter/);
   assert.match(shell, /aria-expanded=/);
   assert.doesNotMatch(libraryPage, /ai-library-nav|ai-library-layout/);
 });

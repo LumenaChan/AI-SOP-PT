@@ -1,4 +1,3 @@
-import { ValidationModelReports } from "./FieldValidationPanels.jsx";
 import { displayBusinessText } from "./businessTextRules.js";
 import React, { useState, useEffect } from "react";
 import { usePrototypeData } from "./prototypeData.jsx";
@@ -38,132 +37,105 @@ function useAction() {
   ];
 }
 export function SampleMetadataPanel({ capabilityId, current, kind }) {
-  const store = usePrototypeData(),
-    sources = (store.data.aiSourceVideos || []).filter(
-      (v) => v.capabilityId === capabilityId,
-    );
-  const [sourceId, setSourceId] = useState(""),
-    [draft, setDraft] = useState({}),
-    [message, run] = useAction();
-  const source =
-    sources.find((v) => v.id === (current?.sourceVideoId || sourceId)) ||
-    sources[0];
-  useEffect(
-    () => setDraft(source || {}),
-    [
-      source?.id,
-      source?.sourceGroupId,
-      source?.participantId,
-      source?.sampleUse,
-    ],
+  const store = usePrototypeData();
+  const [message, run] = useAction();
+  const source = (store.data.aiSourceVideos || []).find(
+    (video) =>
+      video.capabilityId === capabilityId &&
+      video.id === current?.sourceVideoId,
   );
-  if (!source) return null;
+  if (!current) return null;
+  const sourceUrl = source
+    ? `/admin/ai-capability-library/videos?${new URLSearchParams({
+        capabilityId,
+        videoId: source.id,
+        source: store.dataSource || "browser",
+      })}`
+    : "";
   return (
-    <section className="enhancement-card">
-      <details>
-        <summary>样本属性与数据隔离</summary>
-        <p>
-          同次采集的不同镜头使用相同采集组；真实未完成与不可判定分别记录。封存测试不参与预标注或调优。
-        </p>
-        {!current && (
-          <label className="field">
-            原始视频
-            <select
-              value={source.id}
-              onChange={(e) => setSourceId(e.target.value)}
-            >
-              {sources.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name || v.fileName || v.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <div className="two-col-form">
-          {[
-            ["sourceGroupId", "采集组"],
-            ["participantId", "操作人标识"],
-            ["captureBatch", "采集批次"],
-            ["captureConditions", "拍摄条件与限制"],
-          ].map(([key, label]) => (
-            <label className="field" key={key}>
-              {label}
-              <input
-                value={draft[key] || ""}
-                onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-              />
-            </label>
-          ))}
-          <label className="field">
-            数据用途
-            <select
-              value={draft.sampleUse || "development"}
-              onChange={(e) =>
-                setDraft({ ...draft, sampleUse: e.target.value })
-              }
-            >
-              {Object.entries(SAMPLE_USES).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {displayBusinessText(v)}
-                </option>
-              ))}
-            </select>
-          </label>
+    <section className="sample-metadata-summary" aria-label="当前样本属性">
+      <div className="sample-metadata-source">
+        <div>
+          <strong>来源视频</strong>
+          <span>
+            {source
+              ? source.displayName || source.fileName || "未命名视频"
+              : "来源视频已失效"}
+          </span>
+          {source && (
+            <small>
+              数据用途：
+              {displayBusinessText(
+                SAMPLE_USES[source.sampleUse || "development"] || "未记录",
+              )}
+            </small>
+          )}
         </div>
-        <button
-          type="button"
-          className="btn"
-          onClick={() =>
-            run(() => store.updateSampleMetadata("video", source.id, draft))
-          }
-        >
-          保存视频属性
-        </button>
-        {current && (
-          <div className="form-row">
-            <label className="field">
-              当前样本类型
-              <select
-                value={current.sampleType || ""}
-                onChange={(e) =>
-                  run(() =>
-                    store.updateSampleMetadata(kind, current.id, {
-                      sampleType: e.target.value,
-                    }),
-                  )
-                }
-              >
-                <option value="">未记录</option>
-                {Object.entries(SAMPLE_TYPES).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {displayBusinessText(v)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              可见性
-              <select
-                value={current.visibility || "unknown"}
-                onChange={(e) =>
-                  run(() =>
-                    store.updateSampleMetadata(kind, current.id, {
-                      visibility: e.target.value,
-                    }),
-                  )
-                }
-              >
-                <option value="unknown">未核实</option>
-                <option value="visible">关键部位可见</option>
-                <option value="occluded">遮挡</option>
-                <option value="out_of_view">画外</option>
-              </select>
-            </label>
-          </div>
+        {source && (
+          <a className="table-action" href={sourceUrl}>
+            管理来源视频
+          </a>
         )}
-        <small role="status">{displayBusinessText(message)}</small>
-      </details>
+      </div>
+      {source && (
+        <details className="sample-metadata-details" key={source.id}>
+          <summary>查看采集信息</summary>
+          <dl>
+            {[
+              ["sourceGroupId", "采集组"],
+              ["participantId", "操作人标识"],
+              ["captureBatch", "采集批次"],
+              ["captureConditions", "拍摄条件与限制"],
+            ].map(([key, label]) => (
+              <div key={key}>
+                <dt>{label}</dt>
+                <dd>{source[key] || "未填写"}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+      <div className="sample-metadata-fields">
+        <label className="field">
+          样本类型
+          <select
+            value={current.sampleType || ""}
+            onChange={(e) =>
+              run(() =>
+                store.updateSampleMetadata(kind, current.id, {
+                  sampleType: e.target.value,
+                }),
+              )
+            }
+          >
+            <option value="">未记录</option>
+            {Object.entries(SAMPLE_TYPES).map(([key, label]) => (
+              <option key={key} value={key}>
+                {displayBusinessText(label)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          可见性
+          <select
+            value={current.visibility || "unknown"}
+            onChange={(e) =>
+              run(() =>
+                store.updateSampleMetadata(kind, current.id, {
+                  visibility: e.target.value,
+                }),
+              )
+            }
+          >
+            <option value="unknown">未核实</option>
+            <option value="visible">关键部位可见</option>
+            <option value="occluded">遮挡</option>
+            <option value="out_of_view">画外</option>
+          </select>
+        </label>
+      </div>
+      {message && <small role="status">{displayBusinessText(message)}</small>}
     </section>
   );
 }
@@ -235,13 +207,9 @@ export function SuggestionPanel({ current, categories, source, onAdopt }) {
       )
       .map((s) => ({ task: t, suggestion: s })),
   );
+  if (!rows.length) return null;
   return (
     <div className="enhancement-card">
-      <SampleMetadataPanel
-        capabilityId={current.capabilityId}
-        current={current}
-        kind={current.startMs != null ? "clips" : "frames"}
-      />
       {rows.map(({ task, suggestion: s }) => (
         <div key={task.id}>
           <strong>待确认建议 · 演示生成</strong>
@@ -543,146 +511,6 @@ export function ViewBindingEditor({ relation, item, cameras, store }) {
     </article>
   );
 }
-export function ValidationPurposePanel({ relation, store, setModal }) {
-  const [purpose, setPurpose] = useState(
-      relation.validationPurpose || "prototype_demo",
-    ),
-    [message, run] = useAction();
-  return (
-    <section className="enhancement-card">
-      <label className="validation-purpose-field">
-        <strong>本次验证用途</strong>
-        <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-          <option value="prototype_demo">配置检查</option>
-          <option value="real">现场验证</option>
-        </select>
-      </label>
-      <p>
-        配置检查用于核对配置和验证流程。启用AI前，需完成现场验证，并提供独立评测报告和各项验证证据。
-      </p>
-      {purpose === "real" && (
-        <ValidationModelReports
-          relation={relation}
-          store={store}
-          setModal={setModal}
-        />
-      )}
-      <button
-        onClick={() =>
-          run(() =>
-            store.saveValidationPurpose(relation.id, {
-              validationPurpose: purpose,
-            }),
-          )
-        }
-      >
-        保存验证设置
-      </button>
-      <small role="status">{displayBusinessText(message)}</small>
-    </section>
-  );
-}
-export function ExistingModelPanel({ capabilityId }) {
-  const store = usePrototypeData(),
-    [draft, setDraft] = useState({
-      modelArtifactId: "",
-      description: "",
-      inputFormat: "RGB",
-      outputFormat: "动作类别/置信度/时间区间",
-      licenseNote: "",
-    }),
-    [message, run] = useAction();
-  return (
-    <section className="enhancement-card">
-      <details>
-        <summary>已有模型适配与验证（独立于训练）</summary>
-        <p>
-          登记候选后需另行完成真实接入和独立评测。当前记录不会冒充已训练、已验证模型。
-        </p>
-        {[
-          ["modelArtifactId", "模型来源 / 产物标识"],
-          ["description", "适用条件与限制"],
-          ["inputFormat", "输入形式"],
-          ["outputFormat", "输出结构"],
-          ["licenseNote", "许可与交付说明"],
-        ].map(([k, v]) => (
-          <label className="field" key={k}>
-            {displayBusinessText(v)}
-            <input
-              value={draft[k] || ""}
-              onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
-            />
-          </label>
-        ))}
-        <button
-          onClick={() =>
-            run(() => store.saveExistingModelCandidate(capabilityId, draft))
-          }
-        >
-          登记待验证候选
-        </button>
-        <small role="status">{displayBusinessText(message)}</small>
-        {(store.data.aiExistingModelCandidates || [])
-          .filter((c) => c.capabilityId === capabilityId)
-          .map((c) => (
-            <article key={c.id}>
-              <strong>
-                {c.modelArtifactId} ·{" "}
-                {c.status === "published"
-                  ? "已发布演示"
-                  : c.status === "validated"
-                    ? "演示验证通过"
-                    : "待验证"}
-              </strong>
-              <p>{c.description}</p>
-              <small>
-                来源：已有模型适配；结果：
-                {c.resultSource === "real" ? "真实待核验" : "原型模拟"}
-                ；事件级真实指标：未实测
-              </small>
-              {c.status === "pending_validation" && (
-                <button
-                  onClick={() => run(() => store.evaluateExistingModel(c.id))}
-                >
-                  运行演示独立评测
-                </button>
-              )}
-              {c.status === "validated" && (
-                <button
-                  onClick={() => run(() => store.publishExistingModel(c.id))}
-                >
-                  发布当前演示候选
-                </button>
-              )}
-              <details>
-                <summary>导入真实评测材料（保存前校验）</summary>
-                <textarea
-                  aria-label={`${c.modelArtifactId}评测材料`}
-                  value={draft.reportJson || ""}
-                  onChange={(e) =>
-                    setDraft({ ...draft, reportJson: e.target.value })
-                  }
-                />
-                <button
-                  onClick={() =>
-                    run(() =>
-                      store.evaluateExistingModel(
-                        c.id,
-                        "real",
-                        JSON.parse(draft.reportJson || "{}"),
-                      ),
-                    )
-                  }
-                >
-                  校验报告与服务接入条件
-                </button>
-              </details>
-            </article>
-          ))}
-      </details>
-    </section>
-  );
-}
 export function ObservationSimulator({ arrangement, session, store }) {
   const items =
       session.evaluationSnapshot?.aiCapabilityConfigSnapshot?.judgementItems ||
@@ -953,52 +781,86 @@ export function EvidenceCameraSummary({ step, session }) {
     </div>
   );
 }
-export function SourceMetadataFields({ value, onChange }) {
+export function SourceMetadataFields({ value, onChange, lockedUse = false }) {
   return (
-    <details className="enhancement-card">
-      <summary>采集属性与样本用途</summary>
-      {[
-        ["sourceGroupId", "采集组"],
-        ["participantId", "操作人标识"],
-        ["captureBatch", "采集批次"],
-        ["captureConditions", "拍摄条件与限制"],
-      ].map(([k, v]) => (
-        <label className="field" key={k}>
-          {displayBusinessText(v)}
+    <section className="enhancement-card source-metadata-fields">
+      <strong>采集与数据用途</strong>
+      <div className="sample-metadata-fields">
+        <label className="field">
+          采集组
           <input
-            value={value[k] || ""}
-            onChange={(e) => onChange(k, e.target.value)}
+            value={value.sourceGroupId || ""}
+            placeholder="如：采集组001"
+            onChange={(e) => onChange("sourceGroupId", e.target.value)}
           />
+          <small>
+            同次采集的不同镜头填写相同采集组；留空时，每个视频单独分组。
+          </small>
         </label>
-      ))}
-      <label className="field">
-        素材用途
-        <select
-          value={value.sampleUse || "development"}
-          onChange={(e) => onChange("sampleUse", e.target.value)}
-        >
-          {Object.entries(SAMPLE_USES).map(([k, v]) => (
-            <option key={k} value={k}>
-              {displayBusinessText(v)}
-            </option>
+        <label className="field">
+          操作人标识
+          <input
+            value={value.participantId || ""}
+            placeholder="如：人员001"
+            onChange={(e) => onChange("participantId", e.target.value)}
+          />
+          <small>同一人使用相同标识，用于避免训练与评测数据交叉。</small>
+        </label>
+        <label className="field">
+          数据用途
+          <select
+            value={value.sampleUse || "development"}
+            disabled={lockedUse}
+            onChange={(e) => onChange("sampleUse", e.target.value)}
+          >
+            {Object.entries(SAMPLE_USES).map(([key, label]) => (
+              <option key={key} value={key}>
+                {displayBusinessText(label)}
+              </option>
+            ))}
+          </select>
+          <small>
+            {lockedUse
+              ? "已封存的测试素材不能转回训练用途。"
+              : "封存测试素材仅用于独立测试，不参与预标注或调优。"}
+          </small>
+        </label>
+      </div>
+      <details>
+        <summary>补充采集说明（选填）</summary>
+        <div className="sample-metadata-fields">
+          {[
+            ["captureBatch", "采集批次"],
+            ["captureConditions", "拍摄条件与限制"],
+          ].map(([key, label]) => (
+            <label className="field" key={key}>
+              {label}
+              <input
+                value={value[key] || ""}
+                onChange={(e) => onChange(key, e.target.value)}
+              />
+            </label>
           ))}
-        </select>
-      </label>
-      <label className="field">
-        样本类型
-        <select
-          value={value.sampleType || ""}
-          onChange={(e) => onChange("sampleType", e.target.value)}
-        >
-          <option value="">未记录</option>
-          {Object.entries(SAMPLE_TYPES).map(([k, v]) => (
-            <option key={k} value={k}>
-              {displayBusinessText(v)}
-            </option>
-          ))}
-        </select>
-      </label>
-    </details>
+          <label className="field">
+            默认样本类型
+            <select
+              value={value.sampleType || ""}
+              onChange={(e) => onChange("sampleType", e.target.value)}
+            >
+              <option value="">未记录</option>
+              {Object.entries(SAMPLE_TYPES).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {displayBusinessText(label)}
+                </option>
+              ))}
+            </select>
+            <small>
+              用于后续生成的图片或片段；已有样本的类型在标注时单独维护。
+            </small>
+          </label>
+        </div>
+      </details>
+    </section>
   );
 }
 export function SessionCameraViewer({

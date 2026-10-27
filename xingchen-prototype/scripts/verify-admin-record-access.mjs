@@ -125,6 +125,7 @@ try {
     );
     values.set(inactiveKey, inactiveBytes);
     let failWrites = false;
+    const identitySessionValues = new Map();
     globalThis.window = {
       localStorage: {
         getItem: (k) => values.get(k) || null,
@@ -135,9 +136,9 @@ try {
         removeItem: (k) => values.delete(k),
       },
       sessionStorage: {
-        getItem: () => null,
-        setItem: () => {},
-        removeItem: () => {},
+        getItem: key => identitySessionValues.get(key) || null,
+        setItem: (key,value) => identitySessionValues.set(key,String(value)),
+        removeItem: key => identitySessionValues.delete(key),
       },
       addEventListener: () => {},
       removeEventListener: () => {},
@@ -273,6 +274,67 @@ try {
       inactiveBytes,
       "审计只保存当前来源，不覆盖另一份数据",
     );
+    const accountBefore = readData();
+    const userReceipt = await readyStore.createAdminUser({ name: "管理端工程师", account: `managed-${source}`, identity: "AI能力工程师", permissions: ["library.annotation", "library.training"] });
+    const persistedUser = readData().adminUsers.find(u => u.id === userReceipt.user.id);
+    assert.ok(persistedUser && persistedUser.passwordCredential.mustChange);
+    assert.ok(!values.get(key).includes(userReceipt.temporaryPassword));
+    assert.deepEqual(readData().arrangements, accountBefore.arrangements, "账号创建不改变成绩或会话");
+    assert.equal(values.get(inactiveKey), inactiveBytes, "账号创建只写当前来源");
+    const beforeAccountFailure = values.get(key);
+    failWrites = true;
+    await assert.rejects(readyStore.createAdminUser({name:"失败账号",account:`failed-${source}`,identity:"普通管理员",permissions:["devices"]}), /保存失败/);
+    failWrites = false;
+    assert.equal(values.get(key), beforeAccountFailure, "账号写入失败不产生半个账号或密码回执");
+    readyStore.updateAdminUser(persistedUser.id, {...persistedUser, identity:"AI实施工程师", permissions:["ai-config"]}, persistedUser.accessId);
+    const updatedUser = readData().adminUsers.find(u=>u.id===persistedUser.id);
+    assert.notEqual(updatedUser.accessId, persistedUser.accessId);
+    assert.throws(()=>readyStore.setAdminUserStatus(updatedUser.id,"停用",persistedUser.accessId), /变化/);
+    readyStore.setAdminUserStatus(updatedUser.id,"停用",updatedUser.accessId);
+    const disabledUser = readData().adminUsers.find(u=>u.id===persistedUser.id);
+    const resetReceipt = await readyStore.resetAdminUserPassword(disabledUser.id,disabledUser.accessId);
+    assert.equal(readData().adminUsers.find(u=>u.id===persistedUser.id).status,"停用");
+    assert.ok(!values.get(key).includes(resetReceipt.temporaryPassword));
+    assert.equal(values.get(inactiveKey), inactiveBytes, "账号编辑、停用及密码重置不覆盖另一来源");
+    assert.deepEqual(readData().arrangements, accountBefore.arrangements);
+    checks++;
+    const { ownProfileModel } = await server.ssrLoadModule("/src/accountProfileRules.js");
+    const { authenticatePrototypeAccount } = await server.ssrLoadModule("/src/teacherAccountRules.js");
+    const beforeIdentityBytes = values.get(key);
+    const switchedTeacher = readyStore.switchWorkIdentity("teacher");
+    assert.equal(switchedTeacher.role,"teacher");
+    const identityProfileHtml = renderToString(React.createElement(PrototypeDataProvider,null,
+      React.createElement(MemoryRouter,{initialEntries:["/account/profile"]},React.createElement(RoutedApp))));
+    assert.ok(identityProfileHtml.includes("教师工号") && identityProfileHtml.includes("所属院系"),"真正切换后个人资料展示教师字段");
+    assert.ok(!identityProfileHtml.includes("全部管理功能（含用户管理）"),"不能再显示admin资料");
+    assert.throws(()=>readyStore.saveOwnProfile({name:"不能误存管理员",phone:"",personalNotes:""},ownProfileModel(readData(),readyStore.accountSession,source).token),/变化|重新登录/);
+    const restoredAdmin = readyStore.switchWorkIdentity("admin");
+    assert.equal(restoredAdmin.account,"admin");
+    const restoredProfileHtml = renderToString(React.createElement(PrototypeDataProvider,null,
+      React.createElement(MemoryRouter,{initialEntries:["/account/profile"]},React.createElement(RoutedApp))));
+    assert.ok(restoredProfileHtml.includes("全部管理功能（含用户管理）"));
+    assert.equal(values.get(key),beforeIdentityBytes,"切换身份只写会话，不改业务资料或成绩");
+    const profileModel = ownProfileModel(readData(), readyStore.accountSession, source);
+    const profileBefore = readData();
+    readyStore.saveOwnProfile({name:"本人管理姓名",phone:"010-12345678",personalNotes:"个人联系方式说明"},profileModel.token);
+    assert.equal(readData().systemAdminAccount.name,"本人管理姓名");
+    assert.deepEqual(readData().arrangements,profileBefore.arrangements);
+    assert.equal(values.get(inactiveKey),inactiveBytes,"本人资料只写当前来源");
+    const freshProfile = ownProfileModel(readData(),readyStore.accountSession,source);
+    const beforeProfileFailure = values.get(key);
+    failWrites = true;
+    assert.throws(()=>readyStore.saveOwnProfile({name:"失败姓名",phone:"",personalNotes:""},freshProfile.token),/保存失败/);
+    await assert.rejects(readyStore.changeSystemAdminPassword({currentPassword:"12345678",newPassword:"PrivateRoot123!",confirmPassword:"PrivateRoot123!"}),/保存失败/);
+    failWrites = false;
+    assert.equal(values.get(key),beforeProfileFailure,"资料或密码保存失败不改变账号");
+    await readyStore.changeSystemAdminPassword({currentPassword:"12345678",newPassword:"PrivateRoot123!",confirmPassword:"PrivateRoot123!"});
+    assert.ok(!values.get(key).includes("PrivateRoot123!"));
+    await assert.rejects(authenticatePrototypeAccount(readData(),"admin","12345678"),/账号或密码/);
+    assert.ok((await authenticatePrototypeAccount(readData(),"admin","PrivateRoot123!")).credentialId);
+    assert.throws(()=>readyStore.exportWorkingData(),/重新登录/);
+    assert.equal(values.get(inactiveKey),inactiveBytes,"本人改密不影响另一来源");
+    assert.deepEqual(readData().arrangements,profileBefore.arrangements);
+    checks++;
     cleanup?.();
   }
   console.log(

@@ -11,6 +11,7 @@ import {
   validationEvidenceUrl,
   referencedValidationCapabilities,
   currentModelReport,
+  fieldModelIssues,
 } from "./fieldValidationEvidenceRules.js";
 
 export function validationContextKey({
@@ -157,7 +158,7 @@ export function createWorkstationValidationActions({
     });
     return updated;
   }
-  return {
+  const actions = {
     cancelValidationCase(id, caseId) {
       const c = context(id);
       const item = c.relation.validationCases.find((x) => x.id === caseId);
@@ -293,13 +294,17 @@ export function createWorkstationValidationActions({
       );
       return updatedCase;
     },
-    startSopWorkstationValidation(id, environment, { restart = false } = {}) {
+    startSopWorkstationValidation(id, environment, { restart = false, field = false } = {}) {
       const c = context(id);
       if (!c.checks.ready)
         throw new Error(c.checks.issues[0] || "工位配置检查尚未通过。");
+      if (field) {
+        const issues = fieldModelIssues(referencedValidationCapabilities(c.aiConfig, c.data.aiCapabilities), c.data);
+        if (issues.length) throw new Error(issues.join("；"));
+      }
       if (c.relation.validationStatus === "validating" && !restart)
         throw new Error(
-          "本轮验证正在执行，请继续保存用例或先保存新的验证设置。",
+          "本轮验证正在执行，请继续办理用例，或选择重新开始验证。",
         );
       if (!String(environment?.tester || "").trim())
         throw new Error("请填写本轮验证负责人。");
@@ -321,6 +326,7 @@ export function createWorkstationValidationActions({
         });
       const updated = {
         ...c.relation,
+        ...(field ? { validationPurpose: "real" } : {}),
         acceptancePolicy: "field_evidence_v1",
         fieldAcceptance: { status: "pending", runId },
         validationRunId: runId,
@@ -530,4 +536,6 @@ export function createWorkstationValidationActions({
       );
     },
   };
+  actions.startSopWorkstationFieldValidation = (id, environment, options = {}) => actions.startSopWorkstationValidation(id, environment, { ...options, field: true });
+  return actions;
 }

@@ -1,3 +1,7 @@
+import { switchWorkIdentitySession, delegatedAdminValid } from "./accountIdentityRules.js";
+import { createOwnProfileActions } from "./accountProfileRules.js";
+import { createAdminAccountActions } from "./adminAccountActions.js";
+import { adminSessionValid, guardAdminActions, assertAdminWriteSession, managedAdmin, currentAdminUser } from "./adminAccessRules.js";
 import { changeExamReviewVisibility } from "./studentReviewAccessRules.js";
 import { createStoredExport } from "./exportFileRules.js";
 import { stepDiagnostic } from "./sessionDiagnosticRules.js";
@@ -94,6 +98,8 @@ import {
   batchUpdateAiSourceVideos as applyAiSourceVideoBatchUpdate,
   capabilityStatusAfterVideoUpload,
   createAiSourceVideos,
+  sourceMetadataChanged,
+  invalidateTrainingDataPreparation,
   updateAiSourceVideo as applyAiSourceVideoUpdate,
 } from "./aiVideoRules.js";
 import {
@@ -2946,6 +2952,7 @@ export function normalizePrototypeData(input) {
     Array.isArray(next.aiFrames) ||
     Array.isArray(next.aiClips);
   next.version = seedData.version;
+  next.adminUsers = Array.isArray(next.adminUsers) ? next.adminUsers : [];
   next.students = (Array.isArray(next.students) ? next.students : []).map(
     normalizeStudentFaceData,
   );
@@ -4037,11 +4044,12 @@ const PrototypeDataContext = createContext(null);
 
 export function PrototypeDataProvider({ children }) {
   const [dataSource, setDataSource] = useState(readSelectedDataSource);
-  const [accountSession, setAccountSession] = useState(() =>
-    readAccountSession(
-      typeof window === "undefined" ? null : window.sessionStorage,
-    ),
-  );
+  const [accountSession, setAccountSession] = useState(() => {
+    const session = readAccountSession(typeof window === "undefined" ? null : window.sessionStorage);
+    // Preserve the initial single-admin preview. Once managed accounts exist,
+    // an absent login session must never become an administrator automatically.
+    return session || (((loadData(readSelectedDataSource()).adminUsers || []).length || loadData(readSelectedDataSource()).systemAdminAccount?.passwordCredential) ? null : { role: "admin", account: "admin", bootstrap: true });
+  });
   const accountSessionRef = useRef(accountSession);
   accountSessionRef.current = accountSession;
   const [storedData, setStoredData] = useState(() => loadData(dataSource));
@@ -4059,6 +4067,8 @@ export function PrototypeDataProvider({ children }) {
       : loadData(dataSource);
 
   const setData = (update) => {
+    if (accountSession?.delegatedAdmin && !teacherLoginSessionValid(dataRef.current, accountSession, sourceRef.current)) throw new Error("当前工作身份已失效，请重新登录。");
+    assertAdminWriteSession(dataRef.current, accountSession, accountSessionRef.current, sourceRef.current);
     if (sourceRef.current !== dataSource)
       throw new Error("数据来源已切换，请重新打开当前操作。");
     if (!backupReady.current)
@@ -4071,6 +4081,11 @@ export function PrototypeDataProvider({ children }) {
       ),
     );
     assertFrozenGradeWrite(dataRef.current, next);
+    if (managedAdmin(accountSession)) {
+      const actor = currentAdminUser(dataRef.current, accountSession);
+      const existingIds = new Set((dataRef.current.auditLogs || []).map(log => log.id));
+      next.auditLogs = (next.auditLogs || []).map(log => existingIds.has(log.id) ? log : { ...log, actor: actor.name, role: actor.identity });
+    }
     try {
       persistWorkingData(
         window.localStorage,
@@ -4346,15 +4361,25 @@ export function PrototypeDataProvider({ children }) {
       accountSession?.role === "teacher"
         ? currentTeacher?.name || "教师信息缺失"
         : "王老师";
-    return {
+    const actions = {
       data,
       accountSession,
       teacherId,
       teacherName,
       currentTeacher,
-      accountSessionValid:
-        accountSession?.role !== "teacher" ||
-        teacherLoginSessionValid(data, accountSession, dataSource),
+      canSwitchToAdmin: delegatedAdminValid(data, accountSession, dataSource),
+      switchWorkIdentity(target) {
+        if (sourceRef.current !== dataSource) throw new Error("数据来源已切换，请重新打开操作。");
+        const session = switchWorkIdentitySession(dataRef.current, accountSessionRef.current, sourceRef.current, target);
+        writeAccountSession(window.sessionStorage, session);
+        accountSessionRef.current = session;
+        setAccountSession(session);
+        return session;
+      },
+      currentAdminUser: currentAdminUser(data, accountSession),
+      accountSessionValid: accountSession?.role === "teacher"
+        ? teacherLoginSessionValid(data, accountSession, dataSource)
+        : adminSessionValid(data, accountSession, dataSource),
       async login(account, password) {
         const source = sourceRef.current;
         const result = await authenticatePrototypeAccount(
@@ -4370,6 +4395,7 @@ export function PrototypeDataProvider({ children }) {
           !teacherLoginSessionValid(dataRef.current, session, source)
         )
           throw new Error("账号或密码已变化，请重新登录。");
+        if (result.role === "admin" && !adminSessionValid(dataRef.current, session, source)) throw new Error("账号或权限已变化，请重新登录。");
         writeAccountSession(window.sessionStorage, session);
         accountSessionRef.current = session;
         setAccountSession(session);
@@ -4473,6 +4499,11 @@ export function PrototypeDataProvider({ children }) {
         return updateStatus("classes", id, "启用", "恢复班级", "班级");
       },
 
+      ...createOwnProfileActions({ getData: () => dataRef.current, setData, getSession: () => accountSessionRef.current, getSource: () => sourceRef.current, source: dataSource, now: timestamp, makeId: () => uid("profile") }),
+      ...createAdminAccountActions({
+        getData: () => dataRef.current, setData, getSession: () => accountSessionRef.current,
+        getSource: () => sourceRef.current, source: dataSource, now: timestamp, makeId: () => uid("admin-user"),
+      }),
       ...createTeacherAccountActions({
         getData: () => dataRef.current,
         setData,
@@ -4491,7 +4522,7 @@ export function PrototypeDataProvider({ children }) {
           const existing = current.teachers.find((t) => t.id === id);
           if (!existing)
             throw new Error("教师不存在或已失效，请返回列表刷新。");
-          assertTeacherAccountAvailable(current.teachers, profile.account, id);
+          assertTeacherAccountAvailable([...(current.teachers || []), ...(current.adminUsers || [])], profile.account, id);
           ensureUnique(
             current.teachers,
             "employeeNo",
@@ -5834,6 +5865,9 @@ export function PrototypeDataProvider({ children }) {
             aiSourceVideos: (current.aiSourceVideos || []).map((item) =>
               item.id === id ? updated : item,
             ),
+            aiTrainingDataConfigs: sourceMetadataChanged(existing, updated)
+              ? invalidateTrainingDataPreparation(current.aiTrainingDataConfigs, updated.capabilityId)
+              : current.aiTrainingDataConfigs,
             auditLogs: [...current.auditLogs],
           };
           addAuditLog(next, "编辑视频信息", updated.displayName);
@@ -10734,7 +10768,7 @@ export function PrototypeDataProvider({ children }) {
       },
       saveExamReviewVisibility(arrangementId, options, expected) {
         setData((current) => {
-          const next = changeExamReviewVisibility(current, { arrangementId, options, expected, at: timestamp() }, { role: accountSession?.role || "teacher", id: teacherId });
+          const next = changeExamReviewVisibility(current, { arrangementId, options, expected, at: timestamp() }, { role: accountSession?.bootstrap ? "teacher" : accountSession?.role || "teacher", id: teacherId });
           next.auditLogs = [...current.auditLogs];
           addAuditLog(next, "设置学生复盘范围", arrangementId, "成功", { feedback: options.feedback, recording: options.recording, standard: options.standard });
           return next;
@@ -11167,6 +11201,7 @@ export function PrototypeDataProvider({ children }) {
         );
       },
     };
+    return guardAdminActions(actions, { getData: () => dataRef.current, getSession: () => accountSessionRef.current, getSource: () => sourceRef.current });
   }, [data, dataSource, dataSyncError, accountSession, dataWriteReady]);
 
   return (

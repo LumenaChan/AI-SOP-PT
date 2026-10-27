@@ -65,7 +65,7 @@ export function createTeacherAccountActions({
           account: profile.account.toLowerCase(),
         };
       });
-      assertTeacherImportBatch(profiles, getData().teachers);
+      assertTeacherImportBatch(profiles, [...(getData().teachers || []), ...(getData().adminUsers || [])]);
       const at = now(),
         created = [],
         receipts = [];
@@ -112,7 +112,7 @@ export function createTeacherAccountActions({
       }
       setData((current) => {
         admin();
-        assertTeacherImportBatch(profiles, current.teachers);
+        assertTeacherImportBatch(profiles, [...(current.teachers || []), ...(current.adminUsers || [])]);
         return {
           ...current,
           teachers: [...created, ...current.teachers],
@@ -148,7 +148,7 @@ export function createTeacherAccountActions({
       setData((current) => {
         admin();
         profile.account = assertTeacherAccountAvailable(
-          current.teachers,
+          [...(current.teachers || []), ...(current.adminUsers || [])],
           profile.account,
         );
         if (

@@ -677,3 +677,41 @@ test("现场执行必须关联本次服务回执才能结束，重试不能沿�
     /本次/,
   );
 });
+
+test('阶段式流程从历史配置检查直接建立正式轮次，原记录保留且不要求先保存用途', () => {
+  const f = fixture('prototype_demo');
+  const relation = f.data.sopWorkstationAiConfigs[0];
+  Object.assign(relation, { validationStatus: 'passed', enableStatus: 'enabled', validationCases: [good({ id: 'old', scenarioType: 'standard' })] });
+  const history = structuredClone(f.data.arrangements);
+  const started = f.actions.startSopWorkstationFieldValidation('relation', { tester: '实施工程师' });
+  assert.equal(started.validationPurpose, 'real');
+  assert.equal(started.validationStatus, 'validating');
+  assert.equal(started.enableStatus, 'disabled');
+  assert.equal(started.validationCases.length, 16);
+  assert.equal(started.validationRecords[0].cases[0].id, 'old');
+  assert.deepEqual(f.data.arrangements, history);
+});
+test('正式开始前复查模型报告；准备不足或保存失败不得停用原配置或丢失旧轮次', () => {
+  const f = fixture('prototype_demo', 'cpd');
+  const relation = f.data.sopWorkstationAiConfigs[0];
+  Object.assign(relation, { validationStatus: 'passed', enableStatus: 'enabled' });
+  f.data.aiCapabilities[0].currentPublishedModel.independentReport.passed = false;
+  const before = structuredClone(f.data);
+  assert.throws(() => f.actions.startSopWorkstationFieldValidation('relation', { tester: '实施工程师' }), /独立评测/);
+  assert.deepEqual(f.data, before);
+  f.data.aiCapabilities[0].currentPublishedModel.independentReport.passed = true;
+  const ready = structuredClone(f.data);
+  f.fail = true;
+  assert.throws(() => f.actions.startSopWorkstationFieldValidation('relation', { tester: '实施工程师' }), /storage/);
+  assert.deepEqual(f.data, ready);
+});
+
+test('兼容用途保存重复相同值时不重置验收和启用状态', () => {
+  const f = fixture('real');
+  let data = structuredClone(f.data);
+  Object.assign(data.sopWorkstationAiConfigs[0], { validationStatus: 'passed', enableStatus: 'enabled', fieldAcceptance: { status: 'passed', runId: 'run' } });
+  const before = structuredClone(data.sopWorkstationAiConfigs[0]);
+  const actions = createEnhancementActions({ setData(fn) { data = fn(data); }, now: () => at, makeId: p => p });
+  actions.saveValidationPurpose('relation', { validationPurpose: 'real' });
+  assert.deepEqual(data.sopWorkstationAiConfigs[0], before);
+});

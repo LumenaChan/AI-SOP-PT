@@ -1,7 +1,37 @@
+import {
+  findLoginTeacher,
+  normalizeTeacherAccount,
+} from "./teacherAccountRules.js";
+
 const REMEMBERED_LOGIN_KEY = "aisop-prototype-remembered-login-v1";
 const CAPTCHA_CHARACTERS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const isDemoLogin = ({ account, password } = {}) =>
   ["wanglaoshi", "admin"].includes(account) && password === "12345678";
+
+export function recordLoginFailure(previous, account, failure) {
+  const normalized = normalizeTeacherAccount(account);
+  if (failure?.code !== "INVALID_CREDENTIALS") return previous;
+  return {
+    account: normalized,
+    count: (previous?.account === normalized ? previous.count : 0) + 1,
+  };
+}
+
+export function loginRecoveryHint(data, account, failures) {
+  const normalized = normalizeTeacherAccount(account);
+  if (!normalized || failures?.account !== normalized || failures.count < 3)
+    return "";
+  if (normalized === "admin") return "忘记密码？请联系系统负责人协助处理。";
+  if (
+    (data.adminUsers || []).some(
+      (user) => normalizeTeacherAccount(user.account) === normalized,
+    )
+  )
+    return "忘记密码？请联系系统管理员在用户管理中重置密码。";
+  if (findLoginTeacher(data, normalized))
+    return "忘记密码？请联系管理员在教师管理中重置密码。";
+  return "无法登录？请联系管理员确认账号并协助处理。";
+}
 
 export function createLoginCaptcha() {
   const values = crypto.getRandomValues(new Uint32Array(4));
@@ -27,8 +57,7 @@ export function readRememberedLogin(storage) {
     const saved = JSON.parse(storage.getItem(REMEMBERED_LOGIN_KEY));
     if (
       saved?.accountOnly === true &&
-      /^[a-z][a-z0-9._-]{3,29}$/.test(saved.account || "") &&
-      saved.account !== "admin"
+      /^[a-z][a-z0-9._-]{3,29}$/.test(saved.account || "")
     )
       return { account: saved.account, accountOnly: true };
     return isDemoLogin(saved) ? saved : null;
@@ -46,7 +75,7 @@ export function saveRememberedLogin(
       remember &&
       accountOnly &&
       /^[a-z][a-z0-9._-]{3,29}$/.test(account || "") &&
-      !["admin", "disabled-demo"].includes(account)
+      account !== "disabled-demo"
     ) {
       storage.setItem(
         REMEMBERED_LOGIN_KEY,

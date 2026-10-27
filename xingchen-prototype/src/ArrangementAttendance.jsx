@@ -132,7 +132,7 @@ export function ArrangementAttendanceEntry({
           backLabel="返回统计明细"
         >
           <p className="hint">
-            本安排完整名单，不受教学统计的班级、日期或有效成绩筛选裁剪。参加状态依据本次操作记录，无记录不直接认定为未参加。
+            本安排完整名单，不受教学改进的班级、日期或有效成绩筛选裁剪。参加状态依据本次操作记录，无记录不直接认定为未参加。
           </p>
           <p className="attendance-summary">
             <strong>

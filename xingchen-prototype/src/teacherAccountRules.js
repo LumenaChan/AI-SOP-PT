@@ -1,3 +1,4 @@
+import { delegatedAdminValid } from "./accountIdentityRules.js";
 // Local prototype credentials. Only salted password verifiers are persisted;
 // initial/reset plaintext is returned to the initiating dialog once.
 export const TEACHER_PASSWORD_HINT = "8—32位，至少包含字母和数字，不含空格";
@@ -126,11 +127,47 @@ export function findLoginTeacher(data, account) {
 }
 export async function authenticatePrototypeAccount(data, account, password) {
   const normalized = normalizeTeacherAccount(account);
-  if (normalized === "admin" && password === "12345678")
-    return { role: "admin", account: "admin" };
+  const invalidCredentials = (message) => Object.assign(new Error(message), { code: "INVALID_CREDENTIALS" });
+  if (normalized === "admin") {
+    const credential = data.systemAdminAccount?.passwordCredential;
+    if (
+      !(credential
+        ? await verifyTeacherPassword(
+            { passwordCredential: credential },
+            password,
+          )
+        : password === "12345678")
+    )
+      throw invalidCredentials("账号或密码错误，请检查后重试。");
+    return {
+      role: "admin",
+      account: "admin",
+      ...(credential ? { credentialId: credential.id } : {}),
+    };
+  }
+  const adminMatches = (data.adminUsers || []).filter(
+    (user) => normalizeTeacherAccount(user.account) === normalized,
+  );
+  if (adminMatches.length) {
+    const user = adminMatches.length === 1 ? adminMatches[0] : null;
+    if (
+      !user ||
+      user.status !== "启用" ||
+      !(await verifyTeacherPassword(user, password))
+    )
+      throw invalidCredentials("账号或密码错误，或账号已停用，请联系管理员。");
+    return {
+      role: "admin",
+      adminUserId: user.id,
+      account: user.account,
+      credentialId: user.passwordCredential.id,
+      accessId: user.accessId,
+      mustChange: Boolean(user.passwordCredential.mustChange),
+    };
+  }
   const teacher = findLoginTeacher(data, normalized);
   if (!teacher || normalized === "disabled-demo")
-    throw new Error("账号或密码错误，请检查后重试。");
+    throw invalidCredentials("账号或密码错误，请检查后重试。");
   if (teacher.status === "停用")
     throw new Error("该教师账号已停用，请联系管理员。");
   const legacyDemo =
@@ -144,7 +181,7 @@ export async function authenticatePrototypeAccount(data, account, password) {
       ? password === "12345678"
       : await verifyTeacherPassword(teacher, password))
   )
-    throw new Error("账号或密码错误，请检查后重试。");
+    throw invalidCredentials("账号或密码错误，请检查后重试。");
   return {
     role: "teacher",
     teacherId: teacher.id,
@@ -158,6 +195,7 @@ export function teacherLoginSessionValid(data, session, source) {
   const teacher = (data.teachers || []).find((t) => t.id === session.teacherId);
   return Boolean(
     session.source === source &&
+      (!session.delegatedAdmin || delegatedAdminValid(data, session, source)) &&
       teacher &&
       teacher.status !== "停用" &&
       session.account === teacher.account &&
@@ -169,7 +207,11 @@ export function teacherAccountRedirect(data, session, source, pathname) {
   if (session?.role !== "teacher") return "";
   if (!teacherLoginSessionValid(data, session, source)) return "/login";
   const teacher = data.teachers.find((t) => t.id === session.teacherId);
-  if (teacher.passwordCredential?.mustChange) return "/account/password";
+  if (
+    teacher.passwordCredential?.mustChange &&
+    !delegatedAdminValid(data, session, source)
+  )
+    return "/account/password";
   return pathname.startsWith("/admin") ? "/teacher/dashboard" : "";
 }
 export const TEACHER_LOGIN_SESSION_KEY = "xingchen-account-session-v1";
