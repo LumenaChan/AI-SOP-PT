@@ -1,4 +1,5 @@
 import { delegatedAdminValid } from "./accountIdentityRules.js";
+import { passwordKey, randomId } from "./browserCrypto.js";
 // Local prototype credentials. Only salted password verifiers are persisted;
 // initial/reset plaintext is returned to the initiating dialog once.
 export const TEACHER_PASSWORD_HINT = "8—32位，至少包含字母和数字，不含空格";
@@ -50,22 +51,7 @@ export function generateTeacherPassword() {
   return value;
 }
 async function derive(password, salt, iterations) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  return hex(
-    new Uint8Array(
-      await crypto.subtle.deriveBits(
-        { name: "PBKDF2", hash: "SHA-256", salt: bytes(salt), iterations },
-        key,
-        256,
-      ),
-    ),
-  );
+  return hex(await passwordKey(password, bytes(salt), iterations));
 }
 export async function teacherPasswordCredential(
   password,
@@ -74,7 +60,7 @@ export async function teacherPasswordCredential(
   assertTeacherPassword(password);
   const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
   return {
-    id: crypto.randomUUID(),
+    id: randomId(),
     algorithm: "PBKDF2-SHA256",
     salt,
     iterations: ITERATIONS,

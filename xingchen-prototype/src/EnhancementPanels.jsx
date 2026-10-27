@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 import { displayBusinessText } from "./businessTextRules.js";
 import React, { useState, useEffect } from "react";
 import { usePrototypeData } from "./prototypeData.jsx";
@@ -543,7 +544,7 @@ export function ObservationSimulator({ arrangement, session, store }) {
           repeat && last
             ? last
             : {
-                id: `demo-observation-${crypto.randomUUID()}`,
+                id: `demo-observation-${randomId()}`,
                 sessionId: session.id,
                 sopId: session.evaluationSnapshot?.sopId,
                 configId:

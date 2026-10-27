@@ -11,6 +11,9 @@ importers:
       '@ant-design/icons':
         specifier: 6.1.0
         version: 6.1.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@noble/hashes':
+        specifier: 2.4.0
+        version: 2.4.0
       '@vitejs/plugin-react':
         specifier: 5.0.4
         version: 5.0.4(vite@6.4.2)
@@ -311,6 +314,10 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@rc-component/util@1.13.0':
     resolution: {integrity: sha512-IXf2zBfZrbQGT+G8LxnoICDBGnMHIPIiq5HCRn3EDfKUx28x1rnbZBj46ULJf4sM8ImTG1SepqfNBdxZziqQ4w==}
@@ -925,6 +932,8 @@ snapshots:
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@noble/hashes@2.4.0': {}
 
   '@rc-component/util@1.13.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:

@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 import {
   assertTeacherAccountAvailable,
   assertTeacherPassword,
@@ -31,7 +32,7 @@ export function createTeacherAccountActions({
   getSource,
   source,
   now = () => new Date().toISOString(),
-  makeId = () => crypto.randomUUID(),
+  makeId = () => randomId(),
 }) {
   const admin = () => {
     if (getSource() !== source)

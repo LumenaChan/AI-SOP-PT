@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 import { StandardMediaSection } from "./StandardMedia.jsx";
 import { StepFlowRecord } from "./SessionClosurePanels.jsx";
 import {
@@ -130,7 +131,7 @@ export function RequirementsEditor({ step, steps, onChange }) {
         onClick={() =>
           onChange([
             ...values,
-            normalizeVisualRequirement({ id: `vr-${crypto.randomUUID()}` }),
+            normalizeVisualRequirement({ id: `vr-${randomId()}` }),
           ])
         }
       >

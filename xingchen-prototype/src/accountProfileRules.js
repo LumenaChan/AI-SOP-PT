@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 import { delegatedAdminValid } from "./accountIdentityRules.js";
 import {
   ADMIN_MENUS,
@@ -119,7 +120,7 @@ export function createOwnProfileActions({
   getSource,
   source,
   now = () => new Date().toISOString(),
-  makeId = () => crypto.randomUUID(),
+  makeId = () => randomId(),
 }) {
   const assertSession = (session, data = getData()) => {
     if (

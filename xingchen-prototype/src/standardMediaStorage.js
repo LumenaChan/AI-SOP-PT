@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 const DATABASE = "xingchen-standard-teaching-media-v1";
 const COLLECTION = "files";
 function openMediaDatabase() {
@@ -30,7 +31,7 @@ export async function saveStandardMediaFiles(files, metadata) {
   const db = await openMediaDatabase();
   try {
     return await new Promise((resolve, reject) => {
-      const ids = files.map(() => `teaching-media-${crypto.randomUUID()}`);
+      const ids = files.map(() => `teaching-media-${randomId()}`);
       const transaction = db.transaction(COLLECTION, "readwrite");
       const store = transaction.objectStore(COLLECTION);
       transaction.oncomplete = () => resolve(ids);

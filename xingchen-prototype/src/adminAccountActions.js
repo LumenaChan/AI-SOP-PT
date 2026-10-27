@@ -1,3 +1,4 @@
+import { randomId } from "./browserCrypto.js";
 import {
   assertRootAdmin,
   adminSessionValid,
@@ -39,7 +40,7 @@ export function createAdminAccountActions({
   getSource,
   source,
   now = () => new Date().toISOString(),
-  makeId = () => crypto.randomUUID(),
+  makeId = () => randomId(),
 }) {
   const root = () => {
     if (getSource() !== source)

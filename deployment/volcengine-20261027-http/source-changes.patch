@@ -1,0 +1,469 @@
+diff --git a/xingchen-prototype/AGENTS.md b/xingchen-prototype/AGENTS.md
+index 24e621e..16c14fd 100644
+--- a/xingchen-prototype/AGENTS.md
++++ b/xingchen-prototype/AGENTS.md
+@@ -529,3 +529,9 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
+ - 2026-10-27 修复普通账号admin1点击AI能力库无法展开：能力库父入口必须进入“已授权能力库子菜单”的首项，不得复用账号默认首页（可能为运行概览或AI能力配置）。侧栏点击和旧能力库根路径重定向共用adminLibraryLandingPath；保留二级菜单授权过滤、展开收起及当前能力上下文，未授权子菜单不补权。不进行视觉检查。
+ - 2026-10-27 登录按钮与下方教师密码找回提示保留16px间距，使用针对按钮后提示的样式覆盖，避免被登录表单通用段落规则清零；其他登录提示与入口间距保持原样。不进行视觉检查。
+ - 2026-10-27 密码找回提示默认隐藏，同一账号连续3次账号／密码验证失败后展示：教师引导至教师管理，普通管理账号引导至用户管理，内置admin联系系统负责人；未知账号只提示确认账号。验证码、存储及来源变化错误不计数；更换账号或登录成功清空，次数仅保留在当前登录页内存，不持久化。不进行视觉检查。
++
++## 2026-10-27 HTTP 演示兼容
++
++- 用户明确没有域名，现有公网 HTTP 地址须支持账号创建、密码重置及本人改密。`browserCrypto.js`优先使用原生WebCrypto；HTTP缺少subtle时用锁定版本的@noble/hashes异步PBKDF2-HMAC-SHA256，保留210000次迭代、16字节盐、32字节输出和既有凭据格式。随机ID用getRandomValues生成UUID v4，不能退化到Math.random或明文密码。
++- 新旧密码凭据在HTTP／HTTPS间互通，不迁移或清空工作数据。所有原crypto.randomUUID业务入口复用randomId。HTTP兼容仅解决浏览器API可用性，不提供HTTPS传输保护。
++- 验证：790项测试、生产构建通过；独立无头浏览器在真实HTTP非安全上下文（subtle/randomUUID均不可用）通过普通账号创建、临时密码修改、系统admin改密、新密码登录与旧密码拒绝，数据中未存明文密码。未进行截图或视觉检查。
+diff --git a/xingchen-prototype/package-lock.json b/xingchen-prototype/package-lock.json
+index 20d4840..2900d39 100644
+--- a/xingchen-prototype/package-lock.json
++++ b/xingchen-prototype/package-lock.json
+@@ -1,19 +1,67 @@
+ {
+-  "name": "design-prototype",
++  "name": "xingchen-prototype",
+   "version": "0.0.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+-      "name": "design-prototype",
++      "name": "xingchen-prototype",
+       "version": "0.0.0",
+       "dependencies": {
++        "@ant-design/icons": "6.1.0",
++        "@noble/hashes": "2.4.0",
+         "@vitejs/plugin-react": "5.0.4",
+         "react": "19.2.0",
+         "react-dom": "19.2.0",
++        "react-router-dom": "7.9.5",
+         "vite": "6.4.2"
+       },
+-      "devDependencies": {}
++      "devDependencies": {
++        "prettier": "3.6.2"
++      }
++    },
++    "node_modules/@ant-design/colors": {
++      "version": "8.0.1",
++      "resolved": "https://registry.npmjs.org/@ant-design/colors/-/colors-8.0.1.tgz",
++      "integrity": "sha512-foPVl0+SWIslGUtD/xBr1p9U4AKzPhNYEseXYRRo5QSzGACYZrQbe11AYJbYfAWnWSpGBx6JjBmSeugUsD9vqQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@ant-design/fast-color": "^3.0.0"
++      }
++    },
++    "node_modules/@ant-design/fast-color": {
++      "version": "3.0.1",
++      "resolved": "https://registry.npmjs.org/@ant-design/fast-color/-/fast-color-3.0.1.tgz",
++      "integrity": "sha512-esKJegpW4nckh0o6kV3Tkb7NPIZYbPnnFxmQDUmL08ukXZAvV85TZBr70eGuke/CIArLaP6aw8lt9KILjnWuOw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=8.x"
++      }
++    },
++    "node_modules/@ant-design/icons": {
++      "version": "6.1.0",
++      "resolved": "https://registry.npmjs.org/@ant-design/icons/-/icons-6.1.0.tgz",
++      "integrity": "sha512-KrWMu1fIg3w/1F2zfn+JlfNDU8dDqILfA5Tg85iqs1lf8ooyGlbkA+TkwfOKKgqpUmAiRY1PTFpuOU2DAIgSUg==",
++      "license": "MIT",
++      "dependencies": {
++        "@ant-design/colors": "^8.0.0",
++        "@ant-design/icons-svg": "^4.4.0",
++        "@rc-component/util": "^1.3.0",
++        "clsx": "^2.1.1"
++      },
++      "engines": {
++        "node": ">=8"
++      },
++      "peerDependencies": {
++        "react": ">=16.0.0",
++        "react-dom": ">=16.0.0"
++      }
++    },
++    "node_modules/@ant-design/icons-svg": {
++      "version": "4.6.0",
++      "resolved": "https://registry.npmjs.org/@ant-design/icons-svg/-/icons-svg-4.6.0.tgz",
++      "integrity": "sha512-PRomU725ABMf/lnQp5HiB7my1kjEbFY0D10N4lXYxK6TIB1gKjIVD5MRThpDaezLgw1D774J8eOeeDB0M6wHrQ==",
++      "license": "MIT"
+     },
+     "node_modules/@babel/code-frame": {
+       "version": "7.29.7",
+@@ -740,6 +788,32 @@
+         "@jridgewell/sourcemap-codec": "^1.4.14"
+       }
+     },
++    "node_modules/@noble/hashes": {
++      "version": "2.4.0",
++      "resolved": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz",
++      "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">= 20.19.0"
++      },
++      "funding": {
++        "url": "https://paulmillr.com/funding/"
++      }
++    },
++    "node_modules/@rc-component/util": {
++      "version": "1.14.0",
++      "resolved": "https://registry.npmjs.org/@rc-component/util/-/util-1.14.0.tgz",
++      "integrity": "sha512-qFpkGBCiyN3NNAU+FOnZdcdz7A/rXCg3JdQk+bujUKAExZgRqzf2yy1f4YN63Lwctic5FcK9rgjQ6aWbykqwEw==",
++      "license": "MIT",
++      "dependencies": {
++        "is-mobile": "^5.0.0",
++        "react-is": "^19.2.7"
++      },
++      "peerDependencies": {
++        "react": ">=18.0.0",
++        "react-dom": ">=18.0.0"
++      }
++    },
+     "node_modules/@rolldown/pluginutils": {
+       "version": "1.0.0-beta.38",
+       "resolved": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.0-beta.38.tgz",
+@@ -1204,12 +1278,34 @@
+       ],
+       "license": "CC-BY-4.0"
+     },
++    "node_modules/clsx": {
++      "version": "2.1.1",
++      "resolved": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
++      "integrity": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
+     "node_modules/convert-source-map": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz",
+       "integrity": "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==",
+       "license": "MIT"
+     },
++    "node_modules/cookie": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz",
++      "integrity": "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/express"
++      }
++    },
+     "node_modules/debug": {
+       "version": "4.4.3",
+       "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+@@ -1323,6 +1419,12 @@
+         "node": ">=6.9.0"
+       }
+     },
++    "node_modules/is-mobile": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/is-mobile/-/is-mobile-5.0.0.tgz",
++      "integrity": "sha512-Tz/yndySvLAEXh+Uk8liFCxOwVH6YutuR74utvOcu7I9Di+DwM0mtdPVZNaVvvBUM2OXxne/NhOs1zAO7riusQ==",
++      "license": "MIT"
++    },
+     "node_modules/js-tokens": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+@@ -1442,6 +1544,22 @@
+         "node": "^10 || ^12 || >=14"
+       }
+     },
++    "node_modules/prettier": {
++      "version": "3.6.2",
++      "resolved": "https://registry.npmjs.org/prettier/-/prettier-3.6.2.tgz",
++      "integrity": "sha512-I7AIg5boAr5R0FFtJ6rCfD+LFsWHp81dolrFD8S79U9tb8Az2nGrJncnMSnys+bpQJfRUzqs9hnA81OAA3hCuQ==",
++      "dev": true,
++      "license": "MIT",
++      "bin": {
++        "prettier": "bin/prettier.cjs"
++      },
++      "engines": {
++        "node": ">=14"
++      },
++      "funding": {
++        "url": "https://github.com/prettier/prettier?sponsor=1"
++      }
++    },
+     "node_modules/react": {
+       "version": "19.2.0",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.2.0.tgz",
+@@ -1457,6 +1575,7 @@
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.0.tgz",
+       "integrity": "sha512-UlbRu4cAiGaIewkPyiRGJk0imDN2T3JjieT6spoL2UeSf5od4n5LB/mQ4ejmxhCFT1tYe8IvaFulzynWovsEFQ==",
+       "license": "MIT",
++      "peer": true,
+       "dependencies": {
+         "scheduler": "^0.27.0"
+       },
+@@ -1464,6 +1583,12 @@
+         "react": "^19.2.0"
+       }
+     },
++    "node_modules/react-is": {
++      "version": "19.3.1",
++      "resolved": "https://registry.npmjs.org/react-is/-/react-is-19.3.1.tgz",
++      "integrity": "sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==",
++      "license": "MIT"
++    },
+     "node_modules/react-refresh": {
+       "version": "0.17.0",
+       "resolved": "https://registry.npmjs.org/react-refresh/-/react-refresh-0.17.0.tgz",
+@@ -1473,6 +1598,44 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/react-router": {
++      "version": "7.9.5",
++      "resolved": "https://registry.npmjs.org/react-router/-/react-router-7.9.5.tgz",
++      "integrity": "sha512-JmxqrnBZ6E9hWmf02jzNn9Jm3UqyeimyiwzD69NjxGySG6lIz/1LVPsoTCwN7NBX2XjCEa1LIX5EMz1j2b6u6A==",
++      "license": "MIT",
++      "dependencies": {
++        "cookie": "^1.0.1",
++        "set-cookie-parser": "^2.6.0"
++      },
++      "engines": {
++        "node": ">=20.0.0"
++      },
++      "peerDependencies": {
++        "react": ">=18",
++        "react-dom": ">=18"
++      },
++      "peerDependenciesMeta": {
++        "react-dom": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/react-router-dom": {
++      "version": "7.9.5",
++      "resolved": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.9.5.tgz",
++      "integrity": "sha512-mkEmq/K8tKN63Ae2M7Xgz3c9l9YNbY+NHH6NNeUmLA3kDkhKXRsNb/ZpxaEunvGo2/3YXdk5EJU3Hxp3ocaBPw==",
++      "license": "MIT",
++      "dependencies": {
++        "react-router": "7.9.5"
++      },
++      "engines": {
++        "node": ">=20.0.0"
++      },
++      "peerDependencies": {
++        "react": ">=18",
++        "react-dom": ">=18"
++      }
++    },
+     "node_modules/rollup": {
+       "version": "4.62.2",
+       "resolved": "https://registry.npmjs.org/rollup/-/rollup-4.62.2.tgz",
+@@ -1532,6 +1695,12 @@
+         "semver": "bin/semver.js"
+       }
+     },
++    "node_modules/set-cookie-parser": {
++      "version": "2.7.3",
++      "resolved": "https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-2.7.3.tgz",
++      "integrity": "sha512-irZHtTqurLna57KQG/s+fzOwv/J6XSH4cs8M/vsrY3uCaQ3S6+QJguAH0WdN47SXlk82voMZ4naWMQf8fdEoIg==",
++      "license": "MIT"
++    },
+     "node_modules/source-map-js": {
+       "version": "1.2.1",
+       "resolved": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz",
+diff --git a/xingchen-prototype/package.json b/xingchen-prototype/package.json
+index b40bbb6..6c30fa9 100644
+--- a/xingchen-prototype/package.json
++++ b/xingchen-prototype/package.json
+@@ -14,6 +14,7 @@
+   },
+   "dependencies": {
+     "@ant-design/icons": "6.1.0",
++    "@noble/hashes": "2.4.0",
+     "@vitejs/plugin-react": "5.0.4",
+     "react": "19.2.0",
+     "react-dom": "19.2.0",
+diff --git a/xingchen-prototype/pnpm-lock.yaml b/xingchen-prototype/pnpm-lock.yaml
+index 11f541c..fa632fd 100644
+--- a/xingchen-prototype/pnpm-lock.yaml
++++ b/xingchen-prototype/pnpm-lock.yaml
+@@ -11,6 +11,9 @@ importers:
+       '@ant-design/icons':
+         specifier: 6.1.0
+         version: 6.1.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
++      '@noble/hashes':
++        specifier: 2.4.0
++        version: 2.4.0
+       '@vitejs/plugin-react':
+         specifier: 5.0.4
+         version: 5.0.4(vite@6.4.2)
+@@ -312,6 +315,10 @@ packages:
+     os: [linux]
+     libc: [glibc]
+ 
++  '@noble/hashes@2.4.0':
++    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
++    engines: {node: '>= 20.19.0'}
++
+   '@rc-component/util@1.13.0':
+     resolution: {integrity: sha512-IXf2zBfZrbQGT+G8LxnoICDBGnMHIPIiq5HCRn3EDfKUx28x1rnbZBj46ULJf4sM8ImTG1SepqfNBdxZziqQ4w==}
+     peerDependencies:
+@@ -926,6 +933,8 @@ snapshots:
+   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
+     optional: true
+ 
++  '@noble/hashes@2.4.0': {}
++
+   '@rc-component/util@1.13.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+     dependencies:
+       is-mobile: 5.0.0
+diff --git a/xingchen-prototype/src/EnhancementPanels.jsx b/xingchen-prototype/src/EnhancementPanels.jsx
+index e152055..ae29b3b 100644
+--- a/xingchen-prototype/src/EnhancementPanels.jsx
++++ b/xingchen-prototype/src/EnhancementPanels.jsx
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ import { displayBusinessText } from "./businessTextRules.js";
+ import React, { useState, useEffect } from "react";
+ import { usePrototypeData } from "./prototypeData.jsx";
+@@ -543,7 +544,7 @@ export function ObservationSimulator({ arrangement, session, store }) {
+           repeat && last
+             ? last
+             : {
+-                id: `demo-observation-${crypto.randomUUID()}`,
++                id: `demo-observation-${randomId()}`,
+                 sessionId: session.id,
+                 sopId: session.evaluationSnapshot?.sopId,
+                 configId:
+diff --git a/xingchen-prototype/src/VisualEvaluation.jsx b/xingchen-prototype/src/VisualEvaluation.jsx
+index 89e8205..3b5ff6f 100644
+--- a/xingchen-prototype/src/VisualEvaluation.jsx
++++ b/xingchen-prototype/src/VisualEvaluation.jsx
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ import { StandardMediaSection } from "./StandardMedia.jsx";
+ import { StepFlowRecord } from "./SessionClosurePanels.jsx";
+ import {
+@@ -130,7 +131,7 @@ export function RequirementsEditor({ step, steps, onChange }) {
+         onClick={() =>
+           onChange([
+             ...values,
+-            normalizeVisualRequirement({ id: `vr-${crypto.randomUUID()}` }),
++            normalizeVisualRequirement({ id: `vr-${randomId()}` }),
+           ])
+         }
+       >
+diff --git a/xingchen-prototype/src/accountProfileRules.js b/xingchen-prototype/src/accountProfileRules.js
+index 17a8e84..4b911b9 100644
+--- a/xingchen-prototype/src/accountProfileRules.js
++++ b/xingchen-prototype/src/accountProfileRules.js
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ import { delegatedAdminValid } from "./accountIdentityRules.js";
+ import {
+   ADMIN_MENUS,
+@@ -119,7 +120,7 @@ export function createOwnProfileActions({
+   getSource,
+   source,
+   now = () => new Date().toISOString(),
+-  makeId = () => crypto.randomUUID(),
++  makeId = () => randomId(),
+ }) {
+   const assertSession = (session, data = getData()) => {
+     if (
+diff --git a/xingchen-prototype/src/adminAccountActions.js b/xingchen-prototype/src/adminAccountActions.js
+index 88e1473..a7d1016 100644
+--- a/xingchen-prototype/src/adminAccountActions.js
++++ b/xingchen-prototype/src/adminAccountActions.js
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ import {
+   assertRootAdmin,
+   adminSessionValid,
+@@ -39,7 +40,7 @@ export function createAdminAccountActions({
+   getSource,
+   source,
+   now = () => new Date().toISOString(),
+-  makeId = () => crypto.randomUUID(),
++  makeId = () => randomId(),
+ }) {
+   const root = () => {
+     if (getSource() !== source)
+diff --git a/xingchen-prototype/src/standardMediaStorage.js b/xingchen-prototype/src/standardMediaStorage.js
+index 6a3ae60..3c0a065 100644
+--- a/xingchen-prototype/src/standardMediaStorage.js
++++ b/xingchen-prototype/src/standardMediaStorage.js
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ const DATABASE = "xingchen-standard-teaching-media-v1";
+ const COLLECTION = "files";
+ function openMediaDatabase() {
+@@ -30,7 +31,7 @@ export async function saveStandardMediaFiles(files, metadata) {
+   const db = await openMediaDatabase();
+   try {
+     return await new Promise((resolve, reject) => {
+-      const ids = files.map(() => `teaching-media-${crypto.randomUUID()}`);
++      const ids = files.map(() => `teaching-media-${randomId()}`);
+       const transaction = db.transaction(COLLECTION, "readwrite");
+       const store = transaction.objectStore(COLLECTION);
+       transaction.oncomplete = () => resolve(ids);
+diff --git a/xingchen-prototype/src/teacherAccountActions.js b/xingchen-prototype/src/teacherAccountActions.js
+index 0fd734a..6ea87c9 100644
+--- a/xingchen-prototype/src/teacherAccountActions.js
++++ b/xingchen-prototype/src/teacherAccountActions.js
+@@ -1,3 +1,4 @@
++import { randomId } from "./browserCrypto.js";
+ import {
+   assertTeacherAccountAvailable,
+   assertTeacherPassword,
+@@ -31,7 +32,7 @@ export function createTeacherAccountActions({
+   getSource,
+   source,
+   now = () => new Date().toISOString(),
+-  makeId = () => crypto.randomUUID(),
++  makeId = () => randomId(),
+ }) {
+   const admin = () => {
+     if (getSource() !== source)
+diff --git a/xingchen-prototype/src/teacherAccountRules.js b/xingchen-prototype/src/teacherAccountRules.js
+index f2cbf32..61fc77f 100644
+--- a/xingchen-prototype/src/teacherAccountRules.js
++++ b/xingchen-prototype/src/teacherAccountRules.js
+@@ -1,4 +1,5 @@
+ import { delegatedAdminValid } from "./accountIdentityRules.js";
++import { passwordKey, randomId } from "./browserCrypto.js";
+ // Local prototype credentials. Only salted password verifiers are persisted;
+ // initial/reset plaintext is returned to the initiating dialog once.
+ export const TEACHER_PASSWORD_HINT = "8—32位，至少包含字母和数字，不含空格";
+@@ -50,22 +51,7 @@ export function generateTeacherPassword() {
+   return value;
+ }
+ async function derive(password, salt, iterations) {
+-  const key = await crypto.subtle.importKey(
+-    "raw",
+-    new TextEncoder().encode(password),
+-    "PBKDF2",
+-    false,
+-    ["deriveBits"],
+-  );
+-  return hex(
+-    new Uint8Array(
+-      await crypto.subtle.deriveBits(
+-        { name: "PBKDF2", hash: "SHA-256", salt: bytes(salt), iterations },
+-        key,
+-        256,
+-      ),
+-    ),
+-  );
++  return hex(await passwordKey(password, bytes(salt), iterations));
+ }
+ export async function teacherPasswordCredential(
+   password,
+@@ -74,7 +60,7 @@ export async function teacherPasswordCredential(
+   assertTeacherPassword(password);
+   const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+   return {
+-    id: crypto.randomUUID(),
++    id: randomId(),
+     algorithm: "PBKDF2-SHA256",
+     salt,
+     iterations: ITERATIONS,
