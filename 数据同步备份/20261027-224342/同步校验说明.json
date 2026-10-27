@@ -1,0 +1,21 @@
+{
+  "source": "当前浏览器选中的cpd工作数据",
+  "exportedAt": "2026-10-27 22:42:31",
+  "cpdPath": "src/data/currentPrototypeData.json",
+  "cpdSha256": "04fe785e9f9dc9edb87173d9fceab9050e02cc8fdeb4a98dbc457018ae785c84",
+  "preserved": "完整导出data，包含admin1账号、身份、17项菜单权限和原密码凭据，未重置密码",
+  "checks": {
+    "exportDataEquality": "passed",
+    "admin1FirstLoadBothSources": "passed",
+    "admin1MenuPermissions": "passed",
+    "admin1ProfileAndLibraryRender": "passed",
+    "productionBuild": "passed",
+    "fullTests": {
+      "passed": 783,
+      "failed": 7,
+      "reason": "依赖旧CPD固定样例状态的断言与当前工作数据不符；未修改或回退用户数据"
+    },
+    "legacyFullPageRender": "依赖无登录会话时自动启动的旧样例假设；新增账号后应要求登录，使用已登录admin1定向渲染校验通过"
+  },
+  "existingRemoteWorkingCopy": "新版CPD不会自动覆盖已有远端浏览器的有效工作副本，需另行迁移。"
+}
